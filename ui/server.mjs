@@ -746,6 +746,179 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // 2E. Grok-Bot ("sand") Local-Exec-Daemon Lifecycle Hooks & PreCompact Engine (/api/agent/hooks)
+  if (req.method === "POST" && req.url === "/api/agent/hooks") {
+    try {
+      const {
+        hook = "BeforeSubmitPromptRequest",
+        botId = "bot_r1",
+        botName = "R1",
+        prompt = "",
+        rawOutput = "",
+        toolName = "",
+        allowedTools = [],
+        disabledTools = [],
+        mcpCustomInstructions = "",
+        messages = []
+      } = await readJsonBody(req);
+
+      const wt = ensureAgentWorktree(botId, botName);
+      const timestamp = new Date().toISOString();
+
+      // 1. BeforeSubmitPromptRequest: enriches prompt with worktree, AgentStore manifest & MCP custom instructions
+      if (hook === "BeforeSubmitPromptRequest") {
+        const files = listAgentCodeFiles(wt.codeDir).map(f => f.name);
+        const enrichedBlock = [
+          `[SandBox Manifest: branch=${wt.branch}, codeDir=${wt.codeDir}, files=${files.join(", ") || "none"}]`,
+          mcpCustomInstructions ? `[MCP Custom Instructions: ${mcpCustomInstructions}]` : ""
+        ].filter(Boolean).join("\n");
+        broadcastEvent("agent_hook", { hook, botId, botName, branch: wt.branch, timestamp });
+        return sendJson(res, 200, {
+          ok: true,
+          hook,
+          botId,
+          branch: wt.branch,
+          enrichedPrompt: enrichedBlock ? `${enrichedBlock}\n${prompt}` : prompt,
+          timestamp
+        });
+      }
+
+      // 2. AfterAgentThoughtRequest: extracts <think>...</think> or [THOUGHT: ...] internal reasoning
+      if (hook === "AfterAgentThoughtRequest") {
+        const thoughts = [];
+        let cleanedOutput = String(rawOutput || "");
+        cleanedOutput = cleanedOutput.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
+          if (t.trim()) thoughts.push(t.trim());
+          return "";
+        });
+        cleanedOutput = cleanedOutput.replace(/\[THOUGHT:\s*([^\]]+)\]/gi, (_, t) => {
+          if (t.trim()) thoughts.push(t.trim());
+          return "";
+        });
+        broadcastEvent("agent_hook", { hook, botId, botName, thoughtCount: thoughts.length, timestamp });
+        return sendJson(res, 200, {
+          ok: true,
+          hook,
+          thoughts,
+          cleanedOutput: cleanedOutput.trim(),
+          timestamp
+        });
+      }
+
+      // 3. PreToolUseRequest / PostToolUseRequest / PostToolUseFailureRequest
+      if (hook === "PreToolUseRequest") {
+        const blackListed = Array.isArray(disabledTools) && disabledTools.includes(toolName);
+        const permitted = !blackListed && (!Array.isArray(allowedTools) || allowedTools.length === 0 || allowedTools.includes(toolName));
+        broadcastEvent("agent_hook", { hook, botId, botName, toolName, permitted, blackListed, timestamp });
+        return sendJson(res, 200, {
+          ok: permitted,
+          hook,
+          toolName,
+          permitted,
+          reason: blackListed
+            ? `Blocked by mcpDisabledToolsByServerId (${toolName})`
+            : permitted
+              ? "Allowed by PreToolUseRequest policy"
+              : `Tool '${toolName}' not enabled in ${botName}'s toolset`,
+          timestamp
+        });
+      }
+
+      // 4. PreCompactRequest: automatic context-window compaction & summarization
+      if (hook === "PreCompactRequest") {
+        const msgList = Array.isArray(messages) ? messages : [];
+        const headSummary = msgList.slice(0, Math.max(0, msgList.length - 6)).map(m => {
+          const who = m.senderType === "user" ? "User" : (m.botId || "Agent");
+          return `- ${who}: ${String(m.text || "").replace(/\s+/g, " ").slice(0, 140)}`;
+        }).join("\n");
+        const compactDigest = headSummary
+          ? `[PreCompact Summary of ${Math.max(0, msgList.length - 6)} earlier turns]\n${headSummary}`
+          : "Context window is already compact.";
+        broadcastEvent("agent_hook", { hook, botId, botName, compactedCount: Math.max(0, msgList.length - 6), timestamp });
+        return sendJson(res, 200, {
+          ok: true,
+          hook,
+          compactedCount: Math.max(0, msgList.length - 6),
+          compactDigest,
+          keptMessages: msgList.slice(-6),
+          timestamp
+        });
+      }
+
+      // 5. SubagentStart / SubagentStop / NotifySandAgentTurnFinished
+      broadcastEvent("agent_hook", { hook, botId, botName, branch: wt.branch, timestamp });
+      return sendJson(res, 200, { ok: true, hook, botId, branch: wt.branch, timestamp });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // 2F. Grok-Bot ("sand") AgentStoreService & SandBox Manifest Store (/api/agent/store)
+  if (req.method === "POST" && req.url === "/api/agent/store") {
+    try {
+      const {
+        action = "CommitSandBoxStoreManifest",
+        botId = "bot_r1",
+        botName = "R1",
+        objectKey = "shared-spec.md",
+        content = ""
+      } = await readJsonBody(req);
+
+      const storeDir = path.join(AGENTS_STATE_DIR, "agent-store");
+      const locksFile = path.join(storeDir, "_locks.json");
+      fs.mkdirSync(storeDir, { recursive: true });
+      const locks = fs.existsSync(locksFile) ? JSON.parse(fs.readFileSync(locksFile, "utf8")) : {};
+
+      if (action === "AcquireAgentStoreFileLock") {
+        const currentLock = locks[objectKey];
+        if (currentLock && currentLock.owner !== botId && (Date.now() - currentLock.acquiredAt) < 30000) {
+          return sendJson(res, 200, { ok: false, lockedBy: currentLock.owner, objectKey });
+        }
+        locks[objectKey] = { owner: botId, botName, acquiredAt: Date.now() };
+        fs.writeFileSync(locksFile, JSON.stringify(locks, null, 2), "utf8");
+        return sendJson(res, 200, { ok: true, action, objectKey, owner: botId, locks });
+      }
+
+      if (action === "ReleaseAgentStoreFileLock") {
+        delete locks[objectKey];
+        fs.writeFileSync(locksFile, JSON.stringify(locks, null, 2), "utf8");
+        return sendJson(res, 200, { ok: true, action, objectKey, locks });
+      }
+
+      if (action === "CommitSandBoxStoreManifest") {
+        const wt = ensureAgentWorktree(botId, botName);
+        const files = listAgentCodeFiles(wt.codeDir).map(f => ({
+          name: f.name,
+          size: f.size,
+          updatedAt: f.updatedAt
+        }));
+        const manifest = {
+          sandboxId: `sand-${sanitizeSlug(botId)}`,
+          botId,
+          botName,
+          branch: wt.branch,
+          codeDir: wt.codeDir,
+          committedAt: new Date().toISOString(),
+          objects: files,
+          locks
+        };
+        const manifestFile = path.join(storeDir, `${sanitizeSlug(botId)}-manifest.json`);
+        fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2), "utf8");
+        return sendJson(res, 200, { ok: true, action, manifest });
+      }
+
+      if (action === "StatSandBoxStoreObject") {
+        const wt = ensureAgentWorktree(botId, botName);
+        const files = listAgentCodeFiles(wt.codeDir).map(f => ({ name: f.name, size: f.size, updatedAt: f.updatedAt }));
+        return sendJson(res, 200, { ok: true, action, branch: wt.branch, objects: files, locks });
+      }
+
+      return sendJson(res, 200, { ok: true, action, locks });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
   // 3. Grounded Folder Inspection Endpoint (POST /api/workspace/context)
   if (req.method === "POST" && req.url === "/api/workspace/context") {
     try {

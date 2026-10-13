@@ -1349,6 +1349,7 @@
           <button onclick="createNewFileInAgentWorkspace()" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;" title="Create new file in this agent's workspace">+ File</button>
           <button onclick="setDrawerMode('source')" id="btnModeSource" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;">Code</button>
           <button onclick="setDrawerMode('preview')" id="btnModePreview" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;">Preview</button>
+          <button onclick="setDrawerMode('vnc')" id="btnModeVnc" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;" title="Grok-Bot preload-vnc style Browser & Remote Desktop Mount">VNC/Web</button>
           <button onclick="runActiveFileInAgentWorkspace()" class="btn-primary" style="height:26px; padding:0 10px; font-size:11px; background:#10b981;" title="Execute active file inside this agent's isolated workspace">▶ Run</button>
           <button onclick="saveActiveEditorToAgentWorkspace()" class="btn-primary" style="height:26px; padding:0 10px; font-size:11px; background:#2563eb;" title="Save edits to disk">Save</button>
           <button onclick="toggleDeliverableDrawer(false)" class="side-icon-btn">
@@ -1366,10 +1367,18 @@
       <!-- Per-Agent Workspace File Tabs -->
       <div id="deliverableTabs" style="display:flex; gap:6px; padding:8px 14px; border-bottom:1px solid #1e1e22; overflow-x:auto; flex-shrink:0;"></div>
 
-      <!-- Code Editor + Live HTML Preview -->
+      <!-- Code Editor + Live HTML Preview + VNC/Browser Mount -->
       <div style="flex:1; position:relative; overflow:hidden; display:flex; flex-direction:column;">
         <textarea id="deliverableCodeView" spellcheck="false" class="mono" style="flex:1; width:100%; background:#0e0e11; border:none; padding:14px 16px; overflow:auto; font-size:12px; line-height:1.55; color:#e4e4ef; resize:none;"></textarea>
         <iframe id="deliverablePreviewFrame" class="hidden" style="flex:1; width:100%; border:none; background:#ffffff;"></iframe>
+        <div id="deliverableVncWrap" class="hidden" style="flex:1; display:flex; flex-direction:column; background:#0b0b0e;">
+          <div style="padding:6px 10px; background:#15151b; border-bottom:1px solid #262630; display:flex; align-items:center; gap:6px;">
+            <span class="mono" style="font-size:10.5px; color:#a7f3d0;">VNC / Web Mount:</span>
+            <input id="vncMountUrlInput" type="text" value="http://localhost:3000" class="field-input mono" style="height:24px; font-size:11px; padding:0 8px; flex:1;" placeholder="http://localhost:6080/vnc.html or web URL">
+            <button onclick="mountVncBrowserUrl()" class="btn-secondary" style="height:24px; padding:0 8px; font-size:10.5px;">Mount</button>
+          </div>
+          <iframe id="deliverableVncFrame" style="flex:1; width:100%; border:none; background:#111115;"></iframe>
+        </div>
       </div>
 
       <!-- Per-Agent Workspace Live Execution & Git Commit Console -->
@@ -1480,20 +1489,32 @@
           <div id="botPrivateMemoryList" style="display:flex; flex-direction:column; gap:5px; max-height:110px; overflow-y:auto;"></div>
         </div>
 
-        <!-- UPGRADE 3: PER-AGENT TOOLS & MCP SERVER -->
+        <!-- UPGRADE 3: PER-AGENT TOOLS & MCP SERVER + GROK-BOT MCP POLICIES -->
         <div style="padding:12px; border-radius:12px; background:#121216; border:1px solid #26262f;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <label class="field-label" style="margin-bottom:0; color:#bae6fd;">Per-Agent Tools & MCP Server</label>
+            <label class="field-label" style="margin-bottom:0; color:#bae6fd;">Per-Agent Tools, MCP & PreToolUse Blacklist</label>
             <button type="button" onclick="openWorktreeFromBotModal()" style="font-size:11px; color:#38bdf8;">Inspect Bot Worktree →</button>
           </div>
           <div id="botToolsChecklist" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:10px;"></div>
-          <div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <span style="font-size:11px; color:#94949e;">Custom MCP Server Command (stdio JSON-RPC 2.0)</span>
-              <button type="button" onclick="probeMcpServerInModal()" style="font-size:11px; color:#60a5fa;">Probe MCP Tools</button>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <span style="font-size:11px; color:#94949e;">Custom MCP Server Command (stdio JSON-RPC 2.0 / mcpBoxServers)</span>
+                <button type="button" onclick="probeMcpServerInModal()" style="font-size:11px; color:#60a5fa;">Probe MCP Tools</button>
+              </div>
+              <input id="botMcpCommandInput" type="text" placeholder="e.g. npx -y @modelcontextprotocol/server-filesystem ." class="field-input mono" style="font-size:12px;">
+              <div id="botMcpProbeStatus" class="mono" style="font-size:10.5px; color:#888894; margin-top:5px;"></div>
             </div>
-            <input id="botMcpCommandInput" type="text" placeholder="e.g. npx -y @modelcontextprotocol/server-filesystem ." class="field-input mono" style="font-size:12px;">
-            <div id="botMcpProbeStatus" class="mono" style="font-size:10.5px; color:#888894; margin-top:5px;"></div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+              <div>
+                <span style="font-size:10.5px; color:#94949e; display:block; margin-bottom:3px;">MCP Custom Instructions (mcpCustomInstructions)</span>
+                <input id="botMcpInstructionsInput" type="text" placeholder="Injected on BeforeSubmitPrompt..." class="field-input" style="height:28px; font-size:11.5px;">
+              </div>
+              <div>
+                <span style="font-size:10.5px; color:#94949e; display:block; margin-bottom:3px;">Disabled Tools Blacklist (mcpDisabledTools)</span>
+                <input id="botMcpDisabledToolsInput" type="text" placeholder="e.g. rm_rf, drop_table" class="field-input mono" style="height:28px; font-size:11.5px;">
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2328,9 +2349,15 @@
 
           const thoughtHtml = m.reasoning
             ? `<details style="margin-bottom:10px; background:#141418; border:1px solid #26262e; border-radius:10px; padding:7px 10px; font-size:11.5px; color:#8e8e9a;" class="mono">
-                 <summary style="cursor:pointer; user-select:none;">Thought process</summary>
+                 <summary style="cursor:pointer; user-select:none;">AfterAgentThought • Internal Reasoning</summary>
                  <div style="margin-top:6px; padding-top:6px; border-top:1px solid #222229; white-space:pre-wrap; color:#c4c4d0;">${escapeHtml(m.reasoning)}</div>
                </details>`
+            : "";
+
+          const hooksBadgeHtml = Array.isArray(m.hooksTrace) && m.hooksTrace.length > 0
+            ? `<div class="mono" style="margin-top:8px; font-size:10px; color:#6ee7b7; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.22); border-radius:8px; padding:4px 8px; display:inline-block;">
+                 sand hooks: ${escapeHtml(m.hooksTrace.join(" → "))}
+               </div>`
             : "";
 
           const mentionedBots = findMentionedBotsInText(m.text, m.botId);
@@ -2367,6 +2394,7 @@
               ${headerHtml}
               ${thoughtHtml}
               <div class="msg-bot-body">${formatRichMessage(m.text)}</div>
+              ${hooksBadgeHtml}
               ${actionBarHtml}
             </div>
             <!-- Exact 3 Side Icons from Reference Screenshot: Smile, Reply Curve, More/Pin -->
@@ -2585,7 +2613,47 @@
       return `You are ${bot.name} (${bot.role}) in the Vanaras autonomous multi-agent workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${mountBlock}\n\nFellow Vanara agents: ${teamNames}.\nBe concise, high-signal, and proactive.`;
     }
 
-    async function processBotAutonomousActions(thread, bot, replyText) {
+    async function invokeAgentLifecycleHook(hook, payload = {}) {
+      try {
+        const res = await fetch("/api/agent/hooks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hook, ...payload })
+        });
+        return await res.json();
+      } catch {
+        return { ok: true, hook };
+      }
+    }
+
+    async function triggerPreCompactOnActiveThread() {
+      const thread = getActiveThread();
+      const leadBot = getActiveLeadBot();
+      if (!thread || !leadBot) return;
+      const res = await invokeAgentLifecycleHook("PreCompactRequest", {
+        botId: leadBot.id,
+        botName: leadBot.name,
+        messages: thread.messages
+      });
+      if (res && res.compactedCount > 0 && Array.isArray(res.keptMessages)) {
+        thread.messages = [
+          {
+            senderType: "terminal",
+            command: `[PreCompactRequest • ${leadBot.name}] Compacted ${res.compactedCount} turns`,
+            exitCode: 0,
+            text: res.compactDigest
+          },
+          ...res.keptMessages
+        ];
+        saveState();
+        renderActiveThread();
+        showToast(`PreCompact: summarized ${res.compactedCount} turns`);
+      } else {
+        showToast("PreCompact: context window is already compact (<= 6 turns)");
+      }
+    }
+
+    async function processBotAutonomousActions(thread, bot, replyText, hooksTrace = []) {
       const executedTools = [];
       if (!replyText) return executedTools;
 
@@ -2601,23 +2669,44 @@
         }
       }
 
-      // 2. Extract [TOOL: type | arg1 | arg2] and execute in Bot's Isolated Worktree
+      // 2. Extract [TOOL: type | arg1 | arg2] and run PreToolUseRequest -> Tool -> PostToolUseRequest
       const toolRx = /\[TOOL:\s*([a-z_]+)(?:\s*\|\s*([^\]|]+))?(?:\s*\|\s*([^\]]+))?\]/gi;
       let tMatch;
       while ((tMatch = toolRx.exec(replyText)) !== null) {
         const rawTool = tMatch[1].trim().toLowerCase();
+        const normalizedTool = rawTool === "shell" ? "shell_exec" : rawTool === "write_file" ? "fs_write" : rawTool;
         const arg1 = (tMatch[2] || "").trim();
         const arg2 = (tMatch[3] || "").trim();
 
+        // Grok-Bot PreToolUseRequest permission & mcpDisabledTools check
+        const preCheck = await invokeAgentLifecycleHook("PreToolUseRequest", {
+          botId: bot.id,
+          botName: bot.name,
+          toolName: normalizedTool,
+          allowedTools: bot.tools || [],
+          disabledTools: bot.mcpDisabledTools || []
+        });
+        hooksTrace.push(`PreToolUse(${normalizedTool}:${preCheck.permitted !== false ? "ALLOW" : "DENY"})`);
+        if (preCheck.permitted === false) {
+          thread.messages.push({
+            senderType: "terminal",
+            command: `[PreToolUse Blocked] ${normalizedTool}`,
+            exitCode: 1,
+            text: preCheck.reason || `Blocked by PreToolUse policy`
+          });
+          continue;
+        }
+
         try {
-          if ((rawTool === "shell" || rawTool === "shell_exec") && bot.tools?.includes("shell_exec") && arg1) {
+          if (normalizedTool === "shell_exec" && arg1) {
             await fetch("/api/workspace/exec", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ command: arg1, threadId: thread.id, botId: bot.id, botName: bot.name })
             });
             executedTools.push(`shell: ${arg1}`);
-          } else if ((rawTool === "write_file" || rawTool === "fs_write") && bot.tools?.includes("fs_write") && arg1) {
+            hooksTrace.push(`PostToolUse(shell_exec)`);
+          } else if (normalizedTool === "fs_write" && arg1) {
             const res = await fetch("/api/agent/tool", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -2629,28 +2718,32 @@
                 senderType: "terminal",
                 command: `[${bot.name} worktree] write ${arg1}`,
                 exitCode: 0,
-                text: `Wrote ${data.bytesWritten || arg2.length} bytes to ${arg1} on branch ${bot.worktreeBranch}`
+                text: data.output || `Wrote ${data.bytesWritten || arg2.length} bytes to ${arg1} on branch ${bot.worktreeBranch}`
               });
               executedTools.push(`write_file: ${arg1}`);
+              hooksTrace.push(`PostToolUse(fs_write)`);
             }
-          } else if ((rawTool === "git_status" || rawTool === "git_diff") && bot.tools?.includes(rawTool)) {
+          } else if (normalizedTool === "git_status" || normalizedTool === "git_diff" || normalizedTool === "git_commit") {
             const res = await fetch("/api/agent/tool", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: rawTool, botId: bot.id, botName: bot.name })
+              body: JSON.stringify({ action: normalizedTool, botId: bot.id, botName: bot.name, content: arg1 })
             });
             const data = await res.json();
             if (res.ok) {
               thread.messages.push({
                 senderType: "terminal",
-                command: `[${bot.name} ${data.branch}] ${rawTool}`,
+                command: `[${bot.name} ${data.branch}] ${normalizedTool}`,
                 exitCode: 0,
                 text: data.output || "(clean worktree)"
               });
-              executedTools.push(rawTool);
+              executedTools.push(normalizedTool);
+              hooksTrace.push(`PostToolUse(${normalizedTool})`);
             }
           }
-        } catch {}
+        } catch {
+          hooksTrace.push(`PostToolUseFailure(${normalizedTool})`);
+        }
       }
       return executedTools;
     }
@@ -2743,9 +2836,41 @@
 
       let nextAutoBot = null;
       let nextAutoPrompt = "";
+      const hooksTrace = [];
 
       try {
         await ensureAgentWorktreeOnServer(targetBot);
+
+        // Grok-Bot Hook 0: Automatic PreCompactRequest when conversation history grows > 18 messages
+        if (targetThread.messages.length > 18) {
+          const compactRes = await invokeAgentLifecycleHook("PreCompactRequest", {
+            botId: targetBot.id,
+            botName: targetBot.name,
+            messages: targetThread.messages
+          });
+          if (compactRes && compactRes.compactedCount > 0 && Array.isArray(compactRes.keptMessages)) {
+            targetThread.messages = [
+              {
+                senderType: "terminal",
+                command: `[PreCompactRequest • ${targetBot.name}] Auto-compacted ${compactRes.compactedCount} turns`,
+                exitCode: 0,
+                text: compactRes.compactDigest
+              },
+              ...compactRes.keptMessages
+            ];
+            hooksTrace.push("PreCompact");
+          }
+        }
+
+        // Grok-Bot Hook 1: BeforeSubmitPromptRequest (enriches prompt with SandBox Manifest & mcpCustomInstructions)
+        const beforeHook = await invokeAgentLifecycleHook("BeforeSubmitPromptRequest", {
+          botId: targetBot.id,
+          botName: targetBot.name,
+          prompt: triggerText,
+          mcpCustomInstructions: targetBot.mcpCustomInstructions || ""
+        });
+        hooksTrace.push("BeforeSubmitPrompt");
+
         const folderSummary = await ensureFolderSnapshot(targetThread.mountPath, targetBot);
         const historyContext = targetThread.messages.slice(-8).map(m => {
           if (m.senderType === "user") return `${state.currentUser.name}: ${m.text}`;
@@ -2755,41 +2880,79 @@
         }).join("\n\n");
 
         const sysPrompt = buildGroundedSystemPrompt(targetBot, targetThread, folderSummary);
-        const userPrompt = `Recent conversation:\n${historyContext}\n\nLatest trigger:\n${triggerText}\n\nRespond directly as ${targetBot.name}:`;
+        const enrichedTrigger = beforeHook.enrichedPrompt || triggerText;
+        const userPrompt = `Recent conversation:\n${historyContext}\n\nLatest trigger:\n${enrichedTrigger}\n\nRespond directly as ${targetBot.name}:`;
 
         const reply = await queryBotLLM(targetBot, sysPrompt, userPrompt, 2000);
-        const extracted = parseDeliverableBlocks(reply.content);
+
+        // Grok-Bot Hook 2: AfterAgentThoughtRequest (extracts <think>...</think> or [THOUGHT: ...])
+        const thoughtHook = await invokeAgentLifecycleHook("AfterAgentThoughtRequest", {
+          botId: targetBot.id,
+          botName: targetBot.name,
+          rawOutput: reply.content
+        });
+        hooksTrace.push("AfterAgentThought");
+        const combinedReasoning = [
+          reply.reasoning,
+          ...(Array.isArray(thoughtHook.thoughts) ? thoughtHook.thoughts : [])
+        ].filter(Boolean).join("\n\n");
+        const postThoughtContent = thoughtHook.cleanedOutput || reply.content;
+
+        const extracted = parseDeliverableBlocks(postThoughtContent);
         let hasDeliverables = false;
         if (extracted.length > 0) {
           hasDeliverables = true;
           await saveFilesToAgentWorkspace(targetBot, extracted);
         }
 
-        const cleanDisplay = reply.content
+        // Grok-Bot Hook 3: PreToolUseRequest -> Tool -> PostToolUseRequest
+        await processBotAutonomousActions(targetThread, targetBot, postThoughtContent, hooksTrace);
+
+        // Grok-Bot Hook 4: CommitSandBoxStoreManifest & NotifySandAgentTurnFinished
+        await fetch("/api/agent/store", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "CommitSandBoxStoreManifest",
+            botId: targetBot.id,
+            botName: targetBot.name
+          })
+        }).catch(() => {});
+        hooksTrace.push("CommitSandBoxManifest");
+        await invokeAgentLifecycleHook("NotifySandAgentTurnFinished", {
+          botId: targetBot.id,
+          botName: targetBot.name
+        });
+        hooksTrace.push("NotifyTurnFinished");
+
+        const cleanDisplay = postThoughtContent
           .replace(/\[REMEMBER:\s*[^\]]+\]/gi, "")
-          .trim() || reply.content;
+          .trim() || postThoughtContent;
 
         targetThread.messages.push({
           senderType: "bot",
           botId: targetBot.id,
           text: cleanDisplay,
-          reasoning: reply.reasoning,
+          reasoning: combinedReasoning,
+          hooksTrace,
           collabRound: chainDepth > 0 ? `Auto-Triggered • ${targetBot.worktreeBranch}` : targetBot.worktreeBranch,
           hasDeliverables
         });
-
-        await processBotAutonomousActions(targetThread, targetBot, reply.content);
 
         if (activeThreadId !== threadId) {
           unreadCounts[threadId] = (unreadCounts[threadId] || 0) + 1;
           showToast(`${targetBot.name} completed turn in ${targetThread.name || targetBot.name}`);
         }
 
-        // UPGRADE 1: Grok-Bots Style Self-Triggered Autonomous Chaining
+        // UPGRADE 1: Grok-Bots Style Self-Triggered Autonomous Chaining (SubagentStart / SubagentStop)
         if (state.autoTriggerEnabled !== false && chainDepth < 2 && (targetBot.tools || []).includes("handoff")) {
           const mentionedBots = findMentionedBotsInText(cleanDisplay, targetBot.id);
           if (mentionedBots.length > 0) {
             nextAutoBot = mentionedBots[0];
+            await invokeAgentLifecycleHook("SubagentStart", {
+              botId: nextAutoBot.id,
+              botName: nextAutoBot.name
+            });
             nextAutoPrompt = `@${nextAutoBot.name}, ${targetBot.name} just completed their turn and tagged you:\n"${cleanDisplay.slice(0, 500)}"\n\nContinue the work autonomously from your perspective (${nextAutoBot.role}) in your worktree (${nextAutoBot.worktreeBranch}).`;
           }
         }
@@ -3105,6 +3268,8 @@
         document.getElementById("botApiKeyInput").value = bot.apiKey || "";
         document.getElementById("botInstructionsInput").value = bot.instructions || "";
         document.getElementById("botMcpCommandInput").value = bot.mcpCommand || "";
+        document.getElementById("botMcpInstructionsInput").value = bot.mcpCustomInstructions || "";
+        document.getElementById("botMcpDisabledToolsInput").value = (bot.mcpDisabledTools || []).join(", ");
         selectedAvatarStyleInModal = bot.avatarStyle || "vanara-crimson";
         modalPrivateMemories = [...(bot.memories || [])];
         renderBotPrivateMemoryListInModal();
@@ -3121,6 +3286,8 @@
         document.getElementById("botApiKeyInput").value = "";
         document.getElementById("botInstructionsInput").value = "";
         document.getElementById("botMcpCommandInput").value = "";
+        document.getElementById("botMcpInstructionsInput").value = "";
+        document.getElementById("botMcpDisabledToolsInput").value = "";
         selectedAvatarStyleInModal = MONKEY_STYLES[state.bots.length % MONKEY_STYLES.length].id;
         modalPrivateMemories = [];
         renderBotPrivateMemoryListInModal();
@@ -3200,6 +3367,8 @@
       const apiKey = document.getElementById("botApiKeyInput").value.trim();
       const instructions = document.getElementById("botInstructionsInput").value.trim();
       const mcpCommand = document.getElementById("botMcpCommandInput").value.trim();
+      const mcpCustomInstructions = document.getElementById("botMcpInstructionsInput").value.trim();
+      const mcpDisabledTools = document.getElementById("botMcpDisabledToolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
       const selectedTools = Array.from(document.querySelectorAll(".bot-tool-cb:checked")).map(cb => cb.value);
 
       let targetBotRef = null;
@@ -3217,6 +3386,8 @@
           memories: [...modalPrivateMemories],
           tools: selectedTools,
           mcpCommand,
+          mcpCustomInstructions,
+          mcpDisabledTools,
           worktreeBranch: `vanara/${name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`
         });
         targetBotRef = bot;
@@ -3235,6 +3406,8 @@
           memories: [...modalPrivateMemories],
           tools: selectedTools,
           mcpCommand,
+          mcpCustomInstructions,
+          mcpDisabledTools,
           worktreeBranch: `vanara/${name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`
         };
         state.bots.push(targetBotRef);
@@ -3826,11 +3999,21 @@
       }
     }
 
+    function mountVncBrowserUrl() {
+      const urlInput = document.getElementById("vncMountUrlInput");
+      const vncFrame = document.getElementById("deliverableVncFrame");
+      if (!urlInput || !vncFrame) return;
+      const url = urlInput.value.trim() || "http://localhost:3000";
+      vncFrame.src = url;
+      showToast(`Mounted VNC/Web Sandbox: ${url}`);
+    }
+
     function renderDeliverableDrawer() {
       populateWorkspaceAgentSelector();
       const tabs = document.getElementById("deliverableTabs");
       const codeView = document.getElementById("deliverableCodeView");
       const frame = document.getElementById("deliverablePreviewFrame");
+      const vncWrap = document.getElementById("deliverableVncWrap");
 
       tabs.innerHTML = deliverables.map((f, i) => `
         <button onclick="activeDeliverableIdx=${i}; renderDeliverableDrawer();" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px; ${i === activeDeliverableIdx ? 'border-color:#f59e0b; color:#ffffff;' : ''}">
@@ -3841,8 +4024,19 @@
       const active = deliverables[activeDeliverableIdx] || deliverables[0];
       if (!active) return;
 
-      if (drawerMode === "preview") {
+      if (drawerMode === "vnc") {
         codeView.classList.add("hidden");
+        frame.classList.add("hidden");
+        if (vncWrap) {
+          vncWrap.classList.remove("hidden");
+          const vncFrame = document.getElementById("deliverableVncFrame");
+          if (vncFrame && !vncFrame.src) {
+            mountVncBrowserUrl();
+          }
+        }
+      } else if (drawerMode === "preview") {
+        codeView.classList.add("hidden");
+        if (vncWrap) vncWrap.classList.add("hidden");
         frame.classList.remove("hidden");
         const htmlFile = active.name.endsWith(".html") ? active : (deliverables.find(d => d.name.endsWith(".html")) || null);
         frame.srcdoc = htmlFile
@@ -3850,6 +4044,7 @@
           : `<body style="font-family:-apple-system,sans-serif; padding:24px; background:#111; color:#eee;"><pre style="white-space:pre-wrap;">${escapeHtml(active.content)}</pre></body>`;
       } else {
         frame.classList.add("hidden");
+        if (vncWrap) vncWrap.classList.add("hidden");
         codeView.classList.remove("hidden");
         codeView.value = active.content;
       }

@@ -8,9 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-    :root {
-      color-scheme: dark;
-    }
+    :root { color-scheme: dark; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
       background-color: #0d0d0d;
@@ -20,12 +18,8 @@
     code, pre, .font-mono {
       font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     }
-    .app-drag-region {
-      -webkit-app-region: drag;
-    }
-    .no-drag {
-      -webkit-app-region: no-drag;
-    }
+    .app-drag-region { -webkit-app-region: drag; }
+    .no-drag { -webkit-app-region: no-drag; }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #2a2a2c; border-radius: 9999px; }
@@ -35,20 +29,18 @@
 <body class="h-screen w-screen overflow-hidden flex select-none bg-[#0d0d0d] text-[#ececec]">
 
   <!-- ===================================================================== -->
-  <!-- LEFT SIDEBAR: THREADS (1:1 BOTS, GROUP COLLABS, PEOPLE & APPS)        -->
+  <!-- LEFT SIDEBAR: THREADS (1:1 BOTS, GROUP COLLABS, UNREAD BADGES & APPS) -->
   <!-- ===================================================================== -->
-  <aside class="w-[290px] h-full bg-[#0d0d0d] border-r border-[#1f1f22] flex flex-col shrink-0">
+  <aside class="w-[295px] h-full bg-[#0d0d0d] border-r border-[#1f1f22] flex flex-col shrink-0">
 
     <!-- Top macOS Window Bar + Search & Create (+) -->
     <div class="h-14 px-3.5 flex items-center justify-between app-drag-region shrink-0">
-      <!-- Space for native macOS traffic lights (or decorative dots when viewed in browser) -->
       <div id="trafficLightsSpacer" class="flex items-center space-x-2 pl-1">
         <span class="w-3 h-3 rounded-full bg-[#ff5f57] inline-block"></span>
         <span class="w-3 h-3 rounded-full bg-[#febc2e] inline-block"></span>
         <span class="w-3 h-3 rounded-full bg-[#28c840] inline-block"></span>
       </div>
 
-      <!-- Search & New (+) circular buttons -->
       <div class="flex items-center space-x-2 no-drag">
         <button onclick="toggleSearchInput()" title="Filter chats & bots" class="w-8 h-8 rounded-full bg-[#1c1c1f] hover:bg-[#27272b] flex items-center justify-center text-neutral-300 transition">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -57,28 +49,27 @@
           <button onclick="togglePlusMenu(event)" title="New Bot, Group Chat, or Person" class="w-8 h-8 rounded-full bg-[#1c1c1f] hover:bg-[#27272b] flex items-center justify-center text-neutral-200 transition">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
           </button>
-          <!-- Dropdown Menu for (+) -->
-          <div id="plusMenuDropdown" class="hidden absolute right-0 mt-2 w-56 bg-[#1b1b1e] border border-[#2c2c31] rounded-2xl shadow-2xl py-1.5 z-50 text-xs">
+          <div id="plusMenuDropdown" class="hidden absolute right-0 mt-2 w-60 bg-[#1b1b1e] border border-[#2c2c31] rounded-2xl shadow-2xl py-1.5 z-50 text-xs">
             <button onclick="openBotModal(null); hidePlusMenu();" class="w-full px-3.5 py-2 text-left hover:bg-[#27272c] flex items-center gap-2.5 text-neutral-100">
               <span class="text-base">🤖</span>
               <div>
                 <div class="font-semibold">New Custom Bot (1:1)</div>
-                <div class="text-[10px] text-neutral-400">Local URL, OpenRouter, Gemini, Claude...</div>
+                <div class="text-[10px] text-neutral-400">Local URL, OpenRouter, Gemini, Claude, Qwen</div>
               </div>
             </button>
             <button onclick="openGroupModal(null); hidePlusMenu();" class="w-full px-3.5 py-2 text-left hover:bg-[#27272c] flex items-center gap-2.5 text-neutral-100">
               <span class="text-base">👥</span>
               <div>
                 <div class="font-semibold">New Group / Collab Room</div>
-                <div class="text-[10px] text-neutral-400">Combine humans, bots & system agents</div>
+                <div class="text-[10px] text-neutral-400">Combine humans, bots & mounted folder</div>
               </div>
             </button>
             <div class="my-1 border-t border-[#2a2a2f]"></div>
-            <button onclick="openInvitePersonModal(); hidePlusMenu();" class="w-full px-3.5 py-2 text-left hover:bg-[#27272c] flex items-center gap-2.5 text-neutral-100">
-              <span class="text-base">🙋‍♂️</span>
+            <button onclick="openMemoryModal(); hidePlusMenu();" class="w-full px-3.5 py-2 text-left hover:bg-[#27272c] flex items-center gap-2.5 text-neutral-100">
+              <span class="text-base">🧠</span>
               <div>
-                <div class="font-semibold">Add Person / Teammate</div>
-                <div class="text-[10px] text-neutral-400">Invite human peer or LAN teammate</div>
+                <div class="font-semibold">Shared Workspace Memory</div>
+                <div class="text-[10px] text-neutral-400">Facts & decisions shared across all bots</div>
               </div>
             </button>
             <button onclick="openConnectAppsModal(); hidePlusMenu();" class="w-full px-3.5 py-2 text-left hover:bg-[#27272c] flex items-center gap-2.5 text-neutral-100">
@@ -93,7 +84,7 @@
       </div>
     </div>
 
-    <!-- Optional Search Filter Bar -->
+    <!-- Search Input -->
     <div id="searchBarWrap" class="hidden px-3 pb-2">
       <input
         id="threadSearchInput"
@@ -104,7 +95,7 @@
       >
     </div>
 
-    <!-- Thread List (Group Collabs + 1:1 Bots) -->
+    <!-- Thread List -->
     <div id="threadListContainer" class="flex-1 overflow-y-auto px-2 space-y-0.5 py-1"></div>
 
     <!-- Bottom Sidebar Bar: User Profile (VP) + "Connect apps" Pill -->
@@ -115,10 +106,10 @@
       <button onclick="openConnectAppsModal()" class="flex-1 h-9 rounded-full bg-[#17171a] hover:bg-[#222226] border border-[#2c2c30] px-3.5 flex items-center justify-between text-xs font-medium text-neutral-200 transition">
         <span>Connect apps</span>
         <span class="flex items-center -space-x-1">
-          <span class="w-4 h-4 rounded-sm bg-white text-[9px] flex items-center justify-center shadow" title="Notion / Docs">📝</span>
+          <span class="w-4 h-4 rounded-sm bg-white text-[9px] flex items-center justify-center shadow" title="Shared Memory">🧠</span>
           <span class="w-4 h-4 rounded-sm bg-blue-600 text-[9px] flex items-center justify-center shadow" title="REA Binary Scout">🔍</span>
-          <span class="w-4 h-4 rounded-sm bg-emerald-600 text-[9px] flex items-center justify-center shadow" title="Terminal & Code">💻</span>
-          <span class="w-4 h-4 rounded-sm bg-amber-500 text-[9px] flex items-center justify-center shadow" title="Calendar / Triggers">📅</span>
+          <span class="w-4 h-4 rounded-sm bg-emerald-600 text-[9px] flex items-center justify-center shadow" title="Mounted Repo & Terminal">💻</span>
+          <span class="w-4 h-4 rounded-sm bg-amber-500 text-[9px] flex items-center justify-center shadow" title="Campaign Studio">📣</span>
         </span>
       </button>
     </div>
@@ -131,9 +122,25 @@
 
     <!-- Floating Top Header Bar -->
     <header class="h-14 px-5 flex items-center justify-between app-drag-region z-10 shrink-0">
+      <!-- Left: Mounted Folder & Shared Memory Pills -->
       <div class="flex items-center space-x-2 no-drag">
-        <span id="connectionDot" class="w-2 h-2 rounded-full bg-emerald-400" title="Local & Cloud Proxy Ready"></span>
-        <span id="connectionLabel" class="text-[11px] text-neutral-500 font-mono hidden sm:inline">bonsai-27b-mlx</span>
+        <button
+          onclick="openMountModal()"
+          id="mountFolderPill"
+          title="Mount a local directory on your Mac so bots inspect real files and run commands"
+          class="px-2.5 py-1 rounded-full bg-[#1a1a1e] hover:bg-[#25252b] border border-[#2b2b31] text-[11px] text-neutral-300 font-mono flex items-center gap-1.5 transition"
+        >
+          <span>📁</span>
+          <span id="mountFolderLabel" class="max-w-[130px] truncate">vanaras</span>
+        </button>
+        <button
+          onclick="openMemoryModal()"
+          title="Shared Workspace Memory Ledger (Facts automatically shared across all bots)"
+          class="px-2.5 py-1 rounded-full bg-[#1a1a1e] hover:bg-[#25252b] border border-[#2b2b31] text-[11px] text-amber-300/90 font-mono flex items-center gap-1 transition"
+        >
+          <span>🧠</span>
+          <span id="sharedFactsCountPill">3 Facts</span>
+        </button>
       </div>
 
       <!-- Center Floating Identity Pill (Just like [ 🔴 R1 ] in the screenshot!) -->
@@ -144,29 +151,26 @@
         class="no-drag px-3.5 py-1.5 rounded-full bg-[#1c1c1f]/95 hover:bg-[#26262b] border border-[#2c2c30] shadow-lg flex items-center space-x-2 transition"
       ></button>
 
-      <!-- Right Action Pills: Add Member, Autonomous Collab, Deliverables Drawer -->
+      <!-- Right Action Pills -->
       <div class="flex items-center space-x-2 no-drag">
         <button
           onclick="openActiveThreadSettings()"
-          id="headerManageBtn"
           class="px-2.5 py-1 rounded-full bg-[#1c1c1f] hover:bg-[#27272b] border border-[#2c2c30] text-[11px] text-neutral-300 flex items-center gap-1 transition"
           title="Customize Model, URL, Instructions, or Add People/Bots"
         >
           <span>⚙️</span>
-          <span id="headerManageLabel">Brain / Rules</span>
+          <span id="headerManageLabel">Brain</span>
         </button>
         <button
           onclick="triggerGroupCollabRun()"
-          id="headerCollabBtn"
           class="px-3 py-1 rounded-full bg-gradient-to-r from-[#d9383a] to-amber-600 hover:opacity-95 text-[11px] font-semibold text-white shadow flex items-center gap-1.5 transition"
-          title="Have the bots in this thread autonomously discuss, plan & build together"
+          title="Have the bots autonomously debate, plan & generate deliverables"
         >
           <span>⚡</span>
           <span>Collab</span>
         </button>
         <button
           onclick="toggleDeliverableDrawer()"
-          id="headerDrawerBtn"
           class="px-2.5 py-1 rounded-full bg-[#1c1c1f] hover:bg-[#27272b] border border-[#2c2c30] text-[11px] text-neutral-300 flex items-center gap-1 transition"
           title="Open Code & Campaign Deliverables Studio"
         >
@@ -179,19 +183,22 @@
     <!-- Messages Scroll Container -->
     <div id="messagesContainer" class="flex-1 overflow-y-auto px-6 py-4 space-y-4 max-w-4xl w-full mx-auto select-text"></div>
 
-    <!-- Bottom Pill Composer (Exact match to screenshot) -->
-    <div class="px-6 pb-5 pt-2 max-w-4xl w-full mx-auto shrink-0">
+    <!-- Bottom Pill Composer with @Mention Auto-Complete Popover -->
+    <div class="px-6 pb-5 pt-2 max-w-4xl w-full mx-auto shrink-0 relative">
+
+      <!-- @Mention Auto-Complete Floating Menu -->
+      <div id="mentionAutocompletePopup" class="hidden absolute bottom-16 left-14 w-72 bg-[#1b1b1f] border border-[#2f2f36] rounded-2xl shadow-2xl py-1.5 z-50 text-xs max-h-56 overflow-y-auto"></div>
+
       <div class="relative flex items-center bg-[#1a1a1d] border border-[#2b2b30] focus-within:border-[#3f3f46] rounded-full px-2.5 py-1.5 shadow-xl">
         <!-- Left (+) Button with Active Bot Badge underneath -->
         <div class="relative mr-2">
           <button
             onclick="toggleComposerMenu(event)"
             class="w-8 h-8 rounded-full bg-[#26262b] hover:bg-[#323238] flex items-center justify-center text-neutral-300 transition"
-            title="Actions: Autonomous Collab, Add Bot/Person, or Switch Domain"
+            title="Actions: Run Terminal Command, Autonomous Collab, Add Bot/Person"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
           </button>
-          <!-- Little blue bot indicator badge below (+) as seen in screenshot -->
           <div id="composerBotBadge" onclick="openActiveThreadSettings()" class="cursor-pointer absolute -bottom-2.5 left-1 px-1.5 py-0.5 rounded-full bg-[#0066ff] text-white text-[9px] font-bold flex items-center justify-center shadow">
             🤖
           </div>
@@ -205,18 +212,18 @@
                 <div class="text-[10px] text-neutral-400">Bots debate, plan & generate deliverables</div>
               </div>
             </button>
+            <button onclick="promptBackgroundCommand(); hideComposerMenu();" class="w-full px-3.5 py-2 text-left hover:bg-[#27272c] flex items-center gap-2.5 text-neutral-100">
+              <span>💻</span>
+              <div>
+                <div class="font-semibold text-emerald-400">Run Background Command</div>
+                <div class="text-[10px] text-neutral-400">Execute tool/script in mounted folder</div>
+              </div>
+            </button>
             <button onclick="openActiveThreadSettings(); hideComposerMenu();" class="w-full px-3.5 py-2 text-left hover:bg-[#27272c] flex items-center gap-2.5 text-neutral-100">
               <span>👥</span>
               <div>
-                <div class="font-semibold">Add Bots / People to this Chat</div>
-                <div class="text-[10px] text-neutral-400">Turn into a multi-bot group or add peers</div>
-              </div>
-            </button>
-            <button onclick="toggleDeliverableDrawer(); hideComposerMenu();" class="w-full px-3.5 py-2 text-left hover:bg-[#27272c] flex items-center gap-2.5 text-neutral-100">
-              <span>📐</span>
-              <div>
-                <div class="font-semibold">Open Deliverable Studio</div>
-                <div class="text-[10px] text-neutral-400">View generated code, docs & live HTML</div>
+                <div class="font-semibold">Manage Bots & People</div>
+                <div class="text-[10px] text-neutral-400">Configure brain or add members</div>
               </div>
             </button>
           </div>
@@ -226,11 +233,12 @@
         <input
           id="chatComposerInput"
           type="text"
-          placeholder="Message R1"
+          oninput="onComposerInput(this.value)"
+          placeholder="Message R1 (Type @ to summon any bot or /run to execute command)"
           class="flex-1 bg-transparent text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none px-1"
         >
 
-        <!-- Right Mic & Red Waveform / Send Buttons -->
+        <!-- Right Collab & Send Buttons -->
         <div class="flex items-center space-x-1.5 ml-2">
           <button
             onclick="triggerGroupCollabRun()"
@@ -244,7 +252,6 @@
             title="Send message (Enter)"
             class="w-8 h-8 rounded-full bg-[#d9383a] hover:bg-[#e0484a] flex items-center justify-center text-white transition shadow"
           >
-            <!-- Waveform / Send icon matching screenshot -->
             <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
               <rect x="4" y="9" width="2" height="6" rx="1"/>
               <rect x="8" y="5" width="2" height="14" rx="1"/>
@@ -265,20 +272,15 @@
         <div class="flex items-center space-x-2">
           <span class="text-sm">📐</span>
           <span class="font-bold text-xs text-white">Swarm Deliverable Studio</span>
-          <span id="drawerProjectSlug" class="text-[10px] font-mono bg-[#222227] px-2 py-0.5 rounded text-amber-400">project-output</span>
         </div>
         <div class="flex items-center space-x-1.5">
           <button onclick="setDrawerMode('source')" id="drawerBtnSource" class="px-2.5 py-1 rounded bg-[#26262c] text-amber-300 text-[11px] font-mono">Source</button>
           <button onclick="setDrawerMode('preview')" id="drawerBtnPreview" class="px-2.5 py-1 rounded text-neutral-400 hover:text-white text-[11px] font-mono">Live Preview</button>
           <button onclick="saveDeliverablesToDisk()" class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold">💾 Save to Disk</button>
-          <button onclick="toggleDeliverableDrawer()" class="text-neutral-400 hover:text-white px-2 text-sm">✕</button>
+          <button onclick="toggleDeliverableDrawer(false)" class="text-neutral-400 hover:text-white px-2 text-sm">✕</button>
         </div>
       </div>
-
-      <!-- File Tabs -->
       <div id="drawerFileTabs" class="px-3 py-1.5 border-b border-[#222226] flex items-center space-x-1 overflow-x-auto bg-[#101012]"></div>
-
-      <!-- Editor / Live Preview -->
       <textarea
         id="drawerCodeEditor"
         spellcheck="false"
@@ -286,9 +288,8 @@
         class="flex-1 w-full p-4 bg-[#0c0c0e] text-emerald-300 font-mono text-xs leading-relaxed focus:outline-none resize-none select-text"
       ></textarea>
       <iframe id="drawerPreviewFrame" class="hidden flex-1 w-full bg-white border-0" sandbox="allow-scripts allow-same-origin"></iframe>
-
-      <div id="drawerStatusFooter" class="h-8 px-4 border-t border-[#222226] bg-[#101012] flex items-center justify-between text-[11px] text-neutral-400 font-mono">
-        <span>Collaboratively generated by your Swarm</span>
+      <div class="h-8 px-4 border-t border-[#222226] bg-[#101012] flex items-center justify-between text-[11px] text-neutral-400 font-mono">
+        <span id="drawerTargetInfo">Saves to mounted workspace or projects/</span>
         <button onclick="downloadActiveDeliverable()" class="text-amber-400 hover:underline">⬇️ Download File</button>
       </div>
     </div>
@@ -335,7 +336,6 @@
         </div>
       </div>
 
-      <!-- Provider & Model Section -->
       <div class="p-3.5 rounded-2xl bg-[#111114] border border-[#26262b] space-y-3">
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -423,13 +423,11 @@
         </div>
       </div>
 
-      <!-- Select Bots & System Agents in this Group -->
       <div>
-        <label class="block text-[11px] font-semibold text-neutral-300 mb-1.5">AI Bots & System Agents in Room (Check to include)</label>
+        <label class="block text-[11px] font-semibold text-neutral-300 mb-1.5">AI Bots & System Agents in Room</label>
         <div id="groupModalBotsList" class="space-y-1.5 max-h-48 overflow-y-auto p-2 rounded-xl bg-[#111114] border border-[#25252a]"></div>
       </div>
 
-      <!-- Select Human Teammates in this Group -->
       <div>
         <div class="flex justify-between items-center mb-1.5">
           <label class="text-[11px] font-semibold text-neutral-300">People / Human Teammates in Room</label>
@@ -449,7 +447,69 @@
   </div>
 
   <!-- ===================================================================== -->
-  <!-- MODAL 3: CONNECT APPS & SYSTEM AGENTS                                 -->
+  <!-- MODAL 3: SHARED WORKSPACE MEMORY LEDGER (CROSS-THREAD FACTS)          -->
+  <!-- ===================================================================== -->
+  <div id="memoryModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#18181b] border border-[#2c2c32] rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4 text-xs">
+      <div class="flex justify-between items-center border-b border-[#27272c] pb-3">
+        <div>
+          <h2 class="font-bold text-sm text-white">🧠 Shared Workspace Memory Ledger</h2>
+          <p class="text-[11px] text-neutral-400">Every fact here is automatically known by all bots across 1:1 and Group chats</p>
+        </div>
+        <button onclick="closeMemoryModal()" class="text-neutral-400 hover:text-white text-base px-2">✕</button>
+      </div>
+
+      <div id="sharedFactsList" class="space-y-2 max-h-60 overflow-y-auto"></div>
+
+      <div class="flex gap-2">
+        <input id="newSharedFactInput" type="text" placeholder="Add a project decision or fact (e.g. 'Use Q3_K_M quantization for v3')..." class="flex-1 bg-[#101013] border border-[#2c2c32] rounded-xl px-3 py-2 text-xs text-white focus:outline-none">
+        <button onclick="addSharedFactFromInput()" class="px-3.5 py-2 rounded-xl bg-[#d9383a] text-white font-semibold">+ Add Fact</button>
+      </div>
+
+      <div class="flex justify-end pt-2 border-t border-[#27272c]">
+        <button onclick="closeMemoryModal()" class="px-4 py-1.5 rounded-xl bg-[#26262c] text-white font-semibold">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 4: MOUNT LOCAL FOLDER & INSPECT GROUNDED CONTEXT                -->
+  <!-- ===================================================================== -->
+  <div id="mountModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#18181b] border border-[#2c2c32] rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4 text-xs">
+      <div class="flex justify-between items-center border-b border-[#27272c] pb-3">
+        <div>
+          <h2 class="font-bold text-sm text-white">📁 Mounted Local Folder & Grounded Context</h2>
+          <p class="text-[11px] text-neutral-400">Bots in this thread inspect real files and execute commands in this folder</p>
+        </div>
+        <button onclick="closeMountModal()" class="text-neutral-400 hover:text-white text-base px-2">✕</button>
+      </div>
+
+      <div class="space-y-2">
+        <label class="block text-[11px] font-semibold text-neutral-300">Local Directory Path on Mac</label>
+        <div class="flex gap-2">
+          <input id="mountPathInput" type="text" placeholder="/Users/lakshmipriyasridharan/AI/REA/vanaras" class="flex-1 bg-[#101013] border border-[#2c2c32] rounded-xl px-3 py-2 text-xs text-emerald-400 font-mono focus:outline-none">
+          <button onclick="saveAndInspectMountPath()" class="px-3.5 py-2 rounded-xl bg-[#d9383a] text-white font-semibold">Mount & Scan</button>
+        </div>
+        <div class="flex gap-1.5 pt-1">
+          <button onclick="setQuickMount('/Users/lakshmipriyasridharan/AI/REA/vanaras')" class="text-[10px] font-mono bg-[#222227] px-2 py-0.5 rounded text-neutral-300 hover:text-white">vanaras/</button>
+          <button onclick="setQuickMount('/Users/lakshmipriyasridharan/AI/REA')" class="text-[10px] font-mono bg-[#222227] px-2 py-0.5 rounded text-neutral-300 hover:text-white">REA/</button>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-[11px] font-semibold text-neutral-300 mb-1">Live Folder Snapshot (Injected into Bot Context)</label>
+        <pre id="mountSnapshotPreview" class="bg-[#0e0e11] border border-[#25252b] rounded-xl p-3 text-[11px] font-mono text-neutral-300 max-h-48 overflow-auto whitespace-pre-wrap">Scanning...</pre>
+      </div>
+
+      <div class="flex justify-end pt-2 border-t border-[#27272c]">
+        <button onclick="closeMountModal()" class="px-4 py-1.5 rounded-xl bg-[#26262c] text-white font-semibold">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 5: CONNECT APPS & SYSTEM AGENTS                                 -->
   <!-- ===================================================================== -->
   <div id="connectAppsModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="bg-[#18181b] border border-[#2c2c32] rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4 text-xs">
@@ -466,7 +526,7 @@
       <div class="p-3 rounded-xl bg-[#111114] border border-[#26262b] space-y-1.5">
         <div class="font-semibold text-amber-400">🌐 Multiplayer LAN & External Agent Webhook</div>
         <p class="text-[11px] text-neutral-400 leading-relaxed">
-          Other people on your Wi-Fi or external CLI agents (like Claude Code / Codex) can post live into any room via:
+          Other people on your Wi-Fi or external CLI agents can post live into any room via:
         </p>
         <code class="block bg-[#0b0b0d] p-2 rounded text-[10px] text-emerald-300 font-mono select-all">POST http://localhost:3000/api/room/post {"threadId":"g_maaya","sender":"Vijay Pathy","text":"Hey team!"}</code>
       </div>
@@ -485,7 +545,7 @@
 
   <script>
     // =========================================================================
-    // 1. GEOMETRIC BOT AVATAR RENDERER (MATCHING UPLOADED SCREENSHOT!)
+    // 1. GEOMETRIC BOT AVATAR RENDERER
     // =========================================================================
     function renderBotAvatarSvg(style, sizeClass = "w-9 h-9") {
       const shapes = {
@@ -509,7 +569,7 @@
     }
 
     // =========================================================================
-    // 2. INITIAL BOTS, HUMANS & THREADS (MATCHING SCREENSHOT + 2026 PROVIDERS)
+    // 2. INITIAL STATE (WITH SHARED MEMORY LEDGER & MOUNTED FOLDERS)
     // =========================================================================
     const PROVIDER_PRESETS = {
       local: { baseUrl: "http://192.168.68.102:1234/v1", model: "bonsai-27b-mlx", chips: ["bonsai-27b-mlx", "google/gemma-4-12b", "qwen3-32b-mlx"] },
@@ -524,6 +584,12 @@
 
     const DEFAULT_STATE = {
       currentUser: { id: "u_vp", name: "Vijay Pathy", initials: "VP" },
+      defaultMountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
+      sharedFacts: [
+        "Gemma 4 E2B GGUF is 2.7 GB total; 4-bit per-layer embedding tables saved 680 MB.",
+        "Target on-device RAM budget is 2.0 GB using LiteRT-LM / llama.cpp mmap or Q3_K_M / IQ3_M.",
+        "Brand & product name is standardized as Vanaras across all desktop and mobile builds."
+      ],
       humans: [
         { id: "u_vp", name: "Vijay Pathy", initials: "VP", role: "Founder / Lead" },
         { id: "u_alex", name: "Alex Chen", initials: "AC", role: "Product Designer" }
@@ -538,7 +604,7 @@
           baseUrl: "http://192.168.68.102:1234/v1",
           model: "bonsai-27b-mlx",
           apiKey: "",
-          instructions: "You are R1, a sharp systems & on-device ML architect in Vanaras. You speak naturally, directly, and concisely like a senior co-founder. Avoid fluff; use concrete numbers, file names, and practical trade-offs."
+          instructions: "You are R1, a sharp systems & on-device ML architect in Vanaras. You speak naturally, directly, and concisely like a senior co-founder. Reference concrete files, numbers, and teammate bots (like @R2, @R4, @New Bot) when helpful."
         },
         {
           id: "b_r4",
@@ -549,7 +615,7 @@
           baseUrl: "http://192.168.68.102:1234/v1",
           model: "bonsai-27b-mlx",
           apiKey: "",
-          instructions: "You are R4, responsible for phone tool-layers, runtime bindings, and cross-agent coordination with R1 and R2. Be crisp and collaborative."
+          instructions: "You are R4, responsible for phone tool-layers, runtime bindings, and cross-agent coordination with @R1 and @R2. Be crisp and collaborative."
         },
         {
           id: "b_r2",
@@ -602,23 +668,25 @@
           type: "group",
           name: "Project Maaya",
           domain: "coding",
+          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
           botIds: ["b_r1", "b_r2", "b_r3", "b_r4"],
           humanIds: ["u_vp"],
           messages: [
-            { senderType: "bot", botId: "b_r4", text: "Yes, from the phone side too. I synced the tool-layer bindings with R1 and R2 so we can test on-device lookup tables." }
+            { senderType: "bot", botId: "b_r4", text: "Yes, from the phone side too. I synced the tool-layer bindings with @R1 and @R2 so we can test on-device lookup tables." }
           ]
         },
         {
           id: "dm_b_r1",
           type: "dm",
           botId: "b_r1",
+          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
           messages: [
             { senderType: "bot", botId: "b_r1", text: "Also, was your \"yes\" a go for the English-only v3 test agreement? I'll keep v3 on hold until you confirm." },
             { senderType: "user", senderName: "Vijay Pathy", text: "Current gemma is multi model??" },
             {
               senderType: "bot",
               botId: "b_r1",
-              text: "Gemma 4 E2B as Google ships it is multimodal: it takes text, images and audio. Hanu's GGUF file is very likely text-only already, though, so cutting out vision and audio probably won't shrink it.\n\nThat's because llama.cpp's converter normally writes only the text part into the main GGUF and puts vision and audio in a separate projector file. We never created that file. I haven't checked the file itself; running `gguf_dump.py` on it to list what's inside would confirm it in a minute.\n\nMost of the 2.7 GB comes from how E2B is built. It runs like a 2B model but stores about 5B parameters, many of them in large per-layer embedding tables. We already cut those to 4-bit, which saved about 680 MB.\n\nSo shrinking it further really comes down to two options:\n\n• **Lower-bit versions:** test Q3_K_M (about 3.5 bits) and IQ3_M (about 3 bits), each made with a calibration file, against the hard tests.\n• **Keeping the embedding tables out of RAM:** they can be read from storage as needed instead of loaded into memory. LiteRT-LM and llama.cpp's file mapping work this way, so the memory the phone actually uses may be much less than 2.7 GB. We should measure that on the phone before shrinking anything."
+              text: "Gemma 4 E2B as Google ships it is multimodal: it takes text, images and audio. Hanu's GGUF file is very likely text-only already, though, so cutting out vision and audio probably won't shrink it.\n\nThat's because llama.cpp's converter normally writes only the text part into the main GGUF and puts vision and audio in a separate projector file. We never created that file. I haven't checked the file itself; running `cargo test --offline` or `gguf_dump.py` on it to list what's inside would confirm it in a minute.\n\nMost of the 2.7 GB comes from how E2B is built. It runs like a 2B model but stores about 5B parameters, many of them in large per-layer embedding tables. We already cut those to 4-bit, which saved about 680 MB.\n\nSo shrinking it further really comes down to two options:\n\n• **Lower-bit versions:** test Q3_K_M (about 3.5 bits) and IQ3_M (about 3 bits), each made with a calibration file, against the hard tests.\n• **Keeping the embedding tables out of RAM:** they can be read from storage as needed instead of loaded into memory. LiteRT-LM and llama.cpp's file mapping work this way, so the memory the phone actually uses may be much less than 2.7 GB. We should measure that on the phone with @R2 and @New Bot before shrinking anything."
             },
             { senderType: "user", senderName: "Vijay Pathy", text: "Ok", reaction: "👍" }
           ]
@@ -627,14 +695,16 @@
           id: "dm_b_r4",
           type: "dm",
           botId: "b_r4",
+          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
           messages: [
-            { senderType: "bot", botId: "b_r4", text: "I've sent R1 the phone tool-layer interface. Want me to pull R1 and R2 into a quick collab run?" }
+            { senderType: "bot", botId: "b_r4", text: "I've sent @R1 the phone tool-layer interface. Want me to pull @R1 and @R2 into a quick collab run?" }
           ]
         },
         {
           id: "dm_b_r2",
           type: "dm",
           botId: "b_r2",
+          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
           messages: [
             { senderType: "bot", botId: "b_r2", text: "Should I sketch out the lookup table implementation in Rust or C++?" }
           ]
@@ -643,6 +713,7 @@
           id: "dm_b_r3",
           type: "dm",
           botId: "b_r3",
+          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
           messages: [
             { senderType: "bot", botId: "b_r3", text: "What would you like me to help plan today?" }
           ]
@@ -651,6 +722,7 @@
           id: "dm_b_waffle",
           type: "dm",
           botId: "b_waffle",
+          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
           messages: [
             { senderType: "bot", botId: "b_waffle", text: "Yes, just Vanaras from now on. Ready to craft our launch campaign whenever you say go." }
           ]
@@ -660,18 +732,20 @@
           type: "group",
           name: "Vijay Pathy, New Bot, Waffle",
           domain: "marketing",
+          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
           botIds: ["b_newbot", "b_waffle", "b_r3"],
           humanIds: ["u_vp"],
           messages: [
-            { senderType: "bot", botId: "b_newbot", text: "Two other limits matter too. A 2 GB footprint is our sweet spot for marketing the zero-cloud local pitch." }
+            { senderType: "bot", botId: "b_newbot", text: "Two other limits matter too. A 2 GB footprint is our sweet spot for @Waffle marketing the zero-cloud local pitch." }
           ]
         },
         {
           id: "dm_b_newbot",
           type: "dm",
           botId: "b_newbot",
+          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
           messages: [
-            { senderType: "bot", botId: "b_newbot", text: "A 2 GB budget is tight but possible if we mmap the embedding tables." }
+            { senderType: "bot", botId: "b_newbot", text: "A 2 GB budget is tight but possible if we mmap the embedding tables with @R1." }
           ]
         }
       ]
@@ -683,17 +757,49 @@
       { id: "sys_growth", name: "Viral Campaign Bot", role: "Growth & Ad Funnel Strategist", avatarStyle: "purple-star", instructions: "You are Viral Campaign Bot. Design high-converting landing pages, viral hooks, and multi-channel launch campaigns." }
     ];
 
-    let state = JSON.parse(localStorage.getItem("vanaras_desktop_v3") || "null") || JSON.parse(JSON.stringify(DEFAULT_STATE));
+    let state = JSON.parse(localStorage.getItem("vanaras_desktop_v4") || "null") || JSON.parse(JSON.stringify(DEFAULT_STATE));
+    if (!Array.isArray(state.sharedFacts)) state.sharedFacts = [...DEFAULT_STATE.sharedFacts];
+
     let activeThreadId = state.threads[1]?.id || state.threads[0]?.id;
     let detectedLocalModel = "bonsai-27b-mlx";
+    let unreadCounts = {};
+    let activeWorkingThreads = {}; // threadId -> status string
+    let cachedFolderSnapshots = {}; // mountPath -> summary string
+
     let deliverables = [
       { name: "README.md", content: "# Vanaras Deliverable Studio\n\nWhen bots collaborate (`⚡ Collab`), their generated source code, marketing campaigns, or interactive HTML prototypes appear here." }
     ];
     let activeDeliverableIdx = 0;
     let drawerMode = "source";
 
+    // Sync state to both localStorage AND disk (/api/workspace)
     function saveState() {
-      localStorage.setItem("vanaras_desktop_v3", JSON.stringify(state));
+      localStorage.setItem("vanaras_desktop_v4", JSON.stringify(state));
+      fetch("/api/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state })
+      }).catch(() => {});
+      updateHeaderPills();
+    }
+
+    async function loadDiskWorkspaceOnBoot() {
+      try {
+        const res = await fetch("/api/workspace");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.state && Array.isArray(data.state.threads) && data.state.threads.length > 0) {
+            state = data.state;
+            if (!Array.isArray(state.sharedFacts)) state.sharedFacts = [...DEFAULT_STATE.sharedFacts];
+            localStorage.setItem("vanaras_desktop_v4", JSON.stringify(state));
+            renderThreadList();
+            renderActiveThread();
+          } else {
+            // Seed disk with initial state
+            saveState();
+          }
+        }
+      } catch {}
     }
 
     function getBot(botId) {
@@ -704,8 +810,23 @@
       return state.threads.find(t => t.id === activeThreadId) || state.threads[0];
     }
 
+    function getThreadMountPath(thread) {
+      return thread?.mountPath || state.defaultMountPath || "/Users/lakshmipriyasridharan/AI/REA/vanaras";
+    }
+
+    function updateHeaderPills() {
+      const thread = getActiveThread();
+      const mPath = getThreadMountPath(thread);
+      const shortFolder = mPath.split("/").filter(Boolean).pop() || "workspace";
+      const mountLabel = document.getElementById("mountFolderLabel");
+      if (mountLabel) mountLabel.innerText = shortFolder;
+
+      const factsPill = document.getElementById("sharedFactsCountPill");
+      if (factsPill) factsPill.innerText = `${(state.sharedFacts || []).length} Facts`;
+    }
+
     // =========================================================================
-    // 3. RENDER SIDEBAR THREADS (EXACT SCREENSHOT MATCH)
+    // 3. RENDER SIDEBAR THREADS (WITH UNREAD BADGES & BACKGROUND SPINNERS)
     // =========================================================================
     function renderGroupStackedAvatar(thread) {
       const b1 = getBot(thread.botIds?.[0]);
@@ -738,30 +859,41 @@
         }
 
         const lastMsg = thread.messages[thread.messages.length - 1];
-        const preview = lastMsg ? lastMsg.text.replace(/\n+/g, " ") : "No messages yet";
+        const workingStatus = activeWorkingThreads[thread.id];
+        const preview = workingStatus
+          ? `⚙️ ${workingStatus}`
+          : (lastMsg ? lastMsg.text.replace(/\n+/g, " ") : "No messages yet");
 
         if (query && !title.toLowerCase().includes(query) && !preview.toLowerCase().includes(query)) {
           return;
         }
 
         const isSelected = thread.id === activeThreadId;
+        const unread = unreadCounts[thread.id] || 0;
+
         const row = document.createElement("div");
         row.className = `px-3 py-2.5 rounded-2xl flex items-center space-x-3 cursor-pointer transition ${
           isSelected ? "bg-[#242428]" : "hover:bg-[#18181b]"
         }`;
         row.onclick = () => {
           activeThreadId = thread.id;
+          unreadCounts[thread.id] = 0;
           renderThreadList();
           renderActiveThread();
         };
 
+        const badgeHtml = unread > 0
+          ? `<span class="px-1.5 py-0.5 rounded-full bg-[#d9383a] text-white text-[10px] font-bold leading-none shrink-0">${unread}</span>`
+          : (workingStatus ? `<span class="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0"></span>` : "");
+
         row.innerHTML = `
           ${avatarHtml}
           <div class="flex-1 min-w-0">
-            <div class="flex items-center justify-between">
-              <span class="font-semibold text-[13px] text-neutral-100 truncate">${escapeHtml(title)}</span>
+            <div class="flex items-center justify-between gap-1">
+              <span class="font-semibold text-[13px] ${unread > 0 ? 'text-white' : 'text-neutral-100'} truncate">${escapeHtml(title)}</span>
+              ${badgeHtml}
             </div>
-            <p class="text-[12px] text-neutral-400 truncate mt-0.5">${escapeHtml(preview)}</p>
+            <p class="text-[12px] ${workingStatus ? 'text-amber-400 font-mono' : (unread > 0 ? 'text-neutral-200 font-medium' : 'text-neutral-400')} truncate mt-0.5">${escapeHtml(preview)}</p>
           </div>
         `;
         container.appendChild(row);
@@ -769,11 +901,37 @@
     }
 
     // =========================================================================
-    // 4. RENDER ACTIVE CONVERSATION VIEW
+    // 4. RENDER ACTIVE CONVERSATION VIEW (WITH HAND-OFF PILLS & RUN COMMANDS)
     // =========================================================================
+    function findMentionedBotsInText(text, excludeBotId) {
+      if (!text) return [];
+      return state.bots.filter(b => {
+        if (b.id === excludeBotId) return false;
+        const escaped = b.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const rx = new RegExp(`(?:^|\\s|@)${escaped}\\b`, "i");
+        return rx.test(text);
+      });
+    }
+
+    function extractExecutableCommands(text) {
+      if (!text) return [];
+      const cmds = [];
+      const rx = /`((?:cargo|git|python3?|node|npm|ls|cat|sh|./)[^`\n]{2,80})`/g;
+      let m;
+      while ((m = rx.exec(text)) !== null) {
+        cmds.push(m[1].trim());
+      }
+      if (text.includes("gguf_dump.py") && !cmds.some(c => c.includes("gguf_dump"))) {
+        cmds.push("python3 --version && ls -lh");
+      }
+      return cmds.slice(0, 2);
+    }
+
     function renderActiveThread() {
       const thread = getActiveThread();
       if (!thread) return;
+      unreadCounts[thread.id] = 0;
+      updateHeaderPills();
 
       const pill = document.getElementById("activeThreadPill");
       const manageLabel = document.getElementById("headerManageLabel");
@@ -787,7 +945,7 @@
           <span class="text-[10px] text-neutral-400 font-mono">${escapeHtml(bot.provider)}/${escapeHtml(bot.model)}</span>
         `;
         manageLabel.innerText = "Customize Bot";
-        input.placeholder = `Message ${bot.name}`;
+        input.placeholder = `Message ${bot.name} (Type @ to summon any bot into this chat)`;
       } else {
         const memberCount = (thread.botIds?.length || 0) + (thread.humanIds?.length || 0);
         pill.innerHTML = `
@@ -804,12 +962,26 @@
       thread.messages.forEach((m, idx) => {
         if (m.senderType === "user") {
           const wrap = document.createElement("div");
-          wrap.className = "flex flex-col items-end";
+          wrap.className = "flex flex-col items-end group";
           wrap.innerHTML = `
-            <div class="relative max-w-md bg-[#d9383a] text-white px-4 py-2 rounded-3xl text-[13.5px] leading-snug shadow">
-              ${ m.reaction ? `<span class="absolute -top-3 -left-2 bg-[#252529] border border-[#3a3a40] rounded-full px-1.5 py-0.5 text-xs shadow">${escapeHtml(m.reaction)}</span>` : "" }
-              ${escapeHtml(m.text)}
+            <div class="flex items-center space-x-1.5">
+              <button onclick="pinMessageAsSharedFact(${idx})" title="Pin this decision to Shared Workspace Memory" class="opacity-0 group-hover:opacity-100 text-[11px] text-neutral-500 hover:text-amber-400 px-1 transition">📌</button>
+              <div class="relative max-w-md bg-[#d9383a] text-white px-4 py-2 rounded-3xl text-[13.5px] leading-snug shadow">
+                ${m.reaction ? `<span class="absolute -top-3 -left-2 bg-[#252529] border border-[#3a3a40] rounded-full px-1.5 py-0.5 text-xs shadow">${escapeHtml(m.reaction)}</span>` : ""}
+                ${escapeHtml(m.text)}
+              </div>
             </div>
+          `;
+          msgBox.appendChild(wrap);
+        } else if (m.senderType === "terminal") {
+          const wrap = document.createElement("div");
+          wrap.className = "max-w-[540px] bg-[#131619] border border-emerald-500/30 rounded-2xl px-4 py-2.5 text-xs font-mono text-emerald-300 shadow";
+          wrap.innerHTML = `
+            <div class="flex items-center justify-between text-[10px] text-neutral-400 mb-1">
+              <span>💻 Background Job (${escapeHtml(m.command || "shell")})</span>
+              <span class="${m.exitCode === 0 ? 'text-emerald-400' : 'text-amber-400'}">exit ${m.exitCode ?? 0}</span>
+            </div>
+            <pre class="whitespace-pre-wrap overflow-x-auto text-[11px] text-neutral-200 max-h-40">${escapeHtml(m.text)}</pre>
           `;
           msgBox.appendChild(wrap);
         } else {
@@ -817,7 +989,7 @@
           const wrap = document.createElement("div");
           wrap.className = "flex items-start space-x-2.5 group";
 
-          const showHeader = thread.type === "group" || m.collabRound;
+          const showHeader = thread.type === "group" || m.collabRound || (thread.type === "dm" && m.botId !== thread.botId);
           const headerHtml = showHeader
             ? `<div class="flex items-center space-x-2 mb-1.5">
                  ${renderBotAvatarSvg(bot?.avatarStyle || "red-circle", "w-4 h-4")}
@@ -833,27 +1005,51 @@
                </details>`
             : "";
 
-          const deliverableBtnHtml = m.hasDeliverables
-            ? `<div class="mt-3 pt-2.5 border-t border-[#2c2c32] flex items-center justify-between">
-                 <span class="text-xs text-amber-400 font-medium">📐 Generated Deliverable Studio Files</span>
-                 <button onclick="toggleDeliverableDrawer(true)" class="px-3 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition">
-                   Open in Studio ➔
-                 </button>
-               </div>`
-            : "";
+          // Detect mentioned teammate bots for 1-click Hand-Off Pills (Upgrade 3)
+          const mentionedBots = findMentionedBotsInText(m.text, m.botId);
+          const runnableCmds = extractExecutableCommands(m.text);
+
+          let actionPillsHtml = "";
+          if (mentionedBots.length > 0 || runnableCmds.length > 0 || m.hasDeliverables) {
+            actionPillsHtml = `<div class="mt-3 pt-2.5 border-t border-[#28282d] flex flex-wrap items-center gap-1.5">`;
+            mentionedBots.forEach(mb => {
+              actionPillsHtml += `
+                <button onclick="handOffToBot('${mb.id}', ${idx})" class="px-2.5 py-1 rounded-full bg-[#25252c] hover:bg-[#32323c] border border-[#383842] text-[11px] text-amber-300 font-medium flex items-center gap-1.5 transition">
+                  <span>💬</span>
+                  <span>Let ${escapeHtml(mb.name)} reply</span>
+                </button>
+              `;
+            });
+            runnableCmds.forEach(cmd => {
+              const safeCmdAttr = escapeHtml(cmd).replace(/'/g, "\\'");
+              actionPillsHtml += `
+                <button onclick="executeBackgroundCommand('${safeCmdAttr}')" class="px-2.5 py-1 rounded-full bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-500/30 text-[11px] text-emerald-300 font-mono flex items-center gap-1 transition">
+                  <span>▶️</span>
+                  <span>Run \`${escapeHtml(cmd.slice(0, 28))}\`</span>
+                </button>
+              `;
+            });
+            if (m.hasDeliverables) {
+              actionPillsHtml += `
+                <button onclick="toggleDeliverableDrawer(true)" class="px-3 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-semibold transition">
+                  📐 Open Deliverables ➔
+                </button>
+              `;
+            }
+            actionPillsHtml += `</div>`;
+          }
 
           wrap.innerHTML = `
-            <div class="max-w-[540px] bg-[#1c1c1e] border border-[#26262a] rounded-2xl px-4 py-3 text-[13.5px] leading-relaxed text-[#e5e5ea] shadow">
+            <div class="max-w-[550px] bg-[#1c1c1e] border border-[#26262a] rounded-2xl px-4 py-3 text-[13.5px] leading-relaxed text-[#e5e5ea] shadow">
               ${headerHtml}
               ${thoughtHtml}
               <div class="space-y-2">${formatRichMessage(m.text)}</div>
-              ${deliverableBtnHtml}
+              ${actionPillsHtml}
             </div>
-            <!-- Hover reaction icons matching screenshot -->
             <div class="opacity-0 group-hover:opacity-100 transition flex items-center space-x-1 self-center text-neutral-500 text-xs pt-1">
-              <button onclick="reactToMessage(${idx}, '👍')" class="hover:text-neutral-300 px-1">☺</button>
-              <button onclick="quoteReply(${idx})" class="hover:text-neutral-300 px-1">↩</button>
-              <button class="hover:text-neutral-300 px-1">⋯</button>
+              <button onclick="reactToMessage(${idx}, '👍')" title="React 👍" class="hover:text-neutral-300 px-1">☺</button>
+              <button onclick="quoteReply(${idx})" title="Reply" class="hover:text-neutral-300 px-1">↩</button>
+              <button onclick="pinMessageAsSharedFact(${idx})" title="Pin to Shared Workspace Memory" class="hover:text-amber-400 px-1">📌</button>
             </div>
           `;
           msgBox.appendChild(wrap);
@@ -863,25 +1059,105 @@
       msgBox.scrollTop = msgBox.scrollHeight;
     }
 
-    function reactToMessage(idx, emoji) {
-      const thread = getActiveThread();
-      if (!thread || !thread.messages[idx]) return;
-      thread.messages[idx].reaction = emoji;
-      saveState();
-      renderActiveThread();
-    }
-
-    function quoteReply(idx) {
+    function pinMessageAsSharedFact(idx) {
       const thread = getActiveThread();
       const msg = thread?.messages[idx];
       if (!msg) return;
+      const snippet = msg.text.replace(/\n+/g, " ").slice(0, 160);
+      if (!state.sharedFacts.includes(snippet)) {
+        state.sharedFacts.unshift(snippet);
+        saveState();
+        showToast("📌 Pinned to Shared Workspace Memory! All bots now know this fact.");
+      }
+    }
+
+    // 1-Click Bot Hand-Off (Upgrade 3)
+    async function handOffToBot(targetBotId, sourceMsgIdx) {
+      const thread = getActiveThread();
+      const sourceMsg = thread?.messages[sourceMsgIdx];
+      const targetBot = getBot(targetBotId);
+      if (!thread || !targetBot) return;
+      await generateSingleBotTurn(thread, targetBot, sourceMsg ? sourceMsg.text : "Continue from the previous point.");
+    }
+
+    // =========================================================================
+    // 5. @MENTION AUTO-COMPLETE POPOVER (UPGRADE 3)
+    // =========================================================================
+    function onComposerInput(val) {
+      const popup = document.getElementById("mentionAutocompletePopup");
+      const atMatch = val.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/);
+      if (!atMatch) {
+        popup.classList.add("hidden");
+        return;
+      }
+      const query = atMatch[1].toLowerCase();
+      const candidates = [
+        ...state.bots.map(b => ({ type: "bot", name: b.name, role: b.role, avatar: renderBotAvatarSvg(b.avatarStyle, "w-5 h-5") })),
+        ...state.humans.map(h => ({ type: "human", name: h.name, role: h.role || "Teammate", avatar: `<span class="w-5 h-5 rounded-full bg-[#2a2a30] text-[9px] font-bold flex items-center justify-center text-white">${escapeHtml(h.initials)}</span>` }))
+      ].filter(c => c.name.toLowerCase().includes(query));
+
+      if (candidates.length === 0) {
+        popup.classList.add("hidden");
+        return;
+      }
+
+      popup.innerHTML = candidates.map(c => `
+        <button
+          type="button"
+          onclick="insertMentionHandle('${c.name.replace(/'/g, "\\'")}')"
+          class="w-full px-3 py-1.5 text-left hover:bg-[#27272e] flex items-center space-x-2.5"
+        >
+          ${c.avatar}
+          <div>
+            <span class="font-semibold text-white">${escapeHtml(c.name)}</span>
+            <span class="text-[10px] text-neutral-400 ml-1.5">${escapeHtml(c.role)}</span>
+          </div>
+        </button>
+      `).join("");
+      popup.classList.remove("hidden");
+    }
+
+    function insertMentionHandle(name) {
       const input = document.getElementById("chatComposerInput");
-      input.value = `Re: "${msg.text.slice(0, 45)}..." — `;
+      input.value = input.value.replace(/@([a-zA-Z0-9_]*)$/, `@${name} `);
+      document.getElementById("mentionAutocompletePopup").classList.add("hidden");
       input.focus();
     }
 
     // =========================================================================
-    // 5. LLM CALLER & CROSS-BOT / GROUP COLLABORATION ENGINE
+    // 6. GROUNDED FOLDER CONTEXT & SHARED MEMORY INJECTION (UPGRADES 1 & 2)
+    // =========================================================================
+    async function getMountedFolderContextSummary(mountPath) {
+      if (cachedFolderSnapshots[mountPath]) return cachedFolderSnapshots[mountPath];
+      try {
+        const res = await fetch("/api/workspace/context", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mountPath })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          cachedFolderSnapshots[mountPath] = data.summary || "";
+          return cachedFolderSnapshots[mountPath];
+        }
+      } catch {}
+      return "";
+    }
+
+    function buildGroundedSystemPrompt(bot, thread, folderSummary) {
+      const sharedFactsBlock = (state.sharedFacts && state.sharedFacts.length > 0)
+        ? `\n\nSHARED WORKSPACE MEMORY (Known across all threads):\n` + state.sharedFacts.map(f => `- ${f}`).join("\n")
+        : "";
+      const folderBlock = folderSummary
+        ? `\n\nMOUNTED LOCAL WORKSPACE (${getThreadMountPath(thread)}):\n${folderSummary}`
+        : "";
+      const teamNames = state.bots.filter(b => b.id !== bot.id).map(b => `@${b.name} (${b.role})`).join(", ");
+
+      return `${bot.instructions}\n\nYou are operating inside Vanaras Desktop App. Teammate bots you can reference or hand off to: ${teamNames}.${sharedFactsBlock}${folderBlock}\n\nKeep responses high-signal, natural, and grounded in the workspace facts and mounted files.`;
+    }
+
+    // =========================================================================
+    // 7. ASYNC LLM EXECUTION WITH BACKGROUND UNREAD BADGES (UPGRADE 4)
     // =========================================================================
     async function queryBotLLM(bot, systemPrompt, userPrompt, maxTokens = 3000) {
       const apiKey = bot.apiKey || localStorage.getItem(`vanaras_key_${bot.provider}`) || "";
@@ -934,8 +1210,17 @@
       const text = input.value.trim();
       if (!text) return;
       input.value = "";
+      document.getElementById("mentionAutocompletePopup").classList.add("hidden");
 
       const thread = getActiveThread();
+
+      // Support /run <cmd> directly from chat input
+      if (text.startsWith("/run ")) {
+        const cmd = text.replace(/^\/run\s+/i, "").trim();
+        executeBackgroundCommand(cmd);
+        return;
+      }
+
       thread.messages.push({
         senderType: "user",
         senderName: state.currentUser.name,
@@ -945,22 +1230,26 @@
       renderThreadList();
       renderActiveThread();
 
-      // Check if user requested a full group collab via /collab
       if (text.startsWith("/collab")) {
         const goal = text.replace(/^\/collab\s*/i, "").trim() || "Collaborate on our current thread objective";
         await runGroupAutonomousCollab(goal);
         return;
       }
 
-      // Determine which bot(s) should respond
+      // Check if user @mentioned any bot across the workspace (even inside a 1:1 DM!)
+      const explicitlyMentioned = state.bots.filter(b =>
+        text.toLowerCase().includes("@" + b.name.toLowerCase()) ||
+        (thread.type === "group" && text.toLowerCase().includes(b.name.toLowerCase()))
+      );
+
       let responderBots = [];
-      if (thread.type === "dm") {
+      if (explicitlyMentioned.length > 0) {
+        responderBots = explicitlyMentioned;
+      } else if (thread.type === "dm") {
         responderBots = [getBot(thread.botId)];
       } else {
         const groupBots = (thread.botIds || []).map(id => getBot(id)).filter(Boolean);
-        // Check if user @mentioned specific bot(s) in the group
-        const mentioned = groupBots.filter(b => text.toLowerCase().includes(b.name.toLowerCase()) || text.toLowerCase().includes("@" + b.name.toLowerCase()));
-        responderBots = mentioned.length > 0 ? mentioned : [groupBots[0]];
+        responderBots = [groupBots[0]];
       }
 
       for (const bot of responderBots) {
@@ -969,59 +1258,95 @@
       }
     }
 
-    async function generateSingleBotTurn(thread, bot, latestUserText) {
-      const msgBox = document.getElementById("messagesContainer");
-      const typing = document.createElement("div");
-      typing.className = "flex items-center space-x-2 text-xs text-neutral-400 font-mono px-2";
-      typing.innerHTML = `${renderBotAvatarSvg(bot.avatarStyle, "w-4 h-4")} <span class="animate-pulse">${escapeHtml(bot.name)} is thinking (${escapeHtml(bot.model)})...</span>`;
-      msgBox.appendChild(typing);
-      msgBox.scrollTop = msgBox.scrollHeight;
+    async function generateSingleBotTurn(targetThread, bot, triggerText) {
+      const threadId = targetThread.id;
+      activeWorkingThreads[threadId] = `${bot.name} thinking...`;
+      renderThreadList();
 
       try {
-        const recentHistory = thread.messages.slice(-8).map(m => {
+        const folderSummary = await getMountedFolderContextSummary(getThreadMountPath(targetThread));
+        const recentHistory = targetThread.messages.slice(-8).map(m => {
           const speaker = m.senderType === "user" ? (m.senderName || "User") : (getBot(m.botId)?.name || "Bot");
           return `${speaker}: ${m.text}`;
         }).join("\n\n");
 
-        const otherBotsNames = state.bots.filter(b => b.id !== bot.id).map(b => b.name).join(", ");
-        const sysPrompt = `${bot.instructions}\n\nYou are chatting in Vanaras. Other bots on the team include: ${otherBotsNames}. Keep your tone natural, sharp, and direct like a co-founder.`;
+        const sysPrompt = buildGroundedSystemPrompt(bot, targetThread, folderSummary);
         const usrPrompt = `Recent conversation:\n${recentHistory}\n\nRespond as ${bot.name}:`;
 
         const res = await queryBotLLM(bot, sysPrompt, usrPrompt, 2500);
-        typing.remove();
 
-        thread.messages.push({
+        targetThread.messages.push({
           senderType: "bot",
           botId: bot.id,
           text: res.content,
           reasoning: res.reasoning
         });
 
-        // If user asked this bot to pass a message to another bot (e.g. "tell R1" / "send R1"), relay it!
+        // Cross-bot relay if user asked to notify another bot
         state.bots.forEach(other => {
-          if (other.id !== bot.id && latestUserText.toLowerCase().includes(other.name.toLowerCase())) {
+          if (other.id !== bot.id && triggerText.toLowerCase().includes(other.name.toLowerCase())) {
             const otherDm = state.threads.find(t => t.type === "dm" && t.botId === other.id);
-            if (otherDm) {
+            if (otherDm && otherDm.id !== threadId) {
               otherDm.messages.push({
                 senderType: "bot",
                 botId: bot.id,
-                text: `[Relayed from ${bot.name}]: ${res.content.slice(0, 220)}`
+                text: `[Relayed from ${bot.name}]: ${res.content.slice(0, 240)}`
               });
+              unreadCounts[otherDm.id] = (unreadCounts[otherDm.id] || 0) + 1;
             }
           }
         });
 
+        // If user switched to another thread while this bot was thinking, increment unread badge!
+        if (activeThreadId !== threadId) {
+          unreadCounts[threadId] = (unreadCounts[threadId] || 0) + 1;
+          showToast(`💬 ${bot.name} replied in ${targetThread.name || bot.name}`);
+        }
+      } catch (e) {
+        targetThread.messages.push({
+          senderType: "bot",
+          botId: bot.id,
+          text: `⚠️ Error reaching ${bot.provider}/${bot.model}: ${e.message}`
+        });
+      } finally {
+        delete activeWorkingThreads[threadId];
         saveState();
         renderThreadList();
-        renderActiveThread();
-      } catch (e) {
-        typing.innerHTML = `<span class="text-red-400">⚠️ ${escapeHtml(bot.name)} error: ${escapeHtml(e.message)} (Click top pill to configure URL/API key)</span>`;
+        if (activeThreadId === threadId) {
+          renderActiveThread();
+        }
       }
     }
 
     // =========================================================================
-    // 6. AUTONOMOUS MULTI-BOT COLLABORATION (CODING / MARKETING / RESEARCH)
+    // 8. BACKGROUND COMMAND EXECUTION & AUTONOMOUS COLLAB
     // =========================================================================
+    function promptBackgroundCommand() {
+      const thread = getActiveThread();
+      const cmd = prompt(`Run command in mounted folder (${getThreadMountPath(thread)}):`, "cargo test --offline");
+      if (!cmd) return;
+      executeBackgroundCommand(cmd.trim());
+    }
+
+    async function executeBackgroundCommand(command) {
+      const thread = getActiveThread();
+      const cwd = getThreadMountPath(thread);
+      activeWorkingThreads[thread.id] = `Running ${command.slice(0, 18)}...`;
+      renderThreadList();
+      showToast(`💻 Running \`${command}\` in background...`);
+
+      try {
+        await fetch("/api/workspace/exec", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command, cwd, threadId: thread.id })
+        });
+      } catch (e) {
+        delete activeWorkingThreads[thread.id];
+        renderThreadList();
+      }
+    }
+
     async function triggerGroupCollabRun() {
       const input = document.getElementById("chatComposerInput");
       let goal = input.value.trim();
@@ -1047,31 +1372,27 @@
     }
 
     async function runGroupAutonomousCollab(goal) {
-      const thread = getActiveThread();
+      const targetThread = getActiveThread();
+      const threadId = targetThread.id;
       let collabBots = [];
-      if (thread.type === "group") {
-        collabBots = (thread.botIds || []).map(id => getBot(id)).filter(Boolean);
+      if (targetThread.type === "group") {
+        collabBots = (targetThread.botIds || []).map(id => getBot(id)).filter(Boolean);
       } else {
-        // In a 1:1 DM, pull in the current bot + 2 complementary bots for a quick triad!
-        const primary = getBot(thread.botId);
+        const primary = getBot(targetThread.botId);
         const others = state.bots.filter(b => b.id !== primary.id).slice(0, 2);
         collabBots = [primary, ...others];
       }
 
       if (collabBots.length === 0) return;
 
-      const msgBox = document.getElementById("messagesContainer");
-      const statusPill = document.createElement("div");
-      statusPill.className = "p-3 rounded-2xl bg-[#19191d] border border-amber-500/30 text-xs text-amber-300 font-mono flex items-center justify-between";
-      msgBox.appendChild(statusPill);
-
+      const folderSummary = await getMountedFolderContextSummary(getThreadMountPath(targetThread));
       const transcript = [];
 
       try {
         for (let i = 0; i < collabBots.length; i++) {
           const bot = collabBots[i];
-          statusPill.innerHTML = `<span class="animate-pulse">⚡ Collab Turn ${i + 1}/${collabBots.length}: ${escapeHtml(bot.name)} (${escapeHtml(bot.role)}) via ${escapeHtml(bot.model)}...</span>`;
-          msgBox.scrollTop = msgBox.scrollHeight;
+          activeWorkingThreads[threadId] = `Collab ${i + 1}/${collabBots.length}: ${bot.name}...`;
+          renderThreadList();
 
           const teamStr = collabBots.map(b => `${b.name} (${b.role})`).join(", ");
           const priorText = transcript.length === 0
@@ -1080,10 +1401,10 @@
 
           const isLast = i === collabBots.length - 1;
           const deliverableInstruction = isLast
-            ? `\n\nAs the final synthesizer in this collaboration, also output the concrete deliverable files (whether software code files, a marketing campaign + HTML landing page, or a technical spec) wrapped in:\n===FILE: filename.ext===\n(file contents)\n===END_FILE===`
-            : `\n\nKeep your discussion turn concise (under 160 words), critique or build on your teammates by name, and set up the next bot.`;
+            ? `\n\nAs the final synthesizer, output the concrete deliverable files (software source files, marketing campaign + HTML landing page, or spec) wrapped in:\n===FILE: filename.ext===\n(file contents)\n===END_FILE===`
+            : `\n\nKeep your turn concise (under 150 words), critique or build on your teammates by @name, and set up the next bot.`;
 
-          const sys = `${bot.instructions}\n\nYou are collaborating live with: ${teamStr}.${deliverableInstruction}`;
+          const sys = buildGroundedSystemPrompt(bot, targetThread, folderSummary) + `\nCollaborating team: ${teamStr}.${deliverableInstruction}`;
           const usr = `COLLABORATION GOAL:\n${goal}\n\nDISCUSSION SO FAR:\n${priorText}\n\nYour turn (${bot.name}):`;
 
           const res = await queryBotLLM(bot, sys, usr, isLast ? 4000 : 2000);
@@ -1103,8 +1424,7 @@
 
           transcript.push({ name: bot.name, role: bot.role, text: displayContent });
 
-          msgBox.removeChild(statusPill);
-          thread.messages.push({
+          targetThread.messages.push({
             senderType: "bot",
             botId: bot.id,
             text: displayContent,
@@ -1112,19 +1432,30 @@
             collabRound: `Collab ${i + 1}/${collabBots.length}`,
             hasDeliverables
           });
+
+          if (activeThreadId !== threadId) {
+            unreadCounts[threadId] = (unreadCounts[threadId] || 0) + 1;
+          }
           saveState();
           renderThreadList();
-          renderActiveThread();
-          msgBox.appendChild(statusPill);
+          if (activeThreadId === threadId) renderActiveThread();
         }
 
-        statusPill.remove();
-        if (deliverables.length > 0) {
+        if (deliverables.length > 0 && activeThreadId === threadId) {
           renderDeliverableDrawer();
           toggleDeliverableDrawer(true);
         }
       } catch (e) {
-        statusPill.innerHTML = `<span class="text-red-400">⚠️ Collab error: ${escapeHtml(e.message)}</span>`;
+        targetThread.messages.push({
+          senderType: "bot",
+          botId: collabBots[0].id,
+          text: `⚠️ Collab error: ${e.message}`
+        });
+      } finally {
+        delete activeWorkingThreads[threadId];
+        saveState();
+        renderThreadList();
+        if (activeThreadId === threadId) renderActiveThread();
       }
     }
 
@@ -1153,8 +1484,67 @@
     }
 
     // =========================================================================
-    // 7. DELIVERABLE STUDIO DRAWER
+    // 9. MODALS: MEMORY LEDGER, MOUNT FOLDER, BOT, GROUP & APPS
     // =========================================================================
+    function openMemoryModal() {
+      renderSharedFactsList();
+      document.getElementById("memoryModal").classList.remove("hidden");
+    }
+    function closeMemoryModal() {
+      document.getElementById("memoryModal").classList.add("hidden");
+    }
+    function renderSharedFactsList() {
+      const box = document.getElementById("sharedFactsList");
+      box.innerHTML = (state.sharedFacts || []).map((f, i) => `
+        <div class="p-2.5 rounded-xl bg-[#111114] border border-[#26262b] flex items-center justify-between gap-2">
+          <span class="text-neutral-200 leading-snug">📌 ${escapeHtml(f)}</span>
+          <button onclick="removeSharedFact(${i})" class="text-neutral-500 hover:text-red-400 px-1.5">✕</button>
+        </div>
+      `).join("") || `<div class="text-neutral-500 italic p-2">No shared facts yet.</div>`;
+    }
+    function addSharedFactFromInput() {
+      const input = document.getElementById("newSharedFactInput");
+      const val = input.value.trim();
+      if (!val) return;
+      state.sharedFacts.unshift(val);
+      input.value = "";
+      saveState();
+      renderSharedFactsList();
+    }
+    function removeSharedFact(idx) {
+      state.sharedFacts.splice(idx, 1);
+      saveState();
+      renderSharedFactsList();
+    }
+
+    // Mount Folder Modal
+    async function openMountModal() {
+      const thread = getActiveThread();
+      const mPath = getThreadMountPath(thread);
+      document.getElementById("mountPathInput").value = mPath;
+      document.getElementById("mountModal").classList.remove("hidden");
+      await saveAndInspectMountPath(false);
+    }
+    function closeMountModal() {
+      document.getElementById("mountModal").classList.add("hidden");
+    }
+    function setQuickMount(p) {
+      document.getElementById("mountPathInput").value = p;
+      saveAndInspectMountPath(true);
+    }
+    async function saveAndInspectMountPath(showToastNotice = true) {
+      const p = document.getElementById("mountPathInput").value.trim();
+      if (!p) return;
+      const thread = getActiveThread();
+      if (thread) thread.mountPath = p;
+      delete cachedFolderSnapshots[p];
+      const summary = await getMountedFolderContextSummary(p);
+      document.getElementById("mountSnapshotPreview").innerText = summary || "Could not inspect directory.";
+      saveState();
+      if (showToastNotice) showToast(`📁 Mounted ${p}`);
+    }
+
+    // Deliverable Drawer
     function toggleDeliverableDrawer(forceOpen = null) {
       const drawer = document.getElementById("deliverableDrawer");
       const shouldOpen = forceOpen !== null ? forceOpen : drawer.classList.contains("hidden");
@@ -1200,9 +1590,7 @@
     }
 
     function updateActiveDeliverable(val) {
-      if (deliverables[activeDeliverableIdx]) {
-        deliverables[activeDeliverableIdx].content = val;
-      }
+      if (deliverables[activeDeliverableIdx]) deliverables[activeDeliverableIdx].content = val;
     }
 
     async function saveDeliverablesToDisk() {
@@ -1215,7 +1603,7 @@
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast(`💾 Saved ${data.savedPaths.length} file(s) to vanaras/projects/${projectName}/`);
+        showToast(`💾 Saved ${data.savedPaths.length} file(s) to ${data.projectDir}`);
       }
     }
 
@@ -1230,17 +1618,12 @@
       a.click();
     }
 
-    // =========================================================================
-    // 8. MODALS: CUSTOMIZE BOT, MANAGE GROUP, INVITE HUMANS & CONNECT APPS
-    // =========================================================================
+    // Bot & Group Modals
     function openActiveThreadSettings() {
       const thread = getActiveThread();
       if (!thread) return;
-      if (thread.type === "dm") {
-        openBotModal(thread.botId);
-      } else {
-        openGroupModal(thread.id);
-      }
+      if (thread.type === "dm") openBotModal(thread.botId);
+      else openGroupModal(thread.id);
     }
 
     function openBotModal(botId) {
@@ -1262,9 +1645,7 @@
       document.getElementById("botModal").classList.remove("hidden");
     }
 
-    function closeBotModal() {
-      document.getElementById("botModal").classList.add("hidden");
-    }
+    function closeBotModal() { document.getElementById("botModal").classList.add("hidden"); }
 
     function updateBotModalAvatarPreview() {
       const style = document.getElementById("botModalAvatarStyle").value;
@@ -1303,7 +1684,7 @@
           renderBotModalChips(provider, data.models.slice(0, 8));
           showToast(`Loaded ${data.models.length} models!`);
         }
-      } catch (e) {
+      } catch {
         showToast("Could not fetch models");
       } finally {
         btn.innerText = "🔄 Fetch Models";
@@ -1335,6 +1716,7 @@
           id: dmId,
           type: "dm",
           botId: newId,
+          mountPath: state.defaultMountPath,
           messages: [{ senderType: "bot", botId: newId, text: `Hey! I'm ${name} (${role}), running on ${provider}/${model}. How can I help?` }]
         });
         activeThreadId = dmId;
@@ -1359,7 +1741,6 @@
       renderActiveThread();
     }
 
-    // Group Modal
     function openGroupModal(groupId) {
       const group = state.threads.find(t => t.id === groupId && t.type === "group");
       document.getElementById("groupModalId").value = group ? group.id : "";
@@ -1369,8 +1750,7 @@
       document.getElementById("groupModalDeleteBtn").classList.toggle("hidden", !group);
 
       const selectedBots = new Set(group ? group.botIds : state.bots.slice(0, 3).map(b => b.id));
-      const botsList = document.getElementById("groupModalBotsList");
-      botsList.innerHTML = state.bots.map(b => `
+      document.getElementById("groupModalBotsList").innerHTML = state.bots.map(b => `
         <label class="flex items-center justify-between p-1.5 rounded-lg hover:bg-[#1b1b20] cursor-pointer">
           <div class="flex items-center space-x-2.5">
             <input type="checkbox" value="${b.id}" class="group-bot-checkbox accent-[#d9383a]" ${selectedBots.has(b.id) ? "checked" : ""}>
@@ -1389,8 +1769,7 @@
     }
 
     function renderGroupModalHumans(selectedSet) {
-      const humansList = document.getElementById("groupModalHumansList");
-      humansList.innerHTML = state.humans.map(h => `
+      document.getElementById("groupModalHumansList").innerHTML = state.humans.map(h => `
         <label class="flex items-center justify-between p-1.5 rounded-lg hover:bg-[#1b1b20] cursor-pointer">
           <div class="flex items-center space-x-2.5">
             <input type="checkbox" value="${h.id}" class="group-human-checkbox accent-[#d9383a]" ${selectedSet.has(h.id) ? "checked" : ""}>
@@ -1416,9 +1795,7 @@
       renderGroupModalHumans(currentChecked);
     }
 
-    function closeGroupModal() {
-      document.getElementById("groupModal").classList.add("hidden");
-    }
+    function closeGroupModal() { document.getElementById("groupModal").classList.add("hidden"); }
 
     function saveGroupFromModal() {
       const id = document.getElementById("groupModalId").value;
@@ -1426,7 +1803,6 @@
       const domain = document.getElementById("groupModalDomain").value;
       const botIds = Array.from(document.querySelectorAll(".group-bot-checkbox:checked")).map(el => el.value);
       const humanIds = Array.from(document.querySelectorAll(".group-human-checkbox:checked")).map(el => el.value);
-
       if (botIds.length === 0) return alert("Select at least 1 bot for the group!");
 
       const defaultName = rawName || [
@@ -1444,6 +1820,7 @@
           type: "group",
           name: defaultName,
           domain,
+          mountPath: state.defaultMountPath,
           botIds,
           humanIds,
           messages: [
@@ -1470,15 +1847,6 @@
       renderActiveThread();
     }
 
-    function openInvitePersonModal() {
-      const thread = getActiveThread();
-      if (thread?.type === "group") {
-        openGroupModal(thread.id);
-      } else {
-        openGroupModal(null);
-      }
-    }
-
     function openProfileModal() {
       const name = prompt("Your display name in group chats:", state.currentUser.name);
       if (!name) return;
@@ -1489,7 +1857,6 @@
       renderThreadList();
     }
 
-    // Connect Apps / System Agents Modal
     function openConnectAppsModal() {
       const box = document.getElementById("systemAgentsCatalog");
       box.innerHTML = SYSTEM_AGENTS_CATALOG.map(sa => {
@@ -1515,9 +1882,7 @@
       document.getElementById("connectAppsModal").classList.remove("hidden");
     }
 
-    function closeConnectAppsModal() {
-      document.getElementById("connectAppsModal").classList.add("hidden");
-    }
+    function closeConnectAppsModal() { document.getElementById("connectAppsModal").classList.add("hidden"); }
 
     function addSystemAgentToWorkspace(sysId) {
       const template = SYSTEM_AGENTS_CATALOG.find(s => s.id === sysId);
@@ -1534,14 +1899,12 @@
           id: "dm_" + sysId,
           type: "dm",
           botId: sysId,
+          mountPath: state.defaultMountPath,
           messages: [{ senderType: "bot", botId: sysId, text: `${template.name} connected. You can chat with me 1:1 or add me into any Group Collab room.` }]
         });
       }
-      // Also add to current group if viewing a group
       const cur = getActiveThread();
-      if (cur && cur.type === "group" && !cur.botIds.includes(sysId)) {
-        cur.botIds.push(sysId);
-      }
+      if (cur && cur.type === "group" && !cur.botIds.includes(sysId)) cur.botIds.push(sysId);
       saveState();
       openConnectAppsModal();
       renderThreadList();
@@ -1550,30 +1913,35 @@
     }
 
     // =========================================================================
-    // 9. HELPERS, MENUS & REAL-TIME MULTIPLAYER SSE
+    // 10. HELPERS, REACTIONS & REAL-TIME SSE STREAM
     // =========================================================================
+    function reactToMessage(idx, emoji) {
+      const thread = getActiveThread();
+      if (!thread || !thread.messages[idx]) return;
+      thread.messages[idx].reaction = emoji;
+      saveState();
+      renderActiveThread();
+    }
+
+    function quoteReply(idx) {
+      const thread = getActiveThread();
+      const msg = thread?.messages[idx];
+      if (!msg) return;
+      const input = document.getElementById("chatComposerInput");
+      input.value = `Re: "${msg.text.slice(0, 45)}..." — `;
+      input.focus();
+    }
+
     function toggleSearchInput() {
       const wrap = document.getElementById("searchBarWrap");
       wrap.classList.toggle("hidden");
-      if (!wrap.classList.contains("hidden")) {
-        document.getElementById("threadSearchInput").focus();
-      }
+      if (!wrap.classList.contains("hidden")) document.getElementById("threadSearchInput").focus();
     }
 
-    function togglePlusMenu(e) {
-      e.stopPropagation();
-      document.getElementById("plusMenuDropdown").classList.toggle("hidden");
-    }
-    function hidePlusMenu() {
-      document.getElementById("plusMenuDropdown").classList.add("hidden");
-    }
-    function toggleComposerMenu(e) {
-      e.stopPropagation();
-      document.getElementById("composerMenu").classList.toggle("hidden");
-    }
-    function hideComposerMenu() {
-      document.getElementById("composerMenu").classList.add("hidden");
-    }
+    function togglePlusMenu(e) { e.stopPropagation(); document.getElementById("plusMenuDropdown").classList.toggle("hidden"); }
+    function hidePlusMenu() { document.getElementById("plusMenuDropdown").classList.add("hidden"); }
+    function toggleComposerMenu(e) { e.stopPropagation(); document.getElementById("composerMenu").classList.toggle("hidden"); }
+    function hideComposerMenu() { document.getElementById("composerMenu").classList.add("hidden"); }
 
     document.addEventListener("click", () => {
       hidePlusMenu();
@@ -1589,11 +1957,7 @@
 
     function escapeHtml(str) {
       if (!str) return "";
-      return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
+      return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
     function formatRichMessage(text) {
@@ -1613,7 +1977,7 @@
       const t = document.getElementById("toast");
       document.getElementById("toastMsg").innerText = msg;
       t.classList.remove("translate-y-20", "opacity-0");
-      setTimeout(() => t.classList.add("translate-y-20", "opacity-0"), 2800);
+      setTimeout(() => t.classList.add("translate-y-20", "opacity-0"), 3000);
     }
 
     async function probeLocalModel() {
@@ -1626,12 +1990,10 @@
         const data = await res.json();
         if (res.ok && Array.isArray(data.models) && data.models.length > 0) {
           detectedLocalModel = data.models[0];
-          document.getElementById("connectionLabel").innerText = detectedLocalModel;
         }
       } catch {}
     }
 
-    // Subscribe to real-time Multiplayer & External System Agent SSE stream
     function initMultiplayerStream() {
       try {
         const es = new EventSource("/api/events");
@@ -1645,16 +2007,39 @@
               botId: payload.botId,
               text: payload.text
             });
+            if (activeThreadId !== targetThread.id) {
+              unreadCounts[targetThread.id] = (unreadCounts[targetThread.id] || 0) + 1;
+            }
             saveState();
             renderThreadList();
-            renderActiveThread();
+            if (activeThreadId === targetThread.id) renderActiveThread();
             showToast(`💬 New message in ${targetThread.name || "chat"}`);
+          }
+        });
+
+        es.addEventListener("job_finished", ev => {
+          const data = JSON.parse(ev.data);
+          const targetThread = state.threads.find(t => t.id === data.threadId) || getActiveThread();
+          if (targetThread) {
+            delete activeWorkingThreads[targetThread.id];
+            targetThread.messages.push({
+              senderType: "terminal",
+              command: data.command,
+              exitCode: data.exitCode,
+              text: data.output
+            });
+            if (activeThreadId !== targetThread.id) {
+              unreadCounts[targetThread.id] = (unreadCounts[targetThread.id] || 0) + 1;
+            }
+            saveState();
+            renderThreadList();
+            if (activeThreadId === targetThread.id) renderActiveThread();
+            showToast(`✅ Background command finished: ${data.command}`);
           }
         });
       } catch {}
     }
 
-    // Hide decorative traffic lights if running inside native macOS Vanaras.app WKWebView
     if (window.navigator.userAgent.includes("VanarasNativeMacApp")) {
       document.getElementById("trafficLightsSpacer").style.visibility = "hidden";
     }
@@ -1662,6 +2047,7 @@
     document.getElementById("userInitialsBtn").innerText = state.currentUser.initials;
     renderThreadList();
     renderActiveThread();
+    loadDiskWorkspaceOnBoot();
     probeLocalModel();
     initMultiplayerStream();
   </script>

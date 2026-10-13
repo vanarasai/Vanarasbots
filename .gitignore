@@ -1,0 +1,12 @@
+# Rust & build artifacts
+/target/
+**/*.rs.bk
+
+# Compiled macOS Mach-O executable (never commit binaries)
+/Vanaras.app/Contents/MacOS/
+
+# Runtime state, API keys & user workspace data
+/ui/.vanaras-workspace.json
+/projects/
+.DS_Store
+node_modules/

@@ -1,0 +1,15 @@
+[package]
+name = "vanaras-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vanaras-core = { path = "../vanaras-core" }
+vanaras-agent = { path = "../vanaras-agent" }
+vanaras-mcp = { path = "../vanaras-mcp" }
+vanaras-relay = { path = "../vanaras-relay" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

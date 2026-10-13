@@ -1155,13 +1155,23 @@
 
       <!-- Floating Top Header -->
       <header class="chat-header">
-        <!-- Left Context Pills (Mounted Folder & Shared Memory) -->
+        <!-- Left Context Pills (Mounted Folder, Agent Worktree & Shared Memory) -->
         <div class="chat-header-slot">
           <button onclick="openMountModal()" class="header-tool-pill" title="Mounted Local Folder (Click to switch repo or inspect files)">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
             </svg>
             <span id="mountFolderLabel" class="mono" style="font-size:11px;">vanaras</span>
+          </button>
+
+          <button onclick="openWorktreeModal()" class="header-tool-pill" title="Per-Agent Isolated Git Worktree (.worktrees/<botId>)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="6" y1="3" x2="6" y2="15"></line>
+              <circle cx="18" cy="6" r="3"></circle>
+              <circle cx="6" cy="18" r="3"></circle>
+              <path d="M18 9a9 9 0 0 1-9 9"></path>
+            </svg>
+            <span id="worktreeBranchLabel" class="mono" style="font-size:11px; color:#bae6fd;">vanara/r1</span>
           </button>
 
           <button onclick="openMemoryModal()" class="header-tool-pill" title="Shared Workspace Memory Ledger">
@@ -1175,10 +1185,15 @@
         </div>
 
         <!-- Center Floating Identity Pill (Matches [ 🐵 R1 ] in screenshot) -->
-        <button onclick="openActiveThreadSettings()" id="activeThreadPill" class="identity-pill" title="Configure Vanara Bot or Group Members"></button>
+        <button onclick="openActiveThreadSettings()" id="activeThreadPill" class="identity-pill" title="Configure Vanara Bot, Private Memory, Tools/MCP & Worktree"></button>
 
-        <!-- Right Studio & Collab Actions -->
+        <!-- Right Autonomous Loop, Collab & Studio Actions -->
         <div class="chat-header-slot">
+          <button onclick="toggleAutoTriggerMode()" id="autoTriggerPill" class="header-tool-pill" style="border-color:rgba(16,185,129,0.38); color:#6ee7b7;" title="Grok-Bots Style Self-Triggered Autonomous Chaining & Background Execution">
+            <span id="autoTriggerDot" style="width:7px; height:7px; border-radius:50%; background:#10b981; display:inline-block;"></span>
+            <span id="autoTriggerLabel" class="mono" style="font-size:11px;">Auto: ON</span>
+          </button>
+
           <button onclick="triggerGroupCollabRun()" class="header-tool-pill collab-cta" title="Run Autonomous Multi-Monkey Collab">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
@@ -1209,7 +1224,16 @@
           <div id="mentionAutocompletePopup" class="popover-menu hidden" style="bottom: 58px; left: 12px; width: 280px; max-height: 220px; overflow-y: auto;"></div>
 
           <!-- Composer Quick Action Menu -->
-          <div id="composerMenu" class="popover-menu hidden" style="bottom: 58px; left: 0;">
+          <div id="composerMenu" class="popover-menu hidden" style="bottom: 58px; left: 0; width: 272px;">
+            <button onclick="startAutonomousBackgroundGoal(); hideComposerMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:#10b981;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+              </div>
+              <div>
+                <div class="popover-title">Self-Triggered Background Goal</div>
+                <div class="popover-sub">Bots chain turns & tools in background</div>
+              </div>
+            </button>
             <button onclick="triggerGroupCollabRun(); hideComposerMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:#f59e0b;">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
@@ -1219,13 +1243,22 @@
                 <div class="popover-sub">Debate, plan & synthesize deliverables</div>
               </div>
             </button>
+            <button onclick="openWorktreeModal(); hideComposerMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:#38bdf8;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+              </div>
+              <div>
+                <div class="popover-title">Inspect Agent Git Worktree</div>
+                <div class="popover-sub">Isolated branch, diff & commit per bot</div>
+              </div>
+            </button>
             <button onclick="promptBackgroundCommand(); hideComposerMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#10b981;">
+              <div class="popover-item-icon" style="color:#a7f3d0;">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
               </div>
               <div>
-                <div class="popover-title">Run Terminal Command</div>
-                <div class="popover-sub">Execute in mounted project folder</div>
+                <div class="popover-title">Run Command in Agent Worktree</div>
+                <div class="popover-sub">Execute in active bot's isolated branch</div>
               </div>
             </button>
             <button onclick="openActiveThreadSettings(); hideComposerMenu();" class="popover-item">
@@ -1233,8 +1266,8 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </div>
               <div>
-                <div class="popover-title">Customize Vanara Brain</div>
-                <div class="popover-sub">Switch model, provider URL, or squad</div>
+                <div class="popover-title">Customize Vanara Brain & MCP</div>
+                <div class="popover-sub">Per-agent memory, tools, MCP & model</div>
               </div>
             </button>
           </div>
@@ -1268,7 +1301,7 @@
             >
 
             <div class="composer-right-btns">
-              <button onclick="promptBackgroundCommand()" class="composer-mic-btn" title="Run Command in Mounted Folder (/run)">
+              <button onclick="promptBackgroundCommand()" class="composer-mic-btn" title="Run Command in Agent's Worktree (/run)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
                   <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
@@ -1324,14 +1357,14 @@
   </div>
 
   <!-- ===================================================================== -->
-  <!-- MODAL 1: CUSTOMIZE VANARA BOT (CUTE MONKEY AVATAR + PROVIDER + BRAIN) -->
+  <!-- MODAL 1: CUSTOMIZE VANARA BOT (BRAIN, PRIVATE MEMORY, TOOLS/MCP)      -->
   <!-- ===================================================================== -->
   <div id="botModal" class="modal-backdrop hidden">
-    <div class="modal-card">
+    <div class="modal-card" style="max-width:580px;">
       <div class="modal-header">
         <div>
           <div id="botModalTitle" style="font-size:15px; font-weight:600;">Customize Vanara Bot</div>
-          <div style="font-size:11.5px; color:#888894;">Configure monkey persona, provider endpoint, model & system instructions</div>
+          <div style="font-size:11.5px; color:#888894;">Configure persona, model, private memory, per-agent tools/MCP & isolated git worktree</div>
         </div>
         <button onclick="closeBotModal()" class="side-icon-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1399,7 +1432,37 @@
 
         <div>
           <label class="field-label">System Instructions</label>
-          <textarea id="botInstructionsInput" rows="3" placeholder="Define how this Vanara thinks, critiques, and builds..." class="field-input"></textarea>
+          <textarea id="botInstructionsInput" rows="2" placeholder="Define how this Vanara thinks, critiques, and builds..." class="field-input"></textarea>
+        </div>
+
+        <!-- UPGRADE 2: PER-AGENT PERSISTENT MEMORY -->
+        <div style="padding:12px; border-radius:12px; background:#121216; border:1px solid #26262f;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <label class="field-label" style="margin-bottom:0; color:#a7f3d0;">Per-Agent Private Memory (Saved on Disk)</label>
+            <span style="font-size:10.5px; color:#787884;" class="mono">Auto-learns via [REMEMBER: ...]</span>
+          </div>
+          <div style="display:flex; gap:6px; margin-bottom:8px;">
+            <input id="botNewMemoryInput" type="text" placeholder="Add private memory for this Vanara..." class="field-input" style="height:30px; font-size:12px;">
+            <button type="button" onclick="addPrivateMemoryInBotModal()" class="btn-secondary" style="height:30px; padding:0 12px; font-size:11.5px; flex-shrink:0;">+ Add</button>
+          </div>
+          <div id="botPrivateMemoryList" style="display:flex; flex-direction:column; gap:5px; max-height:110px; overflow-y:auto;"></div>
+        </div>
+
+        <!-- UPGRADE 3: PER-AGENT TOOLS & MCP SERVER -->
+        <div style="padding:12px; border-radius:12px; background:#121216; border:1px solid #26262f;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <label class="field-label" style="margin-bottom:0; color:#bae6fd;">Per-Agent Tools & MCP Server</label>
+            <button type="button" onclick="openWorktreeFromBotModal()" style="font-size:11px; color:#38bdf8;">Inspect Bot Worktree →</button>
+          </div>
+          <div id="botToolsChecklist" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:10px;"></div>
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <span style="font-size:11px; color:#94949e;">Custom MCP Server Command (stdio JSON-RPC 2.0)</span>
+              <button type="button" onclick="probeMcpServerInModal()" style="font-size:11px; color:#60a5fa;">Probe MCP Tools</button>
+            </div>
+            <input id="botMcpCommandInput" type="text" placeholder="e.g. npx -y @modelcontextprotocol/server-filesystem ." class="field-input mono" style="font-size:12px;">
+            <div id="botMcpProbeStatus" class="mono" style="font-size:10.5px; color:#888894; margin-top:5px;"></div>
+          </div>
         </div>
       </div>
 
@@ -1531,6 +1594,45 @@
     </div>
   </div>
 
+  <!-- ===================================================================== -->
+  <!-- MODAL 6: PER-AGENT ISOLATED GIT WORKTREE INSPECTOR                    -->
+  <!-- ===================================================================== -->
+  <div id="worktreeModal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width:580px;">
+      <div class="modal-header">
+        <div>
+          <div style="font-size:15px; font-weight:600;">Per-Agent Isolated Git Worktree</div>
+          <div style="font-size:11.5px; color:#888894;">Every Vanara works in its own isolated Git worktree & branch so concurrent bots never collide</div>
+        </div>
+        <button onclick="closeWorktreeModal()" class="side-icon-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <div style="flex:1;">
+            <label class="field-label">Select Vanara Agent Worktree</label>
+            <select id="worktreeBotSelect" onchange="refreshWorktreeInspector()" class="field-input"></select>
+          </div>
+          <div style="padding-top:18px; display:flex; gap:6px;">
+            <button onclick="refreshWorktreeInspector()" class="btn-secondary" style="height:34px;">Refresh</button>
+            <button onclick="commitAgentWorktreeFromModal()" class="btn-primary" style="height:34px; background:#10b981;">Commit Worktree</button>
+          </div>
+        </div>
+
+        <div style="padding:10px 12px; border-radius:12px; background:#111115; border:1px solid #26262f; display:flex; flex-direction:column; gap:4px;" class="mono">
+          <div style="font-size:11.5px; color:#bae6fd;">Branch: <strong id="wtBranchDisplay">vanara/r1</strong></div>
+          <div style="font-size:11px; color:#888894; word-break:break-all;">Worktree Path: <span id="wtPathDisplay">.worktrees/bot_r1</span></div>
+        </div>
+
+        <div>
+          <label class="field-label">Worktree Status & Diff</label>
+          <pre id="wtStatusPreview" class="code-block mono" style="max-height:200px; color:#7ee787; margin:0;">Provisioning isolated worktree...</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="toast hidden-toast">
     <span style="width:7px; height:7px; border-radius:50%; background:#10b981;"></span>
@@ -1612,10 +1714,20 @@
     let selectedAvatarStyleInModal = "vanara-crimson";
 
     // =========================================================================
-    // 2. WORKSPACE STATE (MODELED AFTER REFERENCE SCREENSHOT + UPGRADES)
+    // 2. WORKSPACE STATE (MODELED AFTER REFERENCE SCREENSHOT + 4 CORE UPGRADES)
     // =========================================================================
+    const AVAILABLE_AGENT_TOOLS = [
+      { id: "fs_read", label: "Read Files" },
+      { id: "fs_write", label: "Write Files" },
+      { id: "shell_exec", label: "Run Shell" },
+      { id: "git_status", label: "Git Status" },
+      { id: "git_diff", label: "Git Diff" },
+      { id: "handoff", label: "Bot Handoff" }
+    ];
+
     const DEFAULT_STATE = {
       currentUser: { id: "user_vp", name: "Vijay Pathy", initials: "VP" },
+      autoTriggerEnabled: true,
       sharedFacts: [
         "Gemma 4 E2B stores ~5B parameters (2.7 GB GGUF) with 4-bit per-layer embedding tables.",
         "Hanu's GGUF is text-only; vision/audio live in a separate mmproj file.",
@@ -1635,7 +1747,14 @@
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
           model: "bonsai-27b-mlx",
-          instructions: "You are R1, Principal AI & Quantization Architect in Vanaras. Be direct, deeply technical, and grounded in GGUF, llama.cpp, LiteRT-LM, and systems trade-offs."
+          instructions: "You are R1, Principal AI & Quantization Architect in Vanaras. Be direct, deeply technical, and grounded in GGUF, llama.cpp, LiteRT-LM, and systems trade-offs.",
+          memories: [
+            "Gemma 4 E2B 4-bit per-layer embeddings already saved 680 MB.",
+            "Always verify GGUF tensor headers with gguf_dump.py before re-quantizing."
+          ],
+          tools: ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "handoff"],
+          mcpCommand: "",
+          worktreeBranch: "vanara/r1"
         },
         {
           id: "bot_r4",
@@ -1646,7 +1765,13 @@
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
           model: "bonsai-27b-mlx",
-          instructions: "You are R4, On-Device Phone Runtime Engineer. Focus on iOS/Android tool layers, LiteRT-LM memory mapping, and latency budgets."
+          instructions: "You are R4, On-Device Phone Runtime Engineer. Focus on iOS/Android tool layers, LiteRT-LM memory mapping, and latency budgets.",
+          memories: [
+            "Phone test device peak RSS must stay below 1.85 GB to avoid Android lmkd kills."
+          ],
+          tools: ["fs_read", "shell_exec", "git_status", "handoff"],
+          mcpCommand: "",
+          worktreeBranch: "vanara/r4"
         },
         {
           id: "bot_r2",
@@ -1657,7 +1782,13 @@
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
           model: "google/gemma-4-12b",
-          instructions: "You are R2, Systems & Lookup Specialist. Write clean Rust/C++/Python scripts, sketch lookup tables, and verify file layouts."
+          instructions: "You are R2, Systems & Lookup Specialist. Write clean Rust/C++/Python scripts, sketch lookup tables, and verify file layouts.",
+          memories: [
+            "Per-layer embedding lookup tables align on 64-byte cache lines for NEON."
+          ],
+          tools: ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "handoff"],
+          mcpCommand: "",
+          worktreeBranch: "vanara/r2"
         },
         {
           id: "bot_r3",
@@ -1668,7 +1799,13 @@
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
           model: "bonsai-27b-mlx",
-          instructions: "You are R3, Calibration & Eval Specialist. Design hard eval suites and imatrix calibration runs for Q3_K_M and IQ3_M."
+          instructions: "You are R3, Calibration & Eval Specialist. Design hard eval suites and imatrix calibration runs for Q3_K_M and IQ3_M.",
+          memories: [
+            "Compare Q3_K_M (3.5 bpw) vs IQ3_M (3.0 bpw) with English-only v3 imatrix calibration."
+          ],
+          tools: ["fs_read", "fs_write", "shell_exec", "git_status", "handoff"],
+          mcpCommand: "",
+          worktreeBranch: "vanara/r3"
         },
         {
           id: "bot_waffle",
@@ -1679,7 +1816,13 @@
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
           model: "bonsai-27b-mlx",
-          instructions: "You are Waffle, Product & Launch Strategist in Vanaras. Keep product naming, positioning, and release plans crisp."
+          instructions: "You are Waffle, Product & Launch Strategist in Vanaras. Keep product naming, positioning, and release plans crisp.",
+          memories: [
+            "Brand name is strictly Vanaras with custom illustrated monkey avatars."
+          ],
+          tools: ["fs_read", "fs_write", "handoff"],
+          mcpCommand: "",
+          worktreeBranch: "vanara/waffle"
         },
         {
           id: "bot_new",
@@ -1690,7 +1833,13 @@
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
           model: "bonsai-27b-mlx",
-          instructions: "You are New Bot, focusing on 2 GB phone RAM budgets, flash storage throughput, and mmap page faults."
+          instructions: "You are New Bot, focusing on 2 GB phone RAM budgets, flash storage throughput, and mmap page faults.",
+          memories: [
+            "Watch UFS cold page-in latency and sustained prefill thermal throttling."
+          ],
+          tools: ["fs_read", "shell_exec", "handoff"],
+          mcpCommand: "",
+          worktreeBranch: "vanara/new-bot"
         }
       ],
       threads: [
@@ -1832,12 +1981,26 @@
 
     let state = JSON.parse(localStorage.getItem("vanaras_v5_monkeys") || "null") || JSON.parse(JSON.stringify(DEFAULT_STATE));
     if (!Array.isArray(state.sharedFacts)) state.sharedFacts = [...DEFAULT_STATE.sharedFacts];
+    if (typeof state.autoTriggerEnabled !== "boolean") state.autoTriggerEnabled = true;
+
+    function hydrateBotAgentFields() {
+      (state.bots || []).forEach(b => {
+        const def = DEFAULT_STATE.bots.find(d => d.id === b.id);
+        if (!Array.isArray(b.memories)) b.memories = def?.memories ? [...def.memories] : [];
+        if (!Array.isArray(b.tools)) b.tools = def?.tools ? [...def.tools] : ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "handoff"];
+        if (typeof b.mcpCommand !== "string") b.mcpCommand = "";
+        if (!b.worktreeBranch) b.worktreeBranch = `vanara/${(b.name || b.id).toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`;
+      });
+    }
+    hydrateBotAgentFields();
 
     let activeThreadId = "thread_r1";
     let detectedLocalModel = "bonsai-27b-mlx";
     let unreadCounts = {};
     let activeWorkingThreads = {};
     let cachedFolderSnapshots = {};
+    let agentWorktrees = {};
+    let activeAutonomousTimers = {};
 
     let deliverables = [
       { name: "README.md", content: "# Vanaras Deliverable Studio\n\nClick `Collab` in any chat to have your Vanara monkeys debate, plan, and generate multi-file code or interactive HTML deliverables here." }
@@ -1858,6 +2021,51 @@
     let serverDefaultMountPath = "/Users/lakshmipriyasridharan/AI/REA/vanaras";
     let serverRepoRoot = "/Users/lakshmipriyasridharan/AI/REA";
 
+    async function ensureAgentWorktreeOnServer(bot) {
+      if (!bot) return null;
+      try {
+        const res = await fetch("/api/agent/worktree", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "ensure", botId: bot.id, botName: bot.name })
+        });
+        if (res.ok) {
+          const info = await res.json();
+          agentWorktrees[bot.id] = info;
+          bot.worktreeBranch = info.branch || bot.worktreeBranch;
+          updateHeaderPills();
+          return info;
+        }
+      } catch {}
+      return null;
+    }
+
+    async function syncAgentMemoryOnServer(bot, action = "get", extra = {}) {
+      if (!bot) return [];
+      try {
+        const res = await fetch("/api/agent/memory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ botId: bot.id, action, ...extra })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.memories)) {
+            if (data.memories.length === 0 && Array.isArray(bot.memories) && bot.memories.length > 0 && action === "get") {
+              await fetch("/api/agent/memory", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ botId: bot.id, action: "set", memories: bot.memories })
+              });
+            } else {
+              bot.memories = data.memories;
+            }
+          }
+        }
+      } catch {}
+      return bot.memories || [];
+    }
+
     async function loadDiskWorkspaceOnBoot() {
       try {
         const res = await fetch("/api/workspace");
@@ -1868,6 +2076,8 @@
           if (data.state && Array.isArray(data.state.threads) && data.state.threads.length >= 6 && data.state.bots?.[0]?.avatarStyle?.startsWith("vanara-")) {
             state = data.state;
             if (!Array.isArray(state.sharedFacts)) state.sharedFacts = [...DEFAULT_STATE.sharedFacts];
+            if (typeof state.autoTriggerEnabled !== "boolean") state.autoTriggerEnabled = true;
+            hydrateBotAgentFields();
             localStorage.setItem("vanaras_v5_monkeys", JSON.stringify(state));
             renderThreadList();
             renderActiveThread();
@@ -1877,6 +2087,11 @@
           }
         }
       } catch {}
+      for (const bot of state.bots) {
+        syncAgentMemoryOnServer(bot, "get");
+      }
+      const lead = getActiveLeadBot();
+      if (lead) ensureAgentWorktreeOnServer(lead);
     }
 
     function getBot(botId) {
@@ -1887,6 +2102,13 @@
       return state.threads.find(t => t.id === activeThreadId) || state.threads[0];
     }
 
+    function getActiveLeadBot() {
+      const thread = getActiveThread();
+      if (!thread) return state.bots[0];
+      if (thread.type === "dm") return getBot(thread.botId);
+      return getBot(thread.botIds?.[0] || "bot_r1");
+    }
+
     function updateHeaderPills() {
       const thread = getActiveThread();
       const mountPath = thread?.mountPath || serverDefaultMountPath;
@@ -1894,9 +2116,40 @@
       const mountEl = document.getElementById("mountFolderLabel");
       if (mountEl) mountEl.innerText = baseName;
 
+      const leadBot = getActiveLeadBot();
+      const wtEl = document.getElementById("worktreeBranchLabel");
+      if (wtEl && leadBot) {
+        wtEl.innerText = leadBot.worktreeBranch || `vanara/${leadBot.name.toLowerCase()}`;
+      }
+
       const factsCount = (state.sharedFacts || []).length;
       const factsEl = document.getElementById("sharedFactsCountPill");
       if (factsEl) factsEl.innerText = `${factsCount}`;
+
+      const autoPill = document.getElementById("autoTriggerPill");
+      const autoDot = document.getElementById("autoTriggerDot");
+      const autoLbl = document.getElementById("autoTriggerLabel");
+      if (autoPill && autoDot && autoLbl) {
+        const on = state.autoTriggerEnabled !== false;
+        autoLbl.innerText = on ? "Auto: ON" : "Auto: OFF";
+        autoDot.style.background = on ? "#10b981" : "#71717a";
+        autoPill.style.borderColor = on ? "rgba(16,185,129,0.38)" : "#292930";
+        autoPill.style.color = on ? "#6ee7b7" : "#94949e";
+      }
+    }
+
+    function toggleAutoTriggerMode() {
+      state.autoTriggerEnabled = !state.autoTriggerEnabled;
+      if (!state.autoTriggerEnabled) {
+        Object.keys(activeAutonomousTimers).forEach(tid => {
+          clearTimeout(activeAutonomousTimers[tid]);
+          delete activeAutonomousTimers[tid];
+        });
+      }
+      saveState();
+      showToast(state.autoTriggerEnabled
+        ? "Auto-Trigger ON: Bots self-trigger on @mentions, tools & background goals"
+        : "Auto-Trigger Paused");
     }
 
     // =========================================================================
@@ -2227,41 +2480,57 @@
     }
 
     // =========================================================================
-    // 6. GROUNDED FOLDER CONTEXT & BACKGROUND SHELL RUNNER
+    // 6. GROUNDED FOLDER CONTEXT, ISOLATED WORKTREE & BACKGROUND SHELL RUNNER
     // =========================================================================
-    async function ensureFolderSnapshot(mountPath) {
-      if (!mountPath) return "";
-      if (cachedFolderSnapshots[mountPath]) return cachedFolderSnapshots[mountPath];
+    async function ensureFolderSnapshot(mountPath, bot) {
+      const cacheKey = `${bot?.id || "shared"}:${mountPath || "default"}`;
+      if (cachedFolderSnapshots[cacheKey]) return cachedFolderSnapshots[cacheKey];
       try {
         const res = await fetch("/api/workspace/context", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ folderPath: mountPath })
+          body: JSON.stringify({
+            folderPath: mountPath,
+            botId: bot?.id,
+            botName: bot?.name
+          })
         });
         if (res.ok) {
           const data = await res.json();
-          cachedFolderSnapshots[mountPath] = data.summary || "";
-          return cachedFolderSnapshots[mountPath];
+          if (data.worktree?.branch && bot) {
+            agentWorktrees[bot.id] = data.worktree;
+            bot.worktreeBranch = data.worktree.branch;
+            updateHeaderPills();
+          }
+          cachedFolderSnapshots[cacheKey] = data.summary || "";
+          return cachedFolderSnapshots[cacheKey];
         }
       } catch {}
       return "";
     }
 
-    async function executeBackgroundCommand(command) {
+    async function executeBackgroundCommand(command, botOverride = null) {
       const thread = getActiveThread();
       if (!thread || !command) return;
       const threadId = thread.id;
-      const cwd = thread.mountPath || "/Users/lakshmipriyasridharan/AI/REA/vanaras";
+      const actingBot = botOverride || getActiveLeadBot();
+      const cwd = thread.mountPath || serverDefaultMountPath;
 
-      activeWorkingThreads[threadId] = `Running ${command.slice(0, 20)}...`;
+      activeWorkingThreads[threadId] = `${actingBot ? actingBot.name + " running" : "Running"} ${command.slice(0, 20)}...`;
       renderThreadList();
-      showToast(`Running: ${command}`);
+      showToast(`Running in ${actingBot?.worktreeBranch || "worktree"}: ${command}`);
 
       try {
         await fetch("/api/workspace/exec", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ command, cwd, threadId })
+          body: JSON.stringify({
+            command,
+            cwd,
+            threadId,
+            botId: actingBot?.id,
+            botName: actingBot?.name
+          })
         });
       } catch (e) {
         delete activeWorkingThreads[threadId];
@@ -2271,26 +2540,109 @@
     }
 
     function promptBackgroundCommand() {
-      const thread = getActiveThread();
-      const cwd = thread?.mountPath || "/Users/lakshmipriyasridharan/AI/REA/vanaras";
-      const cmd = prompt(`Run command in mounted folder (${cwd}):`, "ls -la");
+      const leadBot = getActiveLeadBot();
+      const wtBranch = leadBot?.worktreeBranch || "vanara/r1";
+      const cmd = prompt(`Run command in ${leadBot?.name || "Agent"}'s isolated git worktree (${wtBranch}):`, "git status -sb && ls -la");
       if (cmd && cmd.trim()) {
-        executeBackgroundCommand(cmd.trim());
+        executeBackgroundCommand(cmd.trim(), leadBot);
       }
     }
 
     // =========================================================================
-    // 7. SEND MESSAGE & LLM EXECUTION (WITH SHARED MEMORY + MOUNTED CONTEXT)
+    // 7. SEND MESSAGE, PER-AGENT MEMORY/TOOLS/WORKTREE & SELF-TRIGGERED LOOP
     // =========================================================================
     function buildGroundedSystemPrompt(bot, thread, folderSummary) {
+      const privateMemories = Array.isArray(bot.memories) && bot.memories.length > 0
+        ? `\n\nYOUR PRIVATE AGENT MEMORY (${bot.name} ONLY — PERSISTED ON DISK):\n` + bot.memories.map((m, i) => `${i + 1}. ${m}`).join("\n")
+        : "";
       const factsBlock = (state.sharedFacts && state.sharedFacts.length > 0)
         ? `\n\nSHARED WORKSPACE MEMORY:\n` + state.sharedFacts.map((f, i) => `${i + 1}. ${f}`).join("\n")
         : "";
+      const wtBranch = bot.worktreeBranch || `vanara/${bot.name.toLowerCase()}`;
+      const wtPath = agentWorktrees[bot.id]?.worktreeDir || `.worktrees/${bot.id}`;
+      const worktreeBlock = `\n\nYOUR ISOLATED GIT WORKTREE:\n- Branch: ${wtBranch}\n- Path: ${wtPath}\nAll your file writes and shell commands run in your isolated worktree so you never collide with other Vanaras.`;
+      const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "handoff"]).join(", ");
+      const mcpLine = bot.mcpCommand ? `\n- Connected MCP Server: ${bot.mcpCommand}` : "";
+      const toolsProtocolBlock = `\n\nYOUR ENABLED AGENT TOOLS (${enabledTools})${mcpLine}:
+- To save a new fact to your private agent memory, include: [REMEMBER: concise technical fact]
+- To run a command in your isolated worktree, include: [TOOL: shell | <command>]
+- To write a file in your isolated worktree, include: [TOOL: write_file | <relative_path> | <content>]
+- To hand off & self-trigger another Vanara autonomously, mention them by @handle (e.g. @R2, @R3, @R4, @R1) with a clear next action.`;
       const mountBlock = folderSummary
-        ? `\n\nMOUNTED LOCAL PROJECT (${thread.mountPath || "workspace"}):\n${folderSummary.slice(0, 1400)}`
+        ? `\n\nWORKSPACE SNAPSHOT:\n${folderSummary.slice(0, 1200)}`
         : "";
       const teamNames = state.bots.map(b => `@${b.name} (${b.role})`).join(", ");
-      return `You are ${bot.name} (${bot.role}) in the Vanaras multi-agent workspace.\n${bot.instructions || ""}${factsBlock}${mountBlock}\n\nFellow Vanara agents: ${teamNames}.\nBe concise, high-signal, and helpful.`;
+      return `You are ${bot.name} (${bot.role}) in the Vanaras autonomous multi-agent workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${mountBlock}\n\nFellow Vanara agents: ${teamNames}.\nBe concise, high-signal, and proactive.`;
+    }
+
+    async function processBotAutonomousActions(thread, bot, replyText) {
+      const executedTools = [];
+      if (!replyText) return executedTools;
+
+      // 1. Extract [REMEMBER: ...] into Per-Agent Private Memory on disk
+      const rememberRx = /\[REMEMBER:\s*([^\]]+)\]/gi;
+      let rmMatch;
+      while ((rmMatch = rememberRx.exec(replyText)) !== null) {
+        const fact = rmMatch[1].trim();
+        if (fact && !bot.memories.includes(fact)) {
+          bot.memories.unshift(fact);
+          await syncAgentMemoryOnServer(bot, "add", { item: fact });
+          showToast(`${bot.name} remembered: ${fact.slice(0, 42)}…`);
+        }
+      }
+
+      // 2. Extract [TOOL: type | arg1 | arg2] and execute in Bot's Isolated Worktree
+      const toolRx = /\[TOOL:\s*([a-z_]+)(?:\s*\|\s*([^\]|]+))?(?:\s*\|\s*([^\]]+))?\]/gi;
+      let tMatch;
+      while ((tMatch = toolRx.exec(replyText)) !== null) {
+        const rawTool = tMatch[1].trim().toLowerCase();
+        const arg1 = (tMatch[2] || "").trim();
+        const arg2 = (tMatch[3] || "").trim();
+
+        try {
+          if ((rawTool === "shell" || rawTool === "shell_exec") && bot.tools?.includes("shell_exec") && arg1) {
+            await fetch("/api/workspace/exec", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ command: arg1, threadId: thread.id, botId: bot.id, botName: bot.name })
+            });
+            executedTools.push(`shell: ${arg1}`);
+          } else if ((rawTool === "write_file" || rawTool === "fs_write") && bot.tools?.includes("fs_write") && arg1) {
+            const res = await fetch("/api/agent/tool", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "fs_write", botId: bot.id, botName: bot.name, filePath: arg1, content: arg2 })
+            });
+            const data = await res.json();
+            if (res.ok) {
+              thread.messages.push({
+                senderType: "terminal",
+                command: `[${bot.name} worktree] write ${arg1}`,
+                exitCode: 0,
+                text: `Wrote ${data.bytesWritten || arg2.length} bytes to ${arg1} on branch ${bot.worktreeBranch}`
+              });
+              executedTools.push(`write_file: ${arg1}`);
+            }
+          } else if ((rawTool === "git_status" || rawTool === "git_diff") && bot.tools?.includes(rawTool)) {
+            const res = await fetch("/api/agent/tool", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: rawTool, botId: bot.id, botName: bot.name })
+            });
+            const data = await res.json();
+            if (res.ok) {
+              thread.messages.push({
+                senderType: "terminal",
+                command: `[${bot.name} ${data.branch}] ${rawTool}`,
+                exitCode: 0,
+                text: data.output || "(clean worktree)"
+              });
+              executedTools.push(rawTool);
+            }
+          }
+        } catch {}
+      }
+      return executedTools;
     }
 
     async function handleSendMessage() {
@@ -2343,28 +2695,57 @@
       }
 
       if (targetBot) {
-        await runBotTurnInThread(thread.id, targetBot, text);
+        await runBotTurnInThread(thread.id, targetBot, text, 0);
       }
     }
 
-    async function runBotTurnInThread(threadId, targetBot, triggerText) {
+    async function startAutonomousBackgroundGoal() {
+      const thread = getActiveThread();
+      if (!thread) return;
+      const lastUser = [...thread.messages].reverse().find(m => m.senderType === "user");
+      const goal = prompt(
+        "Enter an autonomous goal (Vanaras will self-trigger turns & tools in the background even while you switch chats):",
+        lastUser ? lastUser.text : "Audit our GGUF embedding layout, run a check in your isolated worktree, and hand off to @R2 and @R3"
+      );
+      if (!goal || !goal.trim()) return;
+
+      state.autoTriggerEnabled = true;
+      updateHeaderPills();
+      thread.messages.push({
+        senderType: "user",
+        text: `[Autonomous Goal] ${goal.trim()}`
+      });
+      saveState();
+      renderThreadList();
+      renderActiveThread();
+
+      const leadBot = getActiveLeadBot();
+      await runBotTurnInThread(thread.id, leadBot, `${goal.trim()}\n\n(Autonomous Mode: execute any helpful [TOOL: ...] in your worktree and @mention the next specialist Vanara so they self-trigger automatically.)`, 0);
+    }
+
+    async function runBotTurnInThread(threadId, targetBot, triggerText, chainDepth = 0) {
       const targetThread = state.threads.find(t => t.id === threadId);
       if (!targetThread || !targetBot) return;
 
-      activeWorkingThreads[threadId] = `${targetBot.name} is thinking...`;
+      const depthLabel = chainDepth > 0 ? ` (Auto-Turn ${chainDepth + 1})` : "";
+      activeWorkingThreads[threadId] = `${targetBot.name} working in ${targetBot.worktreeBranch || "worktree"}${depthLabel}...`;
       renderThreadList();
 
+      let nextAutoBot = null;
+      let nextAutoPrompt = "";
+
       try {
-        const folderSummary = await ensureFolderSnapshot(targetThread.mountPath);
+        await ensureAgentWorktreeOnServer(targetBot);
+        const folderSummary = await ensureFolderSnapshot(targetThread.mountPath, targetBot);
         const historyContext = targetThread.messages.slice(-8).map(m => {
           if (m.senderType === "user") return `${state.currentUser.name}: ${m.text}`;
-          if (m.senderType === "terminal") return `[Terminal ${m.command}]: ${m.text.slice(0, 400)}`;
+          if (m.senderType === "terminal") return `[Worktree Terminal ${m.command}]: ${m.text.slice(0, 400)}`;
           const b = getBot(m.botId);
           return `${b ? b.name : "Vanara"}: ${m.text}`;
         }).join("\n\n");
 
         const sysPrompt = buildGroundedSystemPrompt(targetBot, targetThread, folderSummary);
-        const userPrompt = `Recent conversation:\n${historyContext}\n\nLatest prompt:\n${triggerText}\n\nRespond directly as ${targetBot.name}:`;
+        const userPrompt = `Recent conversation:\n${historyContext}\n\nLatest trigger:\n${triggerText}\n\nRespond directly as ${targetBot.name}:`;
 
         const reply = await queryBotLLM(targetBot, sysPrompt, userPrompt, 2000);
         const extracted = parseDeliverableBlocks(reply.content);
@@ -2376,17 +2757,33 @@
           renderDeliverableDrawer();
         }
 
+        const cleanDisplay = reply.content
+          .replace(/\[REMEMBER:\s*[^\]]+\]/gi, "")
+          .trim() || reply.content;
+
         targetThread.messages.push({
           senderType: "bot",
           botId: targetBot.id,
-          text: reply.content,
+          text: cleanDisplay,
           reasoning: reply.reasoning,
+          collabRound: chainDepth > 0 ? `Auto-Triggered • ${targetBot.worktreeBranch}` : targetBot.worktreeBranch,
           hasDeliverables
         });
 
+        await processBotAutonomousActions(targetThread, targetBot, reply.content);
+
         if (activeThreadId !== threadId) {
           unreadCounts[threadId] = (unreadCounts[threadId] || 0) + 1;
-          showToast(`${targetBot.name} replied in ${targetThread.name || targetBot.name}`);
+          showToast(`${targetBot.name} completed turn in ${targetThread.name || targetBot.name}`);
+        }
+
+        // UPGRADE 1: Grok-Bots Style Self-Triggered Autonomous Chaining
+        if (state.autoTriggerEnabled !== false && chainDepth < 2 && (targetBot.tools || []).includes("handoff")) {
+          const mentionedBots = findMentionedBotsInText(cleanDisplay, targetBot.id);
+          if (mentionedBots.length > 0) {
+            nextAutoBot = mentionedBots[0];
+            nextAutoPrompt = `@${nextAutoBot.name}, ${targetBot.name} just completed their turn and tagged you:\n"${cleanDisplay.slice(0, 500)}"\n\nContinue the work autonomously from your perspective (${nextAutoBot.role}) in your worktree (${nextAutoBot.worktreeBranch}).`;
+          }
         }
       } catch (e) {
         targetThread.messages.push({
@@ -2401,6 +2798,20 @@
         if (activeThreadId === threadId) {
           renderActiveThread();
         }
+      }
+
+      if (nextAutoBot && state.autoTriggerEnabled !== false) {
+        activeWorkingThreads[threadId] = `Auto-triggering @${nextAutoBot.name}...`;
+        renderThreadList();
+        activeAutonomousTimers[threadId] = setTimeout(() => {
+          delete activeAutonomousTimers[threadId];
+          if (state.autoTriggerEnabled !== false) {
+            runBotTurnInThread(threadId, nextAutoBot, nextAutoPrompt, chainDepth + 1);
+          } else {
+            delete activeWorkingThreads[threadId];
+            renderThreadList();
+          }
+        }, 1100);
       }
     }
 
@@ -2601,9 +3012,81 @@
       renderAvatarPicker();
     }
 
+    let modalPrivateMemories = [];
+
+    function renderBotPrivateMemoryListInModal() {
+      const box = document.getElementById("botPrivateMemoryList");
+      if (!box) return;
+      box.innerHTML = modalPrivateMemories.map((fact, idx) => `
+        <div style="padding:6px 10px; border-radius:8px; background:#18181e; border:1px solid #272730; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span style="font-size:11.5px; color:#d4d4de;">${escapeHtml(fact)}</span>
+          <button type="button" onclick="removePrivateMemoryInBotModal(${idx})" class="side-icon-btn" style="width:20px; height:20px;" title="Remove">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      `).join("") || `<div style="font-size:11px; color:#686873;">No private memories yet for this Vanara.</div>`;
+    }
+
+    function addPrivateMemoryInBotModal() {
+      const input = document.getElementById("botNewMemoryInput");
+      const val = input.value.trim();
+      if (!val) return;
+      if (!modalPrivateMemories.includes(val)) {
+        modalPrivateMemories.unshift(val);
+      }
+      input.value = "";
+      renderBotPrivateMemoryListInModal();
+    }
+
+    function removePrivateMemoryInBotModal(idx) {
+      modalPrivateMemories.splice(idx, 1);
+      renderBotPrivateMemoryListInModal();
+    }
+
+    function renderBotToolsChecklistInModal(selectedTools) {
+      const box = document.getElementById("botToolsChecklist");
+      if (!box) return;
+      box.innerHTML = AVAILABLE_AGENT_TOOLS.map(t => `
+        <label style="display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:8px; background:#18181e; border:1px solid #272730; font-size:11.5px; color:#d4d4de; cursor:pointer;">
+          <input type="checkbox" class="bot-tool-cb" value="${t.id}" ${(selectedTools || []).includes(t.id) ? "checked" : ""}>
+          <span>${escapeHtml(t.label)}</span>
+        </label>
+      `).join("");
+    }
+
+    async function probeMcpServerInModal() {
+      const cmd = document.getElementById("botMcpCommandInput").value.trim();
+      const statusEl = document.getElementById("botMcpProbeStatus");
+      if (!cmd) {
+        statusEl.innerText = "Enter an MCP server stdio command first (e.g. npx -y @modelcontextprotocol/server-filesystem .)";
+        return;
+      }
+      statusEl.innerText = "Probing MCP server via JSON-RPC 2.0...";
+      const editId = document.getElementById("botEditId").value || "bot_r1";
+      try {
+        const res = await fetch("/api/agent/tool", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "mcp_probe", botId: editId, mcpCommand: cmd })
+        });
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.tools)) {
+          statusEl.style.color = "#6ee7b7";
+          statusEl.innerText = `MCP Ready (${data.tools.length} tools): ${data.tools.map(t => t.name).join(", ") || "connected"}`;
+        } else {
+          statusEl.style.color = "#f87171";
+          statusEl.innerText = `MCP Error: ${data.error || "Failed to list tools"}`;
+        }
+      } catch (e) {
+        statusEl.style.color = "#f87171";
+        statusEl.innerText = `MCP Error: ${e.message}`;
+      }
+    }
+
     function openBotModal(botId) {
       const modal = document.getElementById("botModal");
       const deleteBtn = document.getElementById("deleteBotBtn");
+      document.getElementById("botMcpProbeStatus").innerText = "";
       if (botId) {
         const bot = getBot(botId);
         document.getElementById("botModalTitle").innerText = `Customize ${bot.name}`;
@@ -2615,7 +3098,11 @@
         document.getElementById("botBaseUrlInput").value = bot.baseUrl || "";
         document.getElementById("botApiKeyInput").value = bot.apiKey || "";
         document.getElementById("botInstructionsInput").value = bot.instructions || "";
+        document.getElementById("botMcpCommandInput").value = bot.mcpCommand || "";
         selectedAvatarStyleInModal = bot.avatarStyle || "vanara-crimson";
+        modalPrivateMemories = [...(bot.memories || [])];
+        renderBotPrivateMemoryListInModal();
+        renderBotToolsChecklistInModal(bot.tools || AVAILABLE_AGENT_TOOLS.map(t => t.id));
         deleteBtn.classList.toggle("hidden", state.bots.length <= 1);
       } else {
         document.getElementById("botModalTitle").innerText = "New Vanara Bot";
@@ -2627,7 +3114,11 @@
         document.getElementById("botBaseUrlInput").value = "http://192.168.68.102:1234/v1";
         document.getElementById("botApiKeyInput").value = "";
         document.getElementById("botInstructionsInput").value = "";
+        document.getElementById("botMcpCommandInput").value = "";
         selectedAvatarStyleInModal = MONKEY_STYLES[state.bots.length % MONKEY_STYLES.length].id;
+        modalPrivateMemories = [];
+        renderBotPrivateMemoryListInModal();
+        renderBotToolsChecklistInModal(AVAILABLE_AGENT_TOOLS.map(t => t.id));
         deleteBtn.classList.add("hidden");
       }
       renderAvatarPicker();
@@ -2636,6 +3127,12 @@
 
     function closeBotModal() {
       document.getElementById("botModal").classList.add("hidden");
+    }
+
+    function openWorktreeFromBotModal() {
+      const editId = document.getElementById("botEditId").value || getActiveLeadBot()?.id;
+      closeBotModal();
+      openWorktreeModal(editId);
     }
 
     function onBotProviderChange() {
@@ -2687,7 +3184,7 @@
       }
     }
 
-    function saveBotFromModal() {
+    async function saveBotFromModal() {
       const editId = document.getElementById("botEditId").value;
       const name = document.getElementById("botNameInput").value.trim() || "Vanara";
       const role = document.getElementById("botRoleInput").value.trim() || "Specialist Monkey";
@@ -2696,13 +3193,30 @@
       const baseUrl = document.getElementById("botBaseUrlInput").value.trim();
       const apiKey = document.getElementById("botApiKeyInput").value.trim();
       const instructions = document.getElementById("botInstructionsInput").value.trim();
+      const mcpCommand = document.getElementById("botMcpCommandInput").value.trim();
+      const selectedTools = Array.from(document.querySelectorAll(".bot-tool-cb:checked")).map(cb => cb.value);
 
+      let targetBotRef = null;
       if (editId) {
         const bot = getBot(editId);
-        Object.assign(bot, { name, role, provider, model, baseUrl, apiKey, instructions, avatarStyle: selectedAvatarStyleInModal });
+        Object.assign(bot, {
+          name,
+          role,
+          provider,
+          model,
+          baseUrl,
+          apiKey,
+          instructions,
+          avatarStyle: selectedAvatarStyleInModal,
+          memories: [...modalPrivateMemories],
+          tools: selectedTools,
+          mcpCommand,
+          worktreeBranch: `vanara/${name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`
+        });
+        targetBotRef = bot;
       } else {
         const newBotId = "bot_" + Date.now();
-        state.bots.push({
+        targetBotRef = {
           id: newBotId,
           name,
           role,
@@ -2711,26 +3225,36 @@
           baseUrl,
           apiKey,
           model,
-          instructions
-        });
+          instructions,
+          memories: [...modalPrivateMemories],
+          tools: selectedTools,
+          mcpCommand,
+          worktreeBranch: `vanara/${name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`
+        };
+        state.bots.push(targetBotRef);
         const newThreadId = "thread_dm_" + Date.now();
         state.threads.unshift({
           id: newThreadId,
           type: "dm",
           botId: newBotId,
-          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
+          mountPath: serverDefaultMountPath,
           messages: [
-            { senderType: "bot", botId: newBotId, text: `Hey! I'm ${name} (${role}), running on ${provider}/${model}. How can I help?` }
+            { senderType: "bot", botId: newBotId, text: `Hey! I'm ${name} (${role}), running on ${provider}/${model} with my own isolated worktree (${targetBotRef.worktreeBranch}). How can I help?` }
           ]
         });
         activeThreadId = newThreadId;
+      }
+
+      if (targetBotRef) {
+        syncAgentMemoryOnServer(targetBotRef, "set", { memories: targetBotRef.memories });
+        ensureAgentWorktreeOnServer(targetBotRef);
       }
 
       saveState();
       closeBotModal();
       renderThreadList();
       renderActiveThread();
-      showToast(`Saved ${name}`);
+      showToast(`Saved ${name} (memory, tools & worktree synced)`);
     }
 
     function deleteBotFromModal() {
@@ -2743,6 +3267,76 @@
       closeBotModal();
       renderThreadList();
       renderActiveThread();
+    }
+
+    // UPGRADE 4: Per-Agent Isolated Git Worktree Inspector Modal
+    async function openWorktreeModal(botIdOverride = null) {
+      const modal = document.getElementById("worktreeModal");
+      const sel = document.getElementById("worktreeBotSelect");
+      const targetBot = botIdOverride ? getBot(botIdOverride) : getActiveLeadBot();
+      sel.innerHTML = state.bots.map(b => `
+        <option value="${b.id}" ${b.id === targetBot?.id ? "selected" : ""}>${escapeHtml(b.name)} — ${escapeHtml(b.role)} (${escapeHtml(b.worktreeBranch || "vanara/" + b.name.toLowerCase())})</option>
+      `).join("");
+      modal.classList.remove("hidden");
+      await refreshWorktreeInspector();
+    }
+
+    function closeWorktreeModal() {
+      document.getElementById("worktreeModal").classList.add("hidden");
+    }
+
+    async function refreshWorktreeInspector() {
+      const botId = document.getElementById("worktreeBotSelect").value;
+      const bot = getBot(botId);
+      const previewEl = document.getElementById("wtStatusPreview");
+      if (!bot) return;
+
+      previewEl.innerText = `Checking isolated worktree for ${bot.name}...`;
+      try {
+        const res = await fetch("/api/agent/worktree", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "diff", botId: bot.id, botName: bot.name })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          agentWorktrees[bot.id] = data;
+          bot.worktreeBranch = data.branch;
+          document.getElementById("wtBranchDisplay").innerText = data.branch;
+          document.getElementById("wtPathDisplay").innerText = data.worktreeDir;
+          previewEl.innerText = `# git status --short (${data.branch})\n${data.status || "(clean worktree — no uncommitted files)"}\n\n# git diff --stat\n${data.diff || "(no diff)"}`;
+          updateHeaderPills();
+        } else {
+          previewEl.innerText = `Error: ${data.error || "Unable to inspect worktree"}`;
+        }
+      } catch (e) {
+        previewEl.innerText = `Error: ${e.message}`;
+      }
+    }
+
+    async function commitAgentWorktreeFromModal() {
+      const botId = document.getElementById("worktreeBotSelect").value;
+      const bot = getBot(botId);
+      if (!bot) return;
+      const message = prompt(`Commit changes in ${bot.name}'s isolated worktree (${bot.worktreeBranch}):`, `feat(${bot.name.toLowerCase()}): autonomous agent checkpoint`);
+      if (!message) return;
+
+      try {
+        const res = await fetch("/api/agent/worktree", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "commit", botId: bot.id, botName: bot.name, message })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(`Committed in ${data.branch}`);
+          await refreshWorktreeInspector();
+        } else {
+          showToast(`Commit failed: ${data.error}`);
+        }
+      } catch (e) {
+        showToast(`Commit error: ${e.message}`);
+      }
     }
 
     function openGroupModal(threadId) {

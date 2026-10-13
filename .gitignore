@@ -5,8 +5,10 @@
 # Compiled macOS Mach-O executable (never commit binaries)
 /Vanaras.app/Contents/MacOS/
 
-# Runtime state, API keys & user workspace data
+# Runtime state, API keys, per-agent memory & isolated worktrees
 /ui/.vanaras-workspace.json
+/ui/.vanaras-agents/
+/.worktrees/
 /projects/
 .DS_Store
 node_modules/

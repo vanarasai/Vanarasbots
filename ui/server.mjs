@@ -1,14 +1,19 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { exec } from "node:child_process";
+import { exec, execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
 const REPO_ROOT = path.resolve(ROOT_DIR, "..");
 const WORKSPACE_FILE = path.join(__dirname, ".vanaras-workspace.json");
+const AGENTS_STATE_DIR = path.join(__dirname, ".vanaras-agents");
+const WORKTREES_DIR = path.join(ROOT_DIR, ".worktrees");
 const PORT = 3000;
+
+fs.mkdirSync(AGENTS_STATE_DIR, { recursive: true });
+fs.mkdirSync(WORKTREES_DIR, { recursive: true });
 
 // Connected real-time multiplayer clients (SSE)
 const sseClients = new Set();
@@ -27,6 +32,158 @@ function broadcastEvent(eventType, payload) {
   }
 }
 
+function sanitizeSlug(str, fallback = "agent") {
+  return String(str || fallback)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || fallback;
+}
+
+// ============================================================================
+// PER-AGENT PERSISTENT MEMORY STORE (.vanaras-agents/<botId>/memory.json)
+// ============================================================================
+function getAgentMemoryFile(botId) {
+  const slug = sanitizeSlug(botId, "bot");
+  const dir = path.join(AGENTS_STATE_DIR, slug);
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, "memory.json");
+}
+
+function loadAgentMemory(botId) {
+  try {
+    const file = getAgentMemoryFile(botId);
+    if (fs.existsSync(file)) {
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (Array.isArray(parsed.memories)) return parsed.memories;
+    }
+  } catch {}
+  return [];
+}
+
+function saveAgentMemory(botId, memories) {
+  try {
+    const file = getAgentMemoryFile(botId);
+    fs.writeFileSync(file, JSON.stringify({ botId, updatedAt: Date.now(), memories }, null, 2), "utf8");
+  } catch {}
+}
+
+// ============================================================================
+// PER-AGENT ISOLATED GIT WORKTREE MANAGER (.worktrees/<botId>)
+// ============================================================================
+function ensureAgentWorktree(botId, botName) {
+  const botSlug = sanitizeSlug(botId, "bot");
+  const nameSlug = sanitizeSlug(botName || botId, "vanara");
+  const branchName = `vanara/${nameSlug}`;
+  const worktreePath = path.join(WORKTREES_DIR, botSlug);
+
+  try {
+    if (!fs.existsSync(path.join(worktreePath, ".git"))) {
+      fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+      execSync(`git worktree add -B "${branchName}" "${worktreePath}" HEAD`, {
+        cwd: ROOT_DIR,
+        stdio: "pipe",
+        timeout: 10000
+      });
+    }
+  } catch {
+    // Fallback if git worktree is locked or already exists
+    fs.mkdirSync(worktreePath, { recursive: true });
+  }
+
+  let status = "";
+  let diffStat = "";
+  let commits = "";
+  try {
+    status = execSync("git status --short", { cwd: worktreePath, stdio: "pipe", timeout: 4000 }).toString("utf8").trim();
+    diffStat = execSync("git diff --stat", { cwd: worktreePath, stdio: "pipe", timeout: 4000 }).toString("utf8").trim();
+    commits = execSync("git log --oneline -n 4", { cwd: worktreePath, stdio: "pipe", timeout: 4000 }).toString("utf8").trim();
+  } catch {}
+
+  return {
+    botId,
+    botName,
+    branch: branchName,
+    worktreePath,
+    status: status || "Clean worktree",
+    diffStat: diffStat || "No uncommitted diff",
+    commits
+  };
+}
+
+// ============================================================================
+// REAL MCP STDIO CLIENT (JSON-RPC 2.0 initialize -> tools/list | tools/call)
+// ============================================================================
+function callStdioMcpServer({ commandLine, cwd, method = "tools/list", params = {} }) {
+  return new Promise((resolve) => {
+    const parts = commandLine.trim().split(/\s+/);
+    const bin = parts[0];
+    const args = parts.slice(1);
+    if (!bin) return resolve({ ok: false, error: "Empty MCP command" });
+
+    let stdoutBuf = "";
+    let resolved = false;
+    const finish = (res) => {
+      if (resolved) return;
+      resolved = true;
+      try { child.kill(); } catch {}
+      resolve(res);
+    };
+
+    const child = spawn(bin, args, {
+      cwd: cwd || ROOT_DIR,
+      shell: process.platform === "win32"
+    });
+
+    const timer = setTimeout(() => {
+      finish({ ok: false, error: "MCP server timed out after 6s", raw: stdoutBuf.slice(0, 600) });
+    }, 6000);
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      finish({ ok: false, error: err.message });
+    });
+
+    child.stdout.on("data", (chunk) => {
+      stdoutBuf += chunk.toString("utf8");
+      const lines = stdoutBuf.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("{")) continue;
+        try {
+          const msg = JSON.parse(trimmed);
+          if (msg.id === 1) {
+            const initializedNotif = JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n";
+            const req2 = JSON.stringify({ jsonrpc: "2.0", id: 2, method, params }) + "\n";
+            child.stdin.write(initializedNotif + req2);
+          } else if (msg.id === 2) {
+            clearTimeout(timer);
+            finish({ ok: true, result: msg.result || msg.error });
+          }
+        } catch {}
+      }
+    });
+
+    const initReq = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "Vanarasbots", version: "2.5.0" }
+      }
+    }) + "\n";
+
+    try {
+      child.stdin.write(initReq);
+    } catch (e) {
+      clearTimeout(timer);
+      finish({ ok: false, error: e.message });
+    }
+  });
+}
+
 function loadWorkspaceDiskState() {
   try {
     if (fs.existsSync(WORKSPACE_FILE)) {
@@ -40,10 +197,14 @@ function loadWorkspaceDiskState() {
 
 function saveWorkspaceDiskState(state) {
   try {
-    // Strip transient API keys before writing to disk for credential hygiene
     const sanitized = JSON.parse(JSON.stringify(state));
     if (Array.isArray(sanitized.bots)) {
-      sanitized.bots.forEach(b => { delete b.apiKey; });
+      sanitized.bots.forEach(b => {
+        delete b.apiKey;
+        if (Array.isArray(b.memories)) {
+          saveAgentMemory(b.id, b.memories);
+        }
+      });
     }
     fs.writeFileSync(WORKSPACE_FILE, JSON.stringify(sanitized, null, 2), "utf8");
   } catch (e) {
@@ -154,11 +315,133 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // 2B. Per-Agent Isolated Git Worktree Endpoint (/api/agent/worktree)
+  if (req.method === "POST" && req.url === "/api/agent/worktree") {
+    try {
+      const { botId, botName, action = "ensure", filePath, content, commitMessage } = await readJsonBody(req);
+      const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
+
+      if (action === "write_file" && filePath) {
+        const cleanRel = filePath.replace(/^\/+/, "").replace(/\.\./g, "");
+        const absTarget = path.resolve(wt.worktreePath, cleanRel);
+        if (absTarget.startsWith(wt.worktreePath)) {
+          fs.mkdirSync(path.dirname(absTarget), { recursive: true });
+          fs.writeFileSync(absTarget, content || "", "utf8");
+        }
+        return sendJson(res, 200, { ...ensureAgentWorktree(botId, botName), writtenFile: cleanRel });
+      }
+
+      if (action === "commit") {
+        const msg = (commitMessage || `feat(${wt.botName}): autonomous worktree update`).replace(/"/g, "'");
+        try {
+          execSync(`git add -A && git commit -m "${msg}"`, { cwd: wt.worktreePath, stdio: "pipe" });
+        } catch {}
+        return sendJson(res, 200, ensureAgentWorktree(botId, botName));
+      }
+
+      if (action === "diff") {
+        let fullDiff = "";
+        try {
+          fullDiff = execSync("git diff HEAD", { cwd: wt.worktreePath, stdio: "pipe", timeout: 4000 }).toString("utf8").trim();
+        } catch {}
+        return sendJson(res, 200, { ...wt, fullDiff: fullDiff || "(No unstaged/staged changes against HEAD)" });
+      }
+
+      return sendJson(res, 200, wt);
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // 2C. Per-Agent Persistent Memory Endpoint (/api/agent/memory)
+  if (req.method === "POST" && req.url === "/api/agent/memory") {
+    try {
+      const { botId, action = "get", fact, index, memories } = await readJsonBody(req);
+      let current = loadAgentMemory(botId);
+      if (action === "add" && fact) {
+        if (!current.includes(fact)) current.unshift(fact);
+        saveAgentMemory(botId, current);
+      } else if (action === "remove" && typeof index === "number") {
+        current.splice(index, 1);
+        saveAgentMemory(botId, current);
+      } else if (action === "set" && Array.isArray(memories)) {
+        current = memories;
+        saveAgentMemory(botId, current);
+      }
+      return sendJson(res, 200, { botId, memories: current });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // 2D. Per-Agent Tool & MCP Server Executor (/api/agent/tool)
+  if (req.method === "POST" && req.url === "/api/agent/tool") {
+    try {
+      const { botId, botName, tool, args = {}, mcpCommand } = await readJsonBody(req);
+      const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
+
+      if (tool === "mcp_probe" && mcpCommand) {
+        const mcpRes = await callStdioMcpServer({ commandLine: mcpCommand, cwd: wt.worktreePath, method: "tools/list" });
+        return sendJson(res, 200, mcpRes);
+      }
+
+      if (tool === "mcp_call" && mcpCommand) {
+        const mcpRes = await callStdioMcpServer({
+          commandLine: mcpCommand,
+          cwd: wt.worktreePath,
+          method: "tools/call",
+          params: { name: args.name, arguments: args.arguments || {} }
+        });
+        return sendJson(res, 200, mcpRes);
+      }
+
+      if (tool === "fs_read") {
+        const rel = String(args.path || "README.md").replace(/^\/+/, "").replace(/\.\./g, "");
+        const target = path.resolve(wt.worktreePath, rel);
+        if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+          return sendJson(res, 200, { ok: false, output: `File not found in ${wt.branch}: ${rel}` });
+        }
+        const text = fs.readFileSync(target, "utf8").slice(0, 3000);
+        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, output: text });
+      }
+
+      if (tool === "fs_write") {
+        const rel = String(args.path || "notes.md").replace(/^\/+/, "").replace(/\.\./g, "");
+        const target = path.resolve(wt.worktreePath, rel);
+        if (target.startsWith(wt.worktreePath)) {
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          fs.writeFileSync(target, String(args.content || ""), "utf8");
+          return sendJson(res, 200, {
+            ok: true,
+            worktreePath: wt.worktreePath,
+            branch: wt.branch,
+            output: `Wrote ${ (args.content || "").length } bytes to ${rel} in worktree (${wt.branch})`
+          });
+        }
+      }
+
+      if (tool === "git_status" || tool === "git_diff") {
+        const cmd = tool === "git_diff" ? "git diff HEAD" : "git status --short && git branch --show-current";
+        const out = execSync(cmd, { cwd: wt.worktreePath, stdio: "pipe", timeout: 5000 }).toString("utf8").trim();
+        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, output: out || "(Clean worktree)" });
+      }
+
+      return sendJson(res, 400, { error: `Unknown agent tool: ${tool}` });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
   // 3. Grounded Folder Inspection Endpoint (POST /api/workspace/context)
   if (req.method === "POST" && req.url === "/api/workspace/context") {
     try {
-      const { mountPath, folderPath } = await readJsonBody(req);
-      const info = inspectMountedDirectory(mountPath || folderPath || ROOT_DIR);
+      const { mountPath, folderPath, botId, botName } = await readJsonBody(req);
+      let targetDir = mountPath || folderPath || ROOT_DIR;
+      if (botId) {
+        const wt = ensureAgentWorktree(botId, botName);
+        targetDir = wt.worktreePath;
+      }
+      const info = inspectMountedDirectory(targetDir);
       return sendJson(res, 200, info);
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
@@ -171,11 +454,18 @@ const server = http.createServer(async (req, res) => {
       const { command, cwd, threadId, botId, botName } = await readJsonBody(req);
       if (!command) return sendJson(res, 400, { error: "Missing command" });
 
-      const targetCwd = cwd && fs.existsSync(cwd) ? cwd : ROOT_DIR;
+      let targetCwd = cwd && fs.existsSync(cwd) ? cwd : ROOT_DIR;
+      let branch = "main";
+      if (botId) {
+        const wt = ensureAgentWorktree(botId, botName || botId);
+        targetCwd = wt.worktreePath;
+        branch = wt.branch;
+      }
+
       const jobId = "job_" + Date.now();
       backgroundJobs.set(jobId, { id: jobId, command, status: "running", startedAt: Date.now() });
 
-      broadcastEvent("job_started", { jobId, command, threadId, botId, botName });
+      broadcastEvent("job_started", { jobId, command, threadId, botId, botName, cwd: targetCwd, branch });
 
       const execOptions = {
         cwd: targetCwd,
@@ -192,6 +482,7 @@ const server = http.createServer(async (req, res) => {
           jobId,
           command,
           cwd: targetCwd,
+          branch,
           exitCode,
           output: output || "(Command completed with no output)",
           threadId,
@@ -200,7 +491,7 @@ const server = http.createServer(async (req, res) => {
         });
       });
 
-      return sendJson(res, 200, { jobId, status: "started", cwd: targetCwd });
+      return sendJson(res, 200, { jobId, status: "started", cwd: targetCwd, branch });
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
     }

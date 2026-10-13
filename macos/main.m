@@ -11,43 +11,76 @@
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     [NSApp setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
+    [self setupMainMenu];
     [self ensureBackendServerRunning];
 
-    NSRect frame = NSMakeRect(0, 0, 1180, 780);
+    NSRect frame = NSMakeRect(0, 0, 1220, 800);
     NSWindowStyleMask style = NSWindowStyleMaskTitled |
                               NSWindowStyleMaskClosable |
                               NSWindowStyleMaskMiniaturizable |
-                              NSWindowStyleMaskResizable |
-                              NSWindowStyleMaskFullSizeContentView;
+                              NSWindowStyleMaskResizable;
 
     self.window = [[NSWindow alloc] initWithContentRect:frame
                                               styleMask:style
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
     [self.window center];
-    [self.window setTitle:@"Vanaras"];
+    [self.window setTitle:@"Vanaras — Multi-Agent Workspace"];
     [self.window setTitlebarAppearsTransparent:YES];
-    [self.window setTitleVisibility:NSWindowTitleHidden];
     [self.window setBackgroundColor:[NSColor colorWithSRGBRed:0.05 green:0.05 blue:0.05 alpha:1.0]];
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
-    [config setApplicationNameForUserAgent:@"VanarasNativeMacApp/2.0"];
+    [config setApplicationNameForUserAgent:@"VanarasNativeMacApp/2.1"];
     [config.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
 
     self.webView = [[WKWebView alloc] initWithFrame:self.window.contentView.bounds configuration:config];
     [self.webView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
     [self.webView setUIDelegate:self];
-    [self.webView setValue:@NO forKey:@"drawsBackground"];
 
     [self.window.contentView addSubview:self.webView];
     [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
 
-    [self loadAppWithRetry:10];
+    NSSet *dataTypes = [NSSet setWithObjects:WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, nil];
+    [[WKWebsiteDataStore defaultDataStore] removeDataOfTypes:dataTypes
+                                               modifiedSince:[NSDate distantPast]
+                                           completionHandler:^{
+        [self loadAppWithRetry:10];
+    }];
+}
+
+- (void)setupMainMenu {
+    NSMenu *menubar = [[NSMenu alloc] init];
+    NSMenuItem *appMenuItem = [[NSMenuItem alloc] init];
+    [menubar addItem:appMenuItem];
+    NSMenu *appMenu = [[NSMenu alloc] init];
+    [appMenu addItemWithTitle:@"Reload Workspace" action:@selector(reloadWebView:) keyEquivalent:@"r"];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+    [appMenu addItemWithTitle:@"Quit Vanaras" action:@selector(terminate:) keyEquivalent:@"q"];
+    [appMenuItem setSubmenu:appMenu];
+
+    NSMenuItem *editMenuItem = [[NSMenuItem alloc] init];
+    [menubar addItem:editMenuItem];
+    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+    [editMenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+    [editMenu addItemWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"Z"];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    [editMenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+    [editMenuItem setSubmenu:editMenu];
+
+    [NSApp setMainMenu:menubar];
+}
+
+- (void)reloadWebView:(id)sender {
+    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"http://localhost:3000/?v=%ld", (long)[[NSDate date] timeIntervalSince1970]]];
+    [self.webView loadRequest:[NSURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10.0]];
 }
 
 - (void)loadAppWithRetry:(NSInteger)attempts {
-    NSURL *url = [NSURL URLWithString:@"http://localhost:3000"];
+    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"http://localhost:3000/?v=%ld", (long)[[NSDate date] timeIntervalSince1970]]];
     NSURLRequest *req = [NSURLRequest requestWithURL:url
                                          cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
                                      timeoutInterval:10.0];

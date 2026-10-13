@@ -18,8 +18,7 @@
     code, pre, .font-mono {
       font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     }
-    .app-drag-region { -webkit-app-region: drag; }
-    .no-drag { -webkit-app-region: no-drag; }
+    button { cursor: pointer; }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #2a2a2c; border-radius: 9999px; }
@@ -2041,7 +2040,7 @@
     }
 
     if (window.navigator.userAgent.includes("VanarasNativeMacApp")) {
-      document.getElementById("trafficLightsSpacer").style.visibility = "hidden";
+      document.getElementById("trafficLightsSpacer").innerHTML = `<span class="text-xs font-bold tracking-tight text-neutral-200 pl-1">🐒 Vanaras</span>`;
     }
 
     document.getElementById("userInitialsBtn").innerText = state.currentUser.initials;

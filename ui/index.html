@@ -1855,11 +1855,16 @@
       updateHeaderPills();
     }
 
+    let serverDefaultMountPath = "/Users/lakshmipriyasridharan/AI/REA/vanaras";
+    let serverRepoRoot = "/Users/lakshmipriyasridharan/AI/REA";
+
     async function loadDiskWorkspaceOnBoot() {
       try {
         const res = await fetch("/api/workspace");
         if (res.ok) {
           const data = await res.json();
+          if (data.defaultMountPath) serverDefaultMountPath = data.defaultMountPath;
+          if (data.repoRoot) serverRepoRoot = data.repoRoot;
           if (data.state && Array.isArray(data.state.threads) && data.state.threads.length >= 6 && data.state.bots?.[0]?.avatarStyle?.startsWith("vanara-")) {
             state = data.state;
             if (!Array.isArray(state.sharedFacts)) state.sharedFacts = [...DEFAULT_STATE.sharedFacts];
@@ -1867,6 +1872,7 @@
             renderThreadList();
             renderActiveThread();
           } else {
+            state.threads.forEach(t => { t.mountPath = serverDefaultMountPath; });
             saveState();
           }
         }
@@ -1883,8 +1889,8 @@
 
     function updateHeaderPills() {
       const thread = getActiveThread();
-      const mountPath = thread?.mountPath || "/Users/lakshmipriyasridharan/AI/REA/vanaras";
-      const baseName = mountPath.split("/").filter(Boolean).pop() || "workspace";
+      const mountPath = thread?.mountPath || serverDefaultMountPath;
+      const baseName = mountPath.split(/[\\/]/).filter(Boolean).pop() || "workspace";
       const mountEl = document.getElementById("mountFolderLabel");
       if (mountEl) mountEl.innerText = baseName;
 
@@ -2884,7 +2890,7 @@
 
     async function openMountModal() {
       const thread = getActiveThread();
-      const currentPath = thread?.mountPath || "/Users/lakshmipriyasridharan/AI/REA/vanaras";
+      const currentPath = thread?.mountPath || serverDefaultMountPath;
       document.getElementById("mountPathInput").value = currentPath;
       document.getElementById("mountModal").classList.remove("hidden");
       await previewMountedFolder(currentPath);
@@ -2893,7 +2899,8 @@
       document.getElementById("mountModal").classList.add("hidden");
     }
     function setQuickMount(p) {
-      document.getElementById("mountPathInput").value = p;
+      const resolved = p === "DEFAULT" ? serverDefaultMountPath : (p === "PARENT" ? serverRepoRoot : p);
+      document.getElementById("mountPathInput").value = resolved;
       saveAndInspectMountPath();
     }
     async function previewMountedFolder(folderPath) {
@@ -2925,7 +2932,7 @@
         saveState();
       }
       await previewMountedFolder(p);
-      showToast(`Mounted: ${p.split("/").pop()}`);
+      showToast(`Mounted: ${p.split(/[\\/]/).filter(Boolean).pop()}`);
     }
 
     function openConnectAppsModal() {

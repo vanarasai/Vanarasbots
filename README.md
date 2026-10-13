@@ -23,18 +23,21 @@
 
 ## Quick Start
 
-### 1. Start the Local Workspace Engine
+### macOS (`Vanaras.app`)
 ```bash
-node ui/server.mjs
-```
-
-### 2. Build & Launch the Native macOS App (`Vanaras.app`)
-```bash
+node ui/server.mjs &
 ./build-macos-app.sh
 open Vanaras.app
 ```
 
-### 3. Rust Engine Workspace
+### Windows 10 / 11 (`run-windows.bat`)
+Double-click **`run-windows.bat`** or run in PowerShell / Command Prompt:
+```bat
+run-windows.bat
+```
+*(Automatically starts `node ui\server.mjs` in the background and opens Vanaras in a native chromeless Windows desktop app window via Edge WebView2).*
+
+### Rust Engine Workspace (macOS / Windows / Linux)
 ```bash
 cargo check
 ```

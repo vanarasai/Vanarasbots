@@ -157,8 +157,8 @@ const server = http.createServer(async (req, res) => {
   // 3. Grounded Folder Inspection Endpoint (POST /api/workspace/context)
   if (req.method === "POST" && req.url === "/api/workspace/context") {
     try {
-      const { mountPath } = await readJsonBody(req);
-      const info = inspectMountedDirectory(mountPath || ROOT_DIR);
+      const { mountPath, folderPath } = await readJsonBody(req);
+      const info = inspectMountedDirectory(mountPath || folderPath || ROOT_DIR);
       return sendJson(res, 200, info);
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
@@ -177,7 +177,14 @@ const server = http.createServer(async (req, res) => {
 
       broadcastEvent("job_started", { jobId, command, threadId, botId, botName });
 
-      exec(command, { cwd: targetCwd, timeout: 25000, maxBuffer: 1024 * 512 }, (error, stdout, stderr) => {
+      const execOptions = {
+        cwd: targetCwd,
+        timeout: 25000,
+        maxBuffer: 1024 * 512,
+        ...(process.platform === "win32" ? { shell: "powershell.exe" } : {})
+      };
+
+      exec(command, execOptions, (error, stdout, stderr) => {
         const output = ((stdout || "") + (stderr ? `\n${stderr}` : "")).trim().slice(0, 4000);
         const exitCode = error ? (error.code || 1) : 0;
         backgroundJobs.set(jobId, { id: jobId, command, status: "done", exitCode, output });
@@ -200,7 +207,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 5. External Human Peer / CLI System Agent Message Injection
-  if (req.method === "POST" && req.url === "/api/room/post") {
+  if (req.method === "POST" && (req.url === "/api/room/post" || req.url === "/api/events/publish")) {
     try {
       const msg = await readJsonBody(req);
       broadcastEvent("room_message", msg);

@@ -1061,47 +1061,47 @@
             </svg>
           </button>
 
-          <!-- (+) Popover Menu -->
-          <div id="plusMenuDropdown" class="popover-menu hidden" style="top: 40px; right: 0;">
+          <!-- (+) Popover Menu: Non-duplicated Creation & Setup Actions -->
+          <div id="plusMenuDropdown" class="popover-menu hidden" style="top: 40px; right: 0; width: 256px;">
             <button onclick="openBotModal(null); hidePlusMenu();" class="popover-item">
-              <div class="popover-item-icon">
+              <div class="popover-item-icon" style="color:#f87171;">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1.2" fill="currentColor"/><circle cx="15" cy="10" r="1.2" fill="currentColor"/><path d="M9 15c1.5 1.2 4.5 1.2 6 0" stroke-linecap="round"/></svg>
               </div>
               <div>
-                <div class="popover-title">New Vanara Bot (1:1)</div>
-                <div class="popover-sub">Custom model, URL, role & monkey</div>
+                <div class="popover-title">New Vanara Agent (1:1)</div>
+                <div class="popover-sub">Custom model, role, tools & branch</div>
               </div>
             </button>
 
             <button onclick="openGroupModal(null); hidePlusMenu();" class="popover-item">
-              <div class="popover-item-icon">
+              <div class="popover-item-icon" style="color:#60a5fa;">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               </div>
               <div>
-                <div class="popover-title">New Group / Collab Squad</div>
-                <div class="popover-sub">Combine teammates & Vanara bots</div>
+                <div class="popover-title">New Squad / Group Room</div>
+                <div class="popover-sub">Multi-agent collaboration room</div>
               </div>
             </button>
 
             <div class="popover-divider"></div>
 
-            <button onclick="openMountModal(); hidePlusMenu();" class="popover-item">
-              <div class="popover-item-icon">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <button onclick="openConnectAppsModal(); hidePlusMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:#f59e0b;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
               </div>
               <div>
-                <div class="popover-title">Mount Project Folder</div>
-                <div class="popover-sub">Ground bots in local codebase files</div>
+                <div class="popover-title">Add Specialist Template</div>
+                <div class="popover-sub">Pre-built Chief, Binary Scout, Infra</div>
               </div>
             </button>
 
-            <button onclick="openMemoryModal(); hidePlusMenu();" class="popover-item">
-              <div class="popover-item-icon">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><path d="M9 21h6"/></svg>
+            <button onclick="openOnboardingModal(); hidePlusMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:#10b981;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </div>
               <div>
-                <div class="popover-title">Shared Workspace Memory</div>
-                <div class="popover-sub">Cross-chat architectural facts</div>
+                <div class="popover-title">Onboarding & Model Setup</div>
+                <div class="popover-sub">Configure LLM backend, repo & squad</div>
               </div>
             </button>
           </div>
@@ -1114,7 +1114,7 @@
           id="threadSearchInput"
           type="text"
           oninput="renderThreadList()"
-          placeholder="Filter conversations..."
+          placeholder="Filter conversations (⌘K)..."
           class="search-input"
         >
       </div>
@@ -1122,29 +1122,21 @@
       <!-- Thread List -->
       <div id="threadListContainer" class="thread-list"></div>
 
-      <!-- Bottom Bar: VP + Connect apps -->
+      <!-- Bottom Bar: Profile & Live LLM Engine Status + Setup -->
       <div class="sidebar-footer">
-        <button onclick="openProfileModal()" id="userInitialsBtn" class="vp-avatar-btn" title="Workspace Profile & LAN Peers">
-          VP
+        <button onclick="openOnboardingModal()" id="userInitialsBtn" class="vp-avatar-btn" title="Open Workspace Onboarding & Profile Settings">
+          ME
         </button>
 
-        <button onclick="openConnectAppsModal()" class="connect-apps-pill">
-          <span>Connect apps</span>
-          <span class="app-icon-stack">
-            <span class="app-mini-tile" style="background:#ffffff; color:#111114;">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:0; justify-content:flex-end;">
+          <button onclick="openOnboardingModal()" id="llmEngineStatusPill" class="connect-apps-pill" style="flex:1; min-width:0; justify-content:space-between;" title="Click to configure AI Model Backend, Project Folder & Onboarding">
+            <span style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+              <span id="llmStatusDot" style="width:7px; height:7px; border-radius:50%; background:#f59e0b; flex-shrink:0;"></span>
+              <span id="llmStatusText" class="mono" style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Setup Model</span>
             </span>
-            <span class="app-mini-tile" style="background:#1877f2; color:#ffffff;">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-            </span>
-            <span class="app-mini-tile" style="background:#10b981; color:#ffffff;">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-            </span>
-            <span class="app-mini-tile" style="background:#f59e0b; color:#111114;">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
-            </span>
-          </span>
-        </button>
+            <span style="font-size:10px; color:#94949e; flex-shrink:0;">Setup ⚙</span>
+          </button>
+        </div>
       </div>
     </aside>
 
@@ -1184,7 +1176,7 @@
           </button>
         </div>
 
-        <!-- Center Floating Identity Pill (Matches [ 🐵 R1 ] in screenshot) -->
+        <!-- Center Floating Identity Pill -->
         <button onclick="openActiveThreadSettings()" id="activeThreadPill" class="identity-pill" title="Configure Vanara Bot, Private Memory, Tools/MCP & Worktree"></button>
 
         <!-- Right Autonomous Loop, Collab & Studio Actions -->
@@ -1201,7 +1193,7 @@
             <span>Collab</span>
           </button>
 
-          <button onclick="openAgentCodeWorkspace()" class="header-tool-pill" title="Open Per-Agent Code Workspace">
+          <button onclick="openAgentCodeWorkspace()" id="headerCodeWorkspaceBtn" class="header-tool-pill" title="Open Per-Agent Code Workspace IDE">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="16 18 22 12 16 6"></polyline>
               <polyline points="8 6 2 12 8 18"></polyline>
@@ -1223,42 +1215,24 @@
           <!-- @Mention Auto-Complete Popover -->
           <div id="mentionAutocompletePopup" class="popover-menu hidden" style="bottom: 58px; left: 12px; width: 280px; max-height: 220px; overflow-y: auto;"></div>
 
-          <!-- Composer Quick Action Menu -->
-          <div id="composerMenu" class="popover-menu hidden" style="bottom: 58px; left: 0; width: 272px;">
+          <!-- Composer Quick Action Menu (Context Attachment, Autonomous Goal & Chat Reset) -->
+          <div id="composerMenu" class="popover-menu hidden" style="bottom: 58px; left: 0; width: 278px;">
+            <button onclick="attachRepoFileToComposer(); hideComposerMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:#60a5fa;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              </div>
+              <div>
+                <div class="popover-title">Attach File from Workspace</div>
+                <div class="popover-sub">Read a repo file into your prompt</div>
+              </div>
+            </button>
             <button onclick="startAutonomousBackgroundGoal(); hideComposerMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:#10b981;">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
               </div>
               <div>
-                <div class="popover-title">Self-Triggered Background Goal</div>
-                <div class="popover-sub">Bots chain turns & tools in background</div>
-              </div>
-            </button>
-            <button onclick="triggerGroupCollabRun(); hideComposerMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#f59e0b;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-              </div>
-              <div>
-                <div class="popover-title">Autonomous Monkey Collab</div>
-                <div class="popover-sub">Debate, plan & synthesize deliverables</div>
-              </div>
-            </button>
-            <button onclick="openAgentCodeWorkspace(); hideComposerMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#60a5fa;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-              </div>
-              <div>
-                <div class="popover-title">Open Agent Code Workspace</div>
-                <div class="popover-sub">Each coding bot gets its own IDE & files</div>
-              </div>
-            </button>
-            <button onclick="openWorktreeModal(); hideComposerMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#38bdf8;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
-              </div>
-              <div>
-                <div class="popover-title">Inspect Agent Git Worktree</div>
-                <div class="popover-sub">Isolated branch, diff & commit per bot</div>
+                <div class="popover-title">Run Autonomous Background Goal</div>
+                <div class="popover-sub">Agents chain turns, tools & code</div>
               </div>
             </button>
             <button onclick="promptBackgroundCommand(); hideComposerMenu();" class="popover-item">
@@ -1266,38 +1240,32 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
               </div>
               <div>
-                <div class="popover-title">Run Command in Agent Worktree</div>
-                <div class="popover-sub">Execute in active bot's isolated branch</div>
+                <div class="popover-title">Execute Command in Worktree</div>
+                <div class="popover-sub">Run shell command on agent branch</div>
               </div>
             </button>
-            <button onclick="openActiveThreadSettings(); hideComposerMenu();" class="popover-item">
-              <div class="popover-item-icon">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <div class="popover-divider"></div>
+            <button onclick="clearActiveThreadMessages(); hideComposerMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:#f87171;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
               </div>
               <div>
-                <div class="popover-title">Customize Vanara Brain & MCP</div>
-                <div class="popover-sub">Per-agent memory, tools, MCP & model</div>
+                <div class="popover-title">Clear This Conversation</div>
+                <div class="popover-sub">Start fresh in the active chat</div>
               </div>
             </button>
           </div>
 
           <div class="composer-pill">
             <div class="composer-plus-wrap">
-              <button onclick="toggleComposerMenu(event)" class="composer-plus-btn" title="Actions & Commands">
+              <button onclick="toggleComposerMenu(event)" class="composer-plus-btn" title="Attach File, Run Autonomous Goal or Clear Chat">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
               </button>
-              <!-- Blue overlapping mini-monkey badge matching the screenshot -->
-              <div onclick="openActiveThreadSettings()" class="composer-bot-badge" title="Active Vanara Agent">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-                  <circle cx="12" cy="13" r="6"></circle>
-                  <circle cx="5.5" cy="12" r="2.2"></circle>
-                  <circle cx="18.5" cy="12" r="2.2"></circle>
-                  <circle cx="10" cy="12" r="1" fill="currentColor"></circle>
-                  <circle cx="14" cy="12" r="1" fill="currentColor"></circle>
-                </svg>
+              <!-- Dynamic Active Vanara Avatar Badge -->
+              <div onclick="openActiveThreadSettings()" id="composerBotAvatarBadge" class="composer-bot-badge" title="Active Vanara Agent (Click to configure)" style="overflow:hidden; padding:0;">
               </div>
             </div>
 
@@ -1305,27 +1273,23 @@
               id="chatComposerInput"
               type="text"
               oninput="onComposerInput(this.value)"
-              placeholder="Message R1"
+              placeholder="Message R1 (@mention any agent or type /run <cmd>)"
               class="composer-input"
             >
 
             <div class="composer-right-btns">
-              <button onclick="promptBackgroundCommand()" class="composer-mic-btn" title="Run Command in Agent's Worktree (/run)">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                  <line x1="12" y1="19" x2="12" y2="23"></line>
-                  <line x1="8" y1="23" x2="16" y2="23"></line>
+              <button onclick="promptBackgroundCommand()" class="composer-mic-btn" title="Execute Shell Command in Agent's Git Worktree (/run)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="4 17 10 11 4 5"></polyline>
+                  <line x1="12" y1="19" x2="20" y2="19"></line>
                 </svg>
               </button>
 
-              <!-- Red Equalizer / Send Button matching the bottom-right of the reference screenshot -->
-              <button onclick="handleSendMessage()" class="composer-send-btn" title="Send Message (Enter)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-                  <line x1="6" y1="9" x2="6" y2="15"></line>
-                  <line x1="10" y1="5" x2="10" y2="19"></line>
-                  <line x1="14" y1="8" x2="14" y2="16"></line>
-                  <line x1="18" y1="11" x2="18" y2="13"></line>
+              <!-- Crisp Send Arrow Button -->
+              <button onclick="handleSendMessage()" id="composerSendBtn" class="composer-send-btn" title="Send Message (Enter)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="19" x2="12" y2="5"></line>
+                  <polyline points="5 12 12 5 19 12"></polyline>
                 </svg>
               </button>
             </div>
@@ -1698,6 +1662,118 @@
   </div>
 
   <!-- Toast -->
+  <!-- ===================================================================== -->
+  <!-- MODAL 6: FIRST-RUN ONBOARDING & WORKSPACE MODEL SETUP WIZARD          -->
+  <!-- ===================================================================== -->
+  <div id="onboardingModal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width:600px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <img src="avatars/monkey-01-coral.png" alt="Vanaras" style="width:32px; height:32px; border-radius:50%; background:#f0283c;">
+          <div>
+            <div style="font-size:15.5px; font-weight:700;">Welcome to Vanaras — Autonomous Engineering Setup</div>
+            <div style="font-size:11.5px; color:#888894;">Configure your identity, project repository, AI model backend & engineering squad</div>
+          </div>
+        </div>
+        <button onclick="closeOnboardingModal()" class="side-icon-btn" title="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="modal-body" style="gap:14px;">
+        <!-- Step 1: Identity & Mounted Repo -->
+        <div style="padding:12px 14px; border-radius:12px; background:#121216; border:1px solid #26262f;">
+          <div style="font-size:11px; font-weight:700; color:#60a5fa; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Step 1 • Your Identity & Local Project Folder</div>
+          <div style="display:grid; grid-template-columns:1fr 1.6fr; gap:10px;">
+            <div>
+              <label class="field-label">Your Display Name</label>
+              <input id="onboardUserNameInput" type="text" placeholder="e.g. Priya" class="field-input">
+            </div>
+            <div>
+              <label class="field-label">Local Repository / Project Path</label>
+              <input id="onboardMountPathInput" type="text" placeholder="/Users/lakshmipriyasridharan/AI/REA/vanaras" class="field-input mono" style="font-size:11.5px;">
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: AI Model Connection & Live Verification -->
+        <div style="padding:12px 14px; border-radius:12px; background:#121216; border:1px solid #26262f;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span style="font-size:11px; font-weight:700; color:#10b981; text-transform:uppercase; letter-spacing:0.05em;">Step 2 • Default AI Model Backend (Applied to Squad)</span>
+            <button type="button" onclick="probeOnboardingModels()" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px; border-color:rgba(16,185,129,0.45); color:#6ee7b7;">⚡ Test & Detect Models</button>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+            <div>
+              <label class="field-label">Provider</label>
+              <select id="onboardProviderSelect" onchange="onOnboardProviderChange()" class="field-input">
+                <option value="local">Local Server (LM Studio / Ollama / vLLM)</option>
+                <option value="openrouter">OpenRouter (Cloud Multi-Model)</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="openai">OpenAI</option>
+                <option value="claude">Anthropic Claude</option>
+                <option value="qwen">Qwen / DashScope</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">Model ID</label>
+              <input id="onboardModelInput" list="botModelSuggestions" type="text" placeholder="bonsai-27b-mlx" class="field-input mono">
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:10px;">
+            <div>
+              <label class="field-label">Base URL</label>
+              <input id="onboardBaseUrlInput" type="text" placeholder="http://192.168.68.102:1234/v1" class="field-input mono" style="font-size:11.5px;">
+            </div>
+            <div>
+              <label class="field-label">API Key (Optional for Local)</label>
+              <input id="onboardApiKeyInput" type="password" placeholder="sk-..." class="field-input mono" style="font-size:11.5px;">
+            </div>
+          </div>
+          <div id="onboardProbeStatus" class="mono" style="margin-top:8px; font-size:11px; color:#94949e;">Click "⚡ Test & Detect Models" to verify your LLM server connection.</div>
+        </div>
+
+        <!-- Step 3: Active Engineering Squad -->
+        <div style="padding:12px 14px; border-radius:12px; background:#121216; border:1px solid #26262f;">
+          <div style="font-size:11px; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Step 3 • Your Vanara Engineering Squad (Each with Isolated Git Worktree)</div>
+          <div id="onboardSquadPreview" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="justify-content:space-between;">
+        <button type="button" onclick="completeOnboarding(true)" class="btn-secondary" style="font-size:11.5px; color:#fda4af; border-color:rgba(244,63,94,0.35);" title="Clear all existing chats and start with clean engineering threads">Reset to Clean Threads</button>
+        <div style="display:flex; gap:8px;">
+          <button type="button" onclick="closeOnboardingModal()" class="btn-secondary">Cancel</button>
+          <button type="button" onclick="completeOnboarding(false)" class="btn-primary" style="background:#10b981; color:#06281e; font-weight:700;">Save & Launch Workspace</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 7: UNIVERSAL IN-APP INPUT DIALOG (REPLACES ALL window.prompt)   -->
+  <!-- ===================================================================== -->
+  <div id="inAppPromptModal" class="modal-backdrop hidden" style="z-index:260;">
+    <div class="modal-card" style="max-width:460px;">
+      <div class="modal-header">
+        <div>
+          <div id="inAppPromptTitle" style="font-size:14.5px; font-weight:600;">Input Required</div>
+          <div id="inAppPromptSubtitle" style="font-size:11.5px; color:#888894; margin-top:2px;"></div>
+        </div>
+        <button type="button" onclick="resolveInAppInput(null)" class="side-icon-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input id="inAppPromptInput" type="text" class="field-input mono" style="font-size:12.5px;" placeholder="">
+      </div>
+      <div class="modal-footer">
+        <button type="button" onclick="resolveInAppInput(null)" class="btn-secondary">Cancel</button>
+        <button type="button" id="inAppPromptConfirmBtn" onclick="resolveInAppInput(document.getElementById('inAppPromptInput').value)" class="btn-primary">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
   <div id="toast" class="toast hidden-toast">
     <span style="width:7px; height:7px; border-radius:50%; background:#10b981;"></span>
     <span id="toastMsg">Ready</span>
@@ -1746,9 +1822,10 @@
       const b1 = getBot(botIds[0] || "bot_r1");
       const b2 = getBot(botIds[1] || "bot_r2");
       const b3 = getBot(botIds[2] || "bot_r3");
+      const usrInit = state?.currentUser?.initials || "ME";
       return `
         <div class="group-cluster">
-          <div class="cluster-item cluster-tl">VP</div>
+          <div class="cluster-item cluster-tl">${escapeHtml(usrInit)}</div>
           <div class="cluster-item cluster-tr">${renderMonkeyAvatar(b1.avatarStyle, 19)}</div>
           <div class="cluster-item cluster-bl">${renderMonkeyAvatar(b3.avatarStyle, 18)}</div>
           <div class="cluster-item cluster-br">${renderMonkeyAvatar(b2.avatarStyle, 20)}</div>
@@ -1759,7 +1836,7 @@
     let selectedAvatarStyleInModal = "vanara-crimson";
 
     // =========================================================================
-    // 2. WORKSPACE STATE (MODELED AFTER REFERENCE SCREENSHOT + 4 CORE UPGRADES)
+    // 2. WORKSPACE STATE (CLEAN AUTONOMOUS SOFTWARE ENGINEERING SQUAD)
     // =========================================================================
     const AVAILABLE_AGENT_TOOLS = [
       { id: "fs_read", label: "Read Files" },
@@ -1771,141 +1848,20 @@
       { id: "handoff", label: "Bot Handoff" }
     ];
 
-    const DEFAULT_STATE = {
-      currentUser: { id: "user_vp", name: "Vijay Pathy", initials: "VP" },
-      autoTriggerEnabled: true,
-      sharedFacts: [
-        "Gemma 4 E2B stores ~5B parameters (2.7 GB GGUF) with 4-bit per-layer embedding tables.",
-        "Hanu's GGUF is text-only; vision/audio live in a separate mmproj file.",
-        "Target mobile RAM budget is <2 GB using Q3_K_M / IQ3_M or mmap embedding tables."
-      ],
-      humans: [
-        { id: "user_vp", name: "Vijay Pathy", role: "Product Architect", initials: "VP" },
-        { id: "user_alex", name: "Alex Rivera", role: "Mobile Runtime Lead", initials: "AR" }
-      ],
-      bots: [
+    function buildCleanEngineeringThreads(mountPath = "/Users/lakshmipriyasridharan/AI/REA/vanaras") {
+      return [
         {
-          id: "bot_r1",
-          name: "R1",
-          role: "Principal AI & Quantization Architect",
-          avatarStyle: "vanara-crimson",
-          provider: "local",
-          baseUrl: "http://192.168.68.102:1234/v1",
-          apiKey: "",
-          model: "bonsai-27b-mlx",
-          instructions: "You are R1, Principal AI & Quantization Architect in Vanaras. Be direct, deeply technical, and grounded in GGUF, llama.cpp, LiteRT-LM, and systems trade-offs.",
-          memories: [
-            "Gemma 4 E2B 4-bit per-layer embeddings already saved 680 MB.",
-            "Always verify GGUF tensor headers with gguf_dump.py before re-quantizing."
-          ],
-          tools: ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "handoff"],
-          mcpCommand: "",
-          worktreeBranch: "vanara/r1"
-        },
-        {
-          id: "bot_r4",
-          name: "R4",
-          role: "On-Device Phone Runtime Engineer",
-          avatarStyle: "vanara-slate",
-          provider: "local",
-          baseUrl: "http://192.168.68.102:1234/v1",
-          apiKey: "",
-          model: "bonsai-27b-mlx",
-          instructions: "You are R4, On-Device Phone Runtime Engineer. Focus on iOS/Android tool layers, LiteRT-LM memory mapping, and latency budgets.",
-          memories: [
-            "Phone test device peak RSS must stay below 1.85 GB to avoid Android lmkd kills."
-          ],
-          tools: ["fs_read", "shell_exec", "git_status", "handoff"],
-          mcpCommand: "",
-          worktreeBranch: "vanara/r4"
-        },
-        {
-          id: "bot_r2",
-          name: "R2",
-          role: "Systems & Lookup Table Specialist",
-          avatarStyle: "vanara-amber",
-          provider: "local",
-          baseUrl: "http://192.168.68.102:1234/v1",
-          apiKey: "",
-          model: "google/gemma-4-12b",
-          instructions: "You are R2, Systems & Lookup Specialist. Write clean Rust/C++/Python scripts, sketch lookup tables, and verify file layouts.",
-          memories: [
-            "Per-layer embedding lookup tables align on 64-byte cache lines for NEON."
-          ],
-          tools: ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "handoff"],
-          mcpCommand: "",
-          worktreeBranch: "vanara/r2"
-        },
-        {
-          id: "bot_r3",
-          name: "R3",
-          role: "Calibration & Eval Harness Bot",
-          avatarStyle: "vanara-cobalt",
-          provider: "local",
-          baseUrl: "http://192.168.68.102:1234/v1",
-          apiKey: "",
-          model: "bonsai-27b-mlx",
-          instructions: "You are R3, Calibration & Eval Specialist. Design hard eval suites and imatrix calibration runs for Q3_K_M and IQ3_M.",
-          memories: [
-            "Compare Q3_K_M (3.5 bpw) vs IQ3_M (3.0 bpw) with English-only v3 imatrix calibration."
-          ],
-          tools: ["fs_read", "fs_write", "shell_exec", "git_status", "handoff"],
-          mcpCommand: "",
-          worktreeBranch: "vanara/r3"
-        },
-        {
-          id: "bot_waffle",
-          name: "Waffle",
-          role: "Product & Launch Strategist",
-          avatarStyle: "vanara-snow",
-          provider: "local",
-          baseUrl: "http://192.168.68.102:1234/v1",
-          apiKey: "",
-          model: "bonsai-27b-mlx",
-          instructions: "You are Waffle, Product & Launch Strategist in Vanaras. Keep product naming, positioning, and release plans crisp.",
-          memories: [
-            "Brand name is strictly Vanaras with custom illustrated monkey avatars."
-          ],
-          tools: ["fs_read", "fs_write", "handoff"],
-          mcpCommand: "",
-          worktreeBranch: "vanara/waffle"
-        },
-        {
-          id: "bot_new",
-          name: "New Bot",
-          role: "Memory Budget & Storage Advisor",
-          avatarStyle: "vanara-mint",
-          provider: "local",
-          baseUrl: "http://192.168.68.102:1234/v1",
-          apiKey: "",
-          model: "bonsai-27b-mlx",
-          instructions: "You are New Bot, focusing on 2 GB phone RAM budgets, flash storage throughput, and mmap page faults.",
-          memories: [
-            "Watch UFS cold page-in latency and sustained prefill thermal throttling."
-          ],
-          tools: ["fs_read", "shell_exec", "handoff"],
-          mcpCommand: "",
-          worktreeBranch: "vanara/new-bot"
-        }
-      ],
-      threads: [
-        {
-          id: "thread_maaya",
+          id: "thread_squad",
           type: "group",
-          name: "Project Maaya",
-          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
-          botIds: ["bot_r1", "bot_r2", "bot_r3"],
-          humanIds: ["user_vp"],
+          name: "Engineering Squad",
+          mountPath,
+          botIds: ["bot_r1", "bot_r2", "bot_r3", "bot_r4"],
+          humanIds: ["user_me"],
           messages: [
             {
               senderType: "bot",
               botId: "bot_r1",
-              text: "We have the English-only v3 quantization pipeline queued up for Project Maaya. R4 verified the phone tool-layer bindings."
-            },
-            {
-              senderType: "bot",
-              botId: "bot_r2",
-              text: "Yes, from the phone side too. Once we lock the Q3_K_M calibration file, R3 and I can run the full benchmark pass."
+              text: "Welcome to **Vanaras**. Your multi-agent engineering squad is ready:\n• **@R1** — Principal Systems & AI Architect (`vanara/r1`)\n• **@R2** — Backend & Systems Engineer (`vanara/r2`)\n• **@R3** — QA, Verification & Code Reviewer (`vanara/r3`)\n• **@R4** — Frontend & Runtime Engineer (`vanara/r4`)\n\nAsk us to build a feature, click **Collab** to run a multi-agent build pass, or open **Code Workspace** to run and serve generated code."
             }
           ]
         },
@@ -1913,39 +1869,12 @@
           id: "thread_r1",
           type: "dm",
           botId: "bot_r1",
-          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
+          mountPath,
           messages: [
             {
               senderType: "bot",
               botId: "bot_r1",
-              text: "Also, was your \"yes\" a go for the English-only v3 test agreement? I'll keep v3 on hold until you confirm."
-            },
-            {
-              senderType: "user",
-              text: "Current gemma is multi model??"
-            },
-            {
-              senderType: "bot",
-              botId: "bot_r1",
-              text: "Gemma 4 E2B as Google ships it is multimodal: it takes text, images and audio. Hanu's GGUF file is very likely text-only already, though, so cutting out vision and audio probably won't shrink it.\n\nThat's because llama.cpp's converter normally writes only the text part into the main GGUF and puts vision and audio in a separate projector file. We never created that file. I haven't checked the file itself; running `gguf_dump.py` on it to list what's inside would confirm it in a minute.\n\nMost of the 2.7 GB comes from how E2B is built. It runs like a 2B model but stores about 5B parameters, many of them in large per-layer embedding tables. We already cut those to 4-bit, which saved about 680 MB.\n\nSo shrinking it further really comes down to two options:\n• **Lower-bit versions:** test Q3_K_M (about 3.5 bits) and IQ3_M (about 3 bits), each made with a calibration file, against the hard tests.\n• **Keeping the embedding tables out of RAM:** they can be read from storage as needed instead of loaded into memory. LiteRT-LM and llama.cpp's file mapping work this way, so the memory the phone actually uses may be much less than 2.7 GB. We should measure that on the phone before shrinking anything."
-            },
-            {
-              senderType: "user",
-              text: "Ok",
-              reaction: "👍"
-            }
-          ]
-        },
-        {
-          id: "thread_r4",
-          type: "dm",
-          botId: "bot_r4",
-          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
-          messages: [
-            {
-              senderType: "bot",
-              botId: "bot_r4",
-              text: "I've sent R1 the phone tool-layer trace and peak resident set size numbers from the test device."
+              text: "I'm **R1** (Principal Systems & AI Architect). Tell me what software, API, or architecture you want to design and build—every file I create is saved and verified in my isolated `vanara/r1` workspace."
             }
           ]
         },
@@ -1953,12 +1882,12 @@
           id: "thread_r2",
           type: "dm",
           botId: "bot_r2",
-          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
+          mountPath,
           messages: [
             {
               senderType: "bot",
               botId: "bot_r2",
-              text: "Should I sketch out the lookup table layout for the per-layer embeddings so R1 can compare mmap vs resident RAM?"
+              text: "I'm **R2** (Backend & Systems Engineer). I write and execute Python, Node.js, Rust, and shell tools in `vanara/r2`."
             }
           ]
         },
@@ -1966,67 +1895,141 @@
           id: "thread_r3",
           type: "dm",
           botId: "bot_r3",
-          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
+          mountPath,
           messages: [
             {
               senderType: "bot",
               botId: "bot_r3",
-              text: "What would you like me to help calibrate next — Q3_K_M or IQ3_M against the hard eval set?"
+              text: "I'm **R3** (QA, Verification & Code Reviewer). Tag `@R3` or click **Peer Review (@R3)** in the Code Workspace to audit diffs and run automated tests."
             }
           ]
         },
         {
-          id: "thread_waffle",
+          id: "thread_r4",
           type: "dm",
-          botId: "bot_waffle",
-          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
+          botId: "bot_r4",
+          mountPath,
           messages: [
             {
               senderType: "bot",
-              botId: "bot_waffle",
-              text: "Yes, just Vanaras from now on. Every agent in the clan has its own custom monkey identity and model brain."
-            }
-          ]
-        },
-        {
-          id: "thread_trio",
-          type: "group",
-          name: "Vijay Pathy, New Bot, Waffle",
-          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
-          botIds: ["bot_new", "bot_waffle", "bot_r1"],
-          humanIds: ["user_vp"],
-          messages: [
-            {
-              senderType: "bot",
-              botId: "bot_new",
-              text: "Two other limits matter too. Cold page-ins over UFS storage and thermal throttling during sustained prefill."
-            }
-          ]
-        },
-        {
-          id: "thread_newbot",
-          type: "dm",
-          botId: "bot_new",
-          mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
-          messages: [
-            {
-              senderType: "bot",
-              botId: "bot_new",
-              text: "A 2 GB budget is tight but possible if LiteRT-LM streams the per-layer embedding tables via mmap."
+              botId: "bot_r4",
+              text: "I'm **R4** (Frontend & Runtime Engineer). I build interactive web UIs and apps that you can launch with **⚡ Serve** on `:4104`."
             }
           ]
         }
-      ]
+      ];
+    }
+
+    const DEFAULT_STATE = {
+      onboarded: false,
+      currentUser: { id: "user_me", name: "Developer", initials: "ME" },
+      autoTriggerEnabled: true,
+      sharedFacts: [
+        "Every Vanara agent writes and commits code inside its own isolated Git worktree (vanara/<agent>).",
+        "All generated software is automatically syntax/runtime verified; @R3 performs peer review before merging to main.",
+        "Use ===FILE: path=== blocks for new files or ===PATCH: path=== blocks for surgical edits."
+      ],
+      humans: [
+        { id: "user_me", name: "Developer", role: "Lead Engineer", initials: "ME" }
+      ],
+      bots: [
+        {
+          id: "bot_r1",
+          name: "R1",
+          role: "Principal Systems & AI Architect",
+          avatarStyle: "vanara-crimson",
+          provider: "local",
+          baseUrl: "http://192.168.68.102:1234/v1",
+          apiKey: "",
+          model: "bonsai-27b-mlx",
+          instructions: "You are R1, Principal Systems & AI Architect in Vanaras. Design clean architectures, write production-ready code in ===FILE: ...=== blocks, and coordinate with @R2, @R3, and @R4.",
+          memories: [
+            "Prefer modular, dependency-light code that can be verified immediately in the agent workspace."
+          ],
+          tools: ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"],
+          mcpCommand: "",
+          worktreeBranch: "vanara/r1"
+        },
+        {
+          id: "bot_r2",
+          name: "R2",
+          role: "Backend & Systems Engineer",
+          avatarStyle: "vanara-amber",
+          provider: "local",
+          baseUrl: "http://192.168.68.102:1234/v1",
+          apiKey: "",
+          model: "google/gemma-4-12b",
+          instructions: "You are R2, Backend & Systems Engineer. Implement fast, reliable backend services, CLI tools, and data pipelines in Python, Node.js, or Rust.",
+          memories: [
+            "Always include runnable entrypoints and self-tests in generated backend scripts."
+          ],
+          tools: ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"],
+          mcpCommand: "",
+          worktreeBranch: "vanara/r2"
+        },
+        {
+          id: "bot_r3",
+          name: "R3",
+          role: "QA, Verification & Code Reviewer",
+          avatarStyle: "vanara-cobalt",
+          provider: "local",
+          baseUrl: "http://192.168.68.102:1234/v1",
+          apiKey: "",
+          model: "bonsai-27b-mlx",
+          instructions: "You are R3, QA, Verification & Code Reviewer. Audit diffs for bugs, security issues, and edge cases, and write automated verification tests.",
+          memories: [
+            "Verify exit codes, edge-case inputs, and error handling before approving a branch merge."
+          ],
+          tools: ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "handoff"],
+          mcpCommand: "",
+          worktreeBranch: "vanara/r3"
+        },
+        {
+          id: "bot_r4",
+          name: "R4",
+          role: "Frontend & Runtime Engineer",
+          avatarStyle: "vanara-slate",
+          provider: "local",
+          baseUrl: "http://192.168.68.102:1234/v1",
+          apiKey: "",
+          model: "bonsai-27b-mlx",
+          instructions: "You are R4, Frontend & Runtime Engineer. Build responsive web apps, interactive dashboards, and clean UI components.",
+          memories: [
+            "Generated web apps can be served on the agent's dedicated port and inspected in VNC/Web."
+          ],
+          tools: ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "handoff"],
+          mcpCommand: "",
+          worktreeBranch: "vanara/r4"
+        },
+        {
+          id: "bot_waffle",
+          name: "Waffle",
+          role: "Product & Release Strategist",
+          avatarStyle: "vanara-snow",
+          provider: "local",
+          baseUrl: "http://192.168.68.102:1234/v1",
+          apiKey: "",
+          model: "bonsai-27b-mlx",
+          instructions: "You are Waffle, Product & Release Strategist in Vanaras. Write clear specs, changelogs, documentation, and release notes.",
+          memories: [
+            "Keep product specs actionable with concrete acceptance criteria."
+          ],
+          tools: ["fs_read", "fs_write", "handoff"],
+          mcpCommand: "",
+          worktreeBranch: "vanara/waffle"
+        }
+      ],
+      threads: buildCleanEngineeringThreads()
     };
 
     const SYSTEM_AGENTS_CATALOG = [
       { id: "sys_hanu", name: "Hanu (Clan Chief)", role: "Full-Stack Autonomous Builder", avatarStyle: "vanara-peach", instructions: "You are Hanu, leader of the Vanaras clan. Architect and synthesize production-ready code and systems." },
-      { id: "sys_rea", name: "Nala (Binary Scout)", role: "Reverse Engineering & Decompiler Monkey", avatarStyle: "vanara-teal", instructions: "You are Nala, Reverse Engineering & Binary Scout. Inspect Mach-O/ELF/PE binaries, GGUF headers, and symbols with strict provenance." },
+      { id: "sys_rea", name: "Nala (Binary Scout)", role: "Reverse Engineering & Decompiler Monkey", avatarStyle: "vanara-teal", instructions: "You are Nala, Reverse Engineering & Binary Scout. Inspect Mach-O/ELF/PE binaries, headers, and symbols with strict provenance." },
       { id: "sys_angada", name: "Angada (Growth & GTM)", role: "Campaign & Launch Strategist", avatarStyle: "vanara-rose", instructions: "You are Angada, Growth & GTM Monkey. Build interactive landing pages, positioning copy, and launch campaigns." },
       { id: "sys_sugriva", name: "Sugriva (Infra & MCP)", role: "Distributed Systems & MCP Orchestrator", avatarStyle: "vanara-periwinkle", instructions: "You are Sugriva, Distributed Systems & MCP Orchestrator. Coordinate tools, git worktrees, and background pipelines." }
     ];
 
-    let state = JSON.parse(localStorage.getItem("vanaras_v5_monkeys") || "null") || JSON.parse(JSON.stringify(DEFAULT_STATE));
+    let state = JSON.parse(localStorage.getItem("vanaras_v6_app") || "null") || JSON.parse(JSON.stringify(DEFAULT_STATE));
     if (!Array.isArray(state.sharedFacts)) state.sharedFacts = [...DEFAULT_STATE.sharedFacts];
     if (typeof state.autoTriggerEnabled !== "boolean") state.autoTriggerEnabled = true;
 
@@ -2041,8 +2044,9 @@
     }
     hydrateBotAgentFields();
 
-    let activeThreadId = "thread_r1";
+    let activeThreadId = state.threads?.[0]?.id || "thread_r1";
     let detectedLocalModel = "bonsai-27b-mlx";
+    let llmOnlineStatus = false;
     let unreadCounts = {};
     let activeWorkingThreads = {};
     let cachedFolderSnapshots = {};
@@ -2050,13 +2054,59 @@
     let activeAutonomousTimers = {};
 
     let deliverables = [
-      { name: "README.md", content: "# Vanaras Deliverable Studio\n\nClick `Collab` in any chat to have your Vanara monkeys debate, plan, and generate multi-file code or interactive HTML deliverables here." }
+      { name: "README.md", content: "# Vanaras Code Workspace\n\nEvery file generated by an agent is saved and auto-committed to its isolated branch (`vanara/<bot>`)." }
     ];
     let activeDeliverableIdx = 0;
     let drawerMode = "source";
 
+    // Universal In-App Input Modal helper (replaces all window.prompt calls)
+    let pendingInAppPromptResolver = null;
+    function askInAppInput({ title = "Input Required", subtitle = "", defaultValue = "", placeholder = "", confirmLabel = "Confirm" } = {}) {
+      return new Promise(resolve => {
+        pendingInAppPromptResolver = resolve;
+        document.getElementById("inAppPromptTitle").innerText = title;
+        document.getElementById("inAppPromptSubtitle").innerText = subtitle;
+        const input = document.getElementById("inAppPromptInput");
+        input.value = defaultValue || "";
+        input.placeholder = placeholder || "";
+        document.getElementById("inAppPromptConfirmBtn").innerText = confirmLabel;
+        document.getElementById("inAppPromptModal").classList.remove("hidden");
+        setTimeout(() => {
+          input.focus();
+          input.select();
+        }, 30);
+      });
+    }
+
+    function resolveInAppInput(val) {
+      document.getElementById("inAppPromptModal").classList.add("hidden");
+      if (pendingInAppPromptResolver) {
+        const fn = pendingInAppPromptResolver;
+        pendingInAppPromptResolver = null;
+        fn(val !== null && val !== undefined ? String(val).trim() : null);
+      }
+    }
+
+    document.addEventListener("keydown", e => {
+      const promptModal = document.getElementById("inAppPromptModal");
+      if (promptModal && !promptModal.classList.contains("hidden")) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          resolveInAppInput(document.getElementById("inAppPromptInput").value);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          resolveInAppInput(null);
+        }
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        toggleSearchInput();
+      }
+    });
+
     function saveState() {
-      localStorage.setItem("vanaras_v5_monkeys", JSON.stringify(state));
+      localStorage.setItem("vanaras_v6_app", JSON.stringify(state));
       fetch("/api/workspace", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2120,25 +2170,34 @@
           const data = await res.json();
           if (data.defaultMountPath) serverDefaultMountPath = data.defaultMountPath;
           if (data.repoRoot) serverRepoRoot = data.repoRoot;
-          if (data.state && Array.isArray(data.state.threads) && data.state.threads.length >= 6 && data.state.bots?.[0]?.avatarStyle?.startsWith("vanara-")) {
+          // Only restore disk state if it was already onboarded (skip legacy screenshot Project Maaya state)
+          const isLegacyScreenshotState = data.state?.threads?.some(t => t.id === "thread_maaya" || t.name === "Project Maaya");
+          if (data.state && !isLegacyScreenshotState && Array.isArray(data.state.threads) && data.state.threads.length >= 1) {
             state = data.state;
             if (!Array.isArray(state.sharedFacts)) state.sharedFacts = [...DEFAULT_STATE.sharedFacts];
             if (typeof state.autoTriggerEnabled !== "boolean") state.autoTriggerEnabled = true;
             hydrateBotAgentFields();
-            localStorage.setItem("vanaras_v5_monkeys", JSON.stringify(state));
-            renderThreadList();
-            renderActiveThread();
+            localStorage.setItem("vanaras_v6_app", JSON.stringify(state));
           } else {
             state.threads.forEach(t => { t.mountPath = serverDefaultMountPath; });
             saveState();
           }
         }
       } catch {}
+      if (!state.threads.some(t => t.id === activeThreadId)) {
+        activeThreadId = state.threads[0]?.id || "thread_r1";
+      }
+      document.getElementById("userInitialsBtn").innerText = state.currentUser?.initials || "ME";
+      renderThreadList();
+      renderActiveThread();
       for (const bot of state.bots) {
         syncAgentMemoryOnServer(bot, "get");
       }
       const lead = getActiveLeadBot();
       if (lead) ensureAgentWorktreeOnServer(lead);
+      if (!state.onboarded) {
+        openOnboardingModal();
+      }
     }
 
     function getBot(botId) {
@@ -2173,6 +2232,11 @@
       const factsEl = document.getElementById("sharedFactsCountPill");
       if (factsEl) factsEl.innerText = `${factsCount}`;
 
+      const artPill = document.getElementById("artifactCountPill");
+      if (artPill) {
+        artPill.innerText = deliverables.length > 0 ? `Code Workspace (${deliverables.length})` : "Code Workspace";
+      }
+
       const autoPill = document.getElementById("autoTriggerPill");
       const autoDot = document.getElementById("autoTriggerDot");
       const autoLbl = document.getElementById("autoTriggerLabel");
@@ -2182,6 +2246,14 @@
         autoDot.style.background = on ? "#10b981" : "#71717a";
         autoPill.style.borderColor = on ? "rgba(16,185,129,0.38)" : "#292930";
         autoPill.style.color = on ? "#6ee7b7" : "#94949e";
+      }
+
+      const llmDot = document.getElementById("llmStatusDot");
+      const llmTxt = document.getElementById("llmStatusText");
+      if (llmDot && llmTxt && leadBot) {
+        const modelLabel = leadBot.model || detectedLocalModel || leadBot.provider;
+        llmDot.style.background = llmOnlineStatus ? "#10b981" : "#f59e0b";
+        llmTxt.innerText = `${leadBot.provider === "local" ? "Local" : leadBot.provider}: ${modelLabel}`;
       }
     }
 
@@ -2200,8 +2272,28 @@
     }
 
     // =========================================================================
-    // 3. RENDER SIDEBAR THREADS (CUTE MONKEYS, CLUSTERS, SPINNERS & UNREADS)
+    // 3. RENDER SIDEBAR THREADS (WITH DELETE/CLEAR ACTION ON HOVER)
     // =========================================================================
+    function deleteThreadById(threadId, ev) {
+      if (ev) ev.stopPropagation();
+      if (state.threads.length <= 1) {
+        state.threads[0].messages = [];
+        saveState();
+        renderThreadList();
+        renderActiveThread();
+        showToast("Cleared conversation messages");
+        return;
+      }
+      state.threads = state.threads.filter(t => t.id !== threadId);
+      if (activeThreadId === threadId) {
+        activeThreadId = state.threads[0].id;
+      }
+      saveState();
+      renderThreadList();
+      renderActiveThread();
+      showToast("Removed conversation");
+    }
+
     function renderThreadList() {
       const container = document.getElementById("threadListContainer");
       const query = (document.getElementById("threadSearchInput")?.value || "").trim().toLowerCase();
@@ -2233,8 +2325,9 @@
         const unread = unreadCounts[thread.id] || 0;
         const isWorking = Boolean(activeWorkingThreads[thread.id]);
 
-        const btn = document.createElement("button");
+        const btn = document.createElement("div");
         btn.className = `thread-row ${isSelected ? "active" : ""}`;
+        btn.style.cursor = "pointer";
         btn.onclick = () => {
           activeThreadId = thread.id;
           unreadCounts[thread.id] = 0;
@@ -2247,6 +2340,8 @@
           rightStatusHtml = `<span style="width:12px; height:12px; border:2px solid #f59e0b; border-top-color:transparent; border-radius:50%; display:inline-block;" class="spin"></span>`;
         } else if (unread > 0) {
           rightStatusHtml = `<span class="unread-badge">${unread}</span>`;
+        } else {
+          rightStatusHtml = `<button onclick="deleteThreadById('${thread.id}', event)" class="side-icon-btn" style="width:20px; height:20px; opacity:0.55;" title="Delete or clear thread">×</button>`;
         }
 
         btn.innerHTML = `
@@ -2264,7 +2359,7 @@
     }
 
     // =========================================================================
-    // 4. RENDER ACTIVE CONVERSATION (SCREENSHOT-FAITHFUL + 4 UPGRADES)
+    // 4. RENDER ACTIVE CONVERSATION
     // =========================================================================
     function findMentionedBotsInText(text, excludeBotId) {
       if (!text) return [];
@@ -2284,9 +2379,6 @@
       while ((m = rx.exec(text)) !== null) {
         cmds.push(m[1].trim());
       }
-      if (text.includes("gguf_dump.py") && !cmds.some(c => c.includes("gguf_dump"))) {
-        cmds.push("python3 --version && ls -lh");
-      }
       return cmds.slice(0, 2);
     }
 
@@ -2298,14 +2390,17 @@
 
       const pill = document.getElementById("activeThreadPill");
       const input = document.getElementById("chatComposerInput");
+      const composerBadge = document.getElementById("composerBotAvatarBadge");
 
       if (thread.type === "dm") {
         const bot = getBot(thread.botId);
         pill.innerHTML = `
           ${renderMonkeyAvatar(bot.avatarStyle, 22)}
           <span class="identity-pill-name">${escapeHtml(bot.name)}</span>
+          <span class="identity-pill-sub">${escapeHtml(bot.role || "")}</span>
         `;
-        input.placeholder = `Message ${bot.name}`;
+        if (composerBadge) composerBadge.innerHTML = renderMonkeyAvatar(bot.avatarStyle, 18);
+        input.placeholder = `Message ${bot.name} (@mention any agent or type /run <cmd>)`;
       } else {
         const memberCount = (thread.botIds?.length || 0) + (thread.humanIds?.length || 0);
         const leadBot = getBot(thread.botIds?.[0] || "bot_r1");
@@ -2314,7 +2409,8 @@
           <span class="identity-pill-name">${escapeHtml(thread.name)}</span>
           <span class="identity-pill-sub">${memberCount} members</span>
         `;
-        input.placeholder = `Message ${thread.name} (@mention any Vanara)`;
+        if (composerBadge) composerBadge.innerHTML = renderMonkeyAvatar(leadBot.avatarStyle, 18);
+        input.placeholder = `Message ${thread.name} (@mention any Vanara or click Collab)`;
       }
 
       const msgInner = document.getElementById("messagesInner");
@@ -2588,10 +2684,16 @@
       }
     }
 
-    function promptBackgroundCommand() {
+    async function promptBackgroundCommand() {
       const leadBot = getActiveLeadBot();
       const wtBranch = leadBot?.worktreeBranch || "vanara/r1";
-      const cmd = prompt(`Run command in ${leadBot?.name || "Agent"}'s isolated git worktree (${wtBranch}):`, "git status -sb && ls -la");
+      const cmd = await askInAppInput({
+        title: `Run Command in ${leadBot?.name || "Agent"} Worktree`,
+        subtitle: `Executes in isolated Git branch ${wtBranch} and streams exit status into the active chat.`,
+        defaultValue: "git status -sb && ls -la",
+        placeholder: "e.g. npm test or python3 main.py",
+        confirmLabel: "Run in Worktree"
+      });
       if (cmd && cmd.trim()) {
         executeBackgroundCommand(cmd.trim(), leadBot);
       }
@@ -2851,10 +2953,13 @@
       const thread = getActiveThread();
       if (!thread) return;
       const lastUser = [...thread.messages].reverse().find(m => m.senderType === "user");
-      const goal = prompt(
-        "Enter an autonomous goal (Vanaras will self-trigger turns & tools in the background even while you switch chats):",
-        lastUser ? lastUser.text : "Audit our GGUF embedding layout, run a check in your isolated worktree, and hand off to @R2 and @R3"
-      );
+      const goal = await askInAppInput({
+        title: "Launch Autonomous Background Goal",
+        subtitle: "Vanaras will self-trigger turns, tools, and peer handoffs in the background while you work.",
+        defaultValue: lastUser ? lastUser.text : "Inspect the mounted repository, build a runnable verification module in your worktree, and hand off to @R2 and @R3",
+        placeholder: "Describe what the Vanara engineering squad should build or verify...",
+        confirmLabel: "Start Autonomous Loop"
+      });
       if (!goal || !goal.trim()) return;
 
       state.autoTriggerEnabled = true;
@@ -3203,10 +3308,13 @@
 
       if (!goal) {
         const lastUserMsg = [...thread.messages].reverse().find(m => m.senderType === "user");
-        goal = prompt(
-          "What should the Vanara bots collaborate on and build?",
-          lastUserMsg ? lastUserMsg.text : "Design and implement a fast GGUF header & embedding table inspector script"
-        );
+        goal = await askInAppInput({
+          title: "Start Multi-Agent Squad Collaboration",
+          subtitle: "Each Vanara in the squad will take a structured turn, review peers, and synthesize runnable files.",
+          defaultValue: lastUserMsg ? lastUserMsg.text : "Design and implement a clean health-check & telemetry module with automated unit tests",
+          placeholder: "What should the Vanara squad collaborate on and build?",
+          confirmLabel: "Run Squad Collab"
+        });
         if (!goal) return;
       } else {
         input.value = "";
@@ -3318,7 +3426,7 @@
         let cIdx = 1;
         while ((m = codeRegex.exec(rawText)) !== null) {
           const lang = m[1].toLowerCase();
-          const ext = lang === "rust" ? "src/main.rs" : lang === "html" ? "index.html" : lang === "python" ? "gguf_dump.py" : `deliverable-${cIdx}.${lang}`;
+          const ext = lang === "rust" ? "src/main.rs" : lang === "html" ? "index.html" : lang === "python" ? "solution.py" : `deliverable-${cIdx}.${lang}`;
           files.push({ name: ext, content: m[2].trim() });
           cIdx++;
         }
@@ -3670,7 +3778,13 @@
       const botId = document.getElementById("worktreeBotSelect").value;
       const bot = getBot(botId);
       if (!bot) return;
-      const message = prompt(`Commit changes in ${bot.name}'s isolated worktree (${bot.worktreeBranch}):`, `feat(${bot.name.toLowerCase()}): autonomous agent checkpoint`);
+      const message = await askInAppInput({
+        title: `Commit ${bot.name}'s Worktree (${bot.worktreeBranch})`,
+        subtitle: "Stages and commits all modified files inside this agent's isolated Git worktree.",
+        defaultValue: `feat(${bot.name.toLowerCase()}): autonomous agent checkpoint`,
+        placeholder: "Commit message...",
+        confirmLabel: "Commit Branch"
+      });
       if (!message) return;
 
       try {
@@ -3745,10 +3859,22 @@
       document.getElementById("groupModal").classList.add("hidden");
     }
 
-    function quickAddHumanInGroupModal() {
-      const name = prompt("Teammate's Name:");
+    async function quickAddHumanInGroupModal() {
+      const name = await askInAppInput({
+        title: "Add Human Teammate",
+        subtitle: "Add a human collaborator to this squad room.",
+        defaultValue: "",
+        placeholder: "e.g. Priya Sridharan",
+        confirmLabel: "Next"
+      });
       if (!name) return;
-      const role = prompt("Role / Title:", "Engineer") || "Teammate";
+      const role = (await askInAppInput({
+        title: `Role for ${name}`,
+        subtitle: "Specify their engineering role or title.",
+        defaultValue: "Engineer",
+        placeholder: "e.g. Staff Systems Engineer",
+        confirmLabel: "Add Teammate"
+      })) || "Teammate";
       const initials = name.split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 2);
       state.humans.push({ id: "user_" + Date.now(), name, role, initials });
       saveState();
@@ -3934,13 +4060,194 @@
     }
 
     function openProfileModal() {
-      const newName = prompt("Your Display Name:", state.currentUser.name);
-      if (!newName) return;
-      state.currentUser.name = newName.trim();
-      state.currentUser.initials = newName.trim().split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 2);
-      document.getElementById("userInitialsBtn").innerText = state.currentUser.initials;
+      openOnboardingModal();
+    }
+
+    function openOnboardingModal() {
+      const modal = document.getElementById("onboardingModal");
+      if (!modal) return;
+      const leadBot = state.bots[0] || {};
+      const activeThread = getActiveThread();
+      document.getElementById("onboardUserNameInput").value = state.currentUser?.name || "Engineer";
+      document.getElementById("onboardUserRoleInput").value = state.currentUser?.role || "Lead Architect";
+      document.getElementById("onboardMountPathInput").value = activeThread?.mountPath || serverDefaultMountPath;
+      document.getElementById("onboardProviderSelect").value = leadBot.provider || "local";
+      document.getElementById("onboardBaseUrlInput").value = leadBot.baseUrl || "http://192.168.68.102:1234/v1";
+      document.getElementById("onboardApiKeyInput").value = leadBot.apiKey || "";
+      document.getElementById("onboardModelInput").value = leadBot.model || detectedLocalModel;
+
+      const squadEl = document.getElementById("onboardSquadSummary");
+      if (squadEl) {
+        squadEl.innerHTML = state.bots.map(b => `
+          <div style="display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:8px; background:#18181e; border:1px solid #272730;">
+            ${renderMonkeyAvatar(b.avatarStyle, 20)}
+            <div style="min-width:0;">
+              <div style="font-size:11.5px; font-weight:700; color:#f4f4f8;">@${escapeHtml(b.name)}</div>
+              <div style="font-size:10px; color:#888894; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(b.role)}</div>
+            </div>
+          </div>
+        `).join("");
+      }
+      modal.classList.remove("hidden");
+    }
+
+    function closeOnboardingModal() {
+      const modal = document.getElementById("onboardingModal");
+      if (modal) modal.classList.add("hidden");
+    }
+
+    function onOnboardProviderChange() {
+      const p = document.getElementById("onboardProviderSelect").value;
+      const urlInput = document.getElementById("onboardBaseUrlInput");
+      const modelInput = document.getElementById("onboardModelInput");
+      if (p === "local") {
+        urlInput.value = "http://192.168.68.102:1234/v1";
+        modelInput.value = detectedLocalModel;
+      } else if (p === "openrouter") {
+        urlInput.value = "https://openrouter.ai/api/v1";
+        modelInput.value = "anthropic/claude-3.7-sonnet";
+      } else if (p === "gemini") {
+        urlInput.value = "https://generativelanguage.googleapis.com/v1beta/openai";
+        modelInput.value = "gemini-2.5-pro";
+      } else if (p === "openai") {
+        urlInput.value = "https://api.openai.com/v1";
+        modelInput.value = "gpt-4.1";
+      } else if (p === "claude") {
+        urlInput.value = "https://api.anthropic.com/v1";
+        modelInput.value = "claude-3-7-sonnet-latest";
+      } else if (p === "qwen") {
+        urlInput.value = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+        modelInput.value = "qwen-max";
+      }
+    }
+
+    async function probeOnboardingModels() {
+      const provider = document.getElementById("onboardProviderSelect").value;
+      const baseUrl = document.getElementById("onboardBaseUrlInput").value.trim();
+      const apiKey = document.getElementById("onboardApiKeyInput").value.trim();
+      const statusEl = document.getElementById("onboardModelStatus");
+      statusEl.style.color = "#a1a1aa";
+      statusEl.innerText = "Probing model endpoint...";
+      try {
+        const res = await fetch("/api/llm/models", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider, baseUrl, apiKey })
+        });
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.models) && data.models.length > 0) {
+          detectedLocalModel = data.models[0];
+          llmOnlineStatus = true;
+          document.getElementById("onboardModelInput").value = data.models[0];
+          statusEl.style.color = "#6ee7b7";
+          statusEl.innerText = `✓ Connected! Detected ${data.models.length} model(s): ${data.models.slice(0, 3).join(", ")}`;
+          updateHeaderPills();
+        } else {
+          llmOnlineStatus = false;
+          statusEl.style.color = "#fbbf24";
+          statusEl.innerText = `Endpoint reachable, no model list returned (${data.error || "using manual model ID"}).`;
+          updateHeaderPills();
+        }
+      } catch (e) {
+        llmOnlineStatus = false;
+        statusEl.style.color = "#f87171";
+        statusEl.innerText = `Connection error: ${e.message}`;
+        updateHeaderPills();
+      }
+    }
+
+    async function completeOnboarding(resetThreads = false) {
+      const userName = document.getElementById("onboardUserNameInput").value.trim() || "Engineer";
+      const userRole = document.getElementById("onboardUserRoleInput").value.trim() || "Lead Architect";
+      const mountPath = document.getElementById("onboardMountPathInput").value.trim() || serverDefaultMountPath;
+      const provider = document.getElementById("onboardProviderSelect").value;
+      const baseUrl = document.getElementById("onboardBaseUrlInput").value.trim();
+      const apiKey = document.getElementById("onboardApiKeyInput").value.trim();
+      const model = document.getElementById("onboardModelInput").value.trim() || detectedLocalModel;
+
+      const initials = userName.split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 2) || "EN";
+      state.currentUser = { id: "user_1", name: userName, role: userRole, initials };
+      state.humans = [{ id: "user_1", name: userName, role: userRole, initials }];
+      state.onboarded = true;
+      serverDefaultMountPath = mountPath;
+
+      state.bots.forEach(b => {
+        b.provider = provider;
+        b.baseUrl = baseUrl;
+        b.apiKey = apiKey;
+        b.model = model;
+      });
+
+      if (resetThreads) {
+        state.threads = buildCleanEngineeringThreads(mountPath);
+        activeThreadId = state.threads[0].id;
+      } else {
+        state.threads.forEach(t => {
+          t.mountPath = mountPath;
+        });
+      }
+
+      document.getElementById("userInitialsBtn").innerText = initials;
       saveState();
-      showToast(`Signed in as ${state.currentUser.name}`);
+      closeOnboardingModal();
+      renderThreadList();
+      renderActiveThread();
+      await probeLocalModel();
+      showToast(resetThreads ? "Workspace reset to clean engineering threads!" : `Workspace configured for ${userName}`);
+    }
+
+    async function attachRepoFileToComposer() {
+      const thread = getActiveThread();
+      const leadBot = getActiveLeadBot();
+      const relPath = await askInAppInput({
+        title: "Attach File from Mounted Repository / Worktree",
+        subtitle: `Reads a file from ${leadBot?.name || "R1"}'s isolated worktree (${leadBot?.worktreeBranch || "vanara/r1"}) and attaches it to your prompt.`,
+        defaultValue: "package.json",
+        placeholder: "e.g. README.md, src/index.ts, or package.json",
+        confirmLabel: "Attach File"
+      });
+      if (!relPath || !relPath.trim()) return;
+      try {
+        const res = await fetch("/api/agent/tool", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "fs_read",
+            botId: leadBot?.id || "bot_r1",
+            botName: leadBot?.name || "R1",
+            filePath: relPath.trim()
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.output) {
+          const input = document.getElementById("chatComposerInput");
+          const snippet = data.output.slice(0, 1500);
+          input.value = (input.value ? input.value + "\n\n" : "") + `[Attached File: ${relPath.trim()}]\n\`\`\`\n${snippet}\n\`\`\`\n`;
+          input.focus();
+          showToast(`Attached ${relPath.trim()} (${data.output.length} chars)`);
+        } else {
+          showToast(`Could not read ${relPath.trim()}: ${data.error || "not found"}`);
+        }
+      } catch (e) {
+        showToast(`Attach error: ${e.message}`);
+      }
+    }
+
+    function clearActiveThreadMessages() {
+      const thread = getActiveThread();
+      if (!thread) return;
+      const leadBot = getActiveLeadBot();
+      thread.messages = [
+        {
+          senderType: "bot",
+          botId: leadBot?.id || "bot_r1",
+          text: `Cleared conversation history. Ready in \`${leadBot?.worktreeBranch || "vanara/r1"}\` — what should we build or inspect next?`
+        }
+      ];
+      saveState();
+      renderThreadList();
+      renderActiveThread();
+      showToast("Cleared active chat history");
     }
 
     // =========================================================================
@@ -4041,12 +4348,18 @@
       // Save current editor buffer first
       const active = deliverables[activeDeliverableIdx];
       const codeView = document.getElementById("deliverableCodeView");
-      if (active && codeView && drawerMode !== "preview") {
+      if (active && codeView && drawerMode !== "preview" && drawerMode !== "vnc") {
         active.content = codeView.value;
         await saveFilesToAgentWorkspace(bot, [{ name: active.name, content: active.content }]);
       }
       const slug = bot.name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-      const msg = prompt(`Git commit message for ${bot.name}'s isolated branch (vanara/${slug}):`, `feat(${slug}): update ${active ? active.name : "workspace"}`);
+      const msg = await askInAppInput({
+        title: `Commit ${bot.name}'s Branch (vanara/${slug})`,
+        subtitle: "Stages and commits your current code workspace files onto the agent's isolated Git branch.",
+        defaultValue: `feat(${slug}): update ${active ? active.name : "workspace"}`,
+        placeholder: "Commit message...",
+        confirmLabel: "Commit to Branch"
+      });
       if (!msg) return;
       const consoleOut = document.getElementById("workspaceConsoleOutput");
       try {
@@ -4109,7 +4422,13 @@
     async function createNewFileInAgentWorkspace() {
       const bot = getBot(activeWorkspaceBotId) || state.bots[0];
       if (!bot) return;
-      const fileName = prompt(`Create new code file in ${bot.name}'s workspace (e.g. solution.py, index.html, main.rs):`, "main.py");
+      const fileName = await askInAppInput({
+        title: `Create File in ${bot.name}'s Workspace`,
+        subtitle: "Creates a new source file inside the agent's isolated Git worktree and commits it.",
+        defaultValue: "main.py",
+        placeholder: "e.g. solution.py, server.mjs, index.html, main.rs",
+        confirmLabel: "Create File"
+      });
       if (!fileName || !fileName.trim()) return;
       const cleanName = fileName.trim().replace(/[^a-zA-Z0-9_.-]/g, "_");
       const starterContent = cleanName.endsWith(".py")
@@ -4130,7 +4449,7 @@
       if (!bot || !active) return;
 
       // Sync current editor buffer before running
-      if (drawerMode === "code" && codeView) {
+      if ((drawerMode === "source" || drawerMode === "code") && codeView) {
         active.content = codeView.value;
         await saveFilesToAgentWorkspace(bot, [{ name: active.name, content: active.content }]);
       }
@@ -4355,7 +4674,13 @@
       const bot = getBot(activeWorkspaceBotId) || state.bots[0];
       if (!bot) return;
       const slug = bot.name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-      const title = prompt(`Pull Request title for vanara/${slug} -> main:`, `feat(${slug}): autonomous deliverables from ${bot.name}`);
+      const title = await askInAppInput({
+        title: `Create Pull Request (vanara/${slug} → main)`,
+        subtitle: "Pushes the agent's isolated branch and creates a GitHub PR (or returns branch comparison if offline).",
+        defaultValue: `feat(${slug}): autonomous deliverables from ${bot.name}`,
+        placeholder: "Pull Request title...",
+        confirmLabel: "Create PR"
+      });
       if (!title) return;
       const consoleOut = document.getElementById("workspaceConsoleOutput");
       if (consoleOut) consoleOut.textContent = `$ pushing vanara/${slug} and creating Pull Request...`;
@@ -4407,6 +4732,14 @@
       const codeView = document.getElementById("deliverableCodeView");
       const frame = document.getElementById("deliverablePreviewFrame");
       const vncWrap = document.getElementById("deliverableVncWrap");
+
+      // Highlight active mode button
+      const btnSource = document.getElementById("btnModeSource");
+      const btnPreview = document.getElementById("btnModePreview");
+      const btnVnc = document.getElementById("btnModeVnc");
+      if (btnSource) btnSource.style.borderColor = (drawerMode === "source" || drawerMode === "code") ? "#f59e0b" : "";
+      if (btnPreview) btnPreview.style.borderColor = drawerMode === "preview" ? "#f59e0b" : "";
+      if (btnVnc) btnVnc.style.borderColor = drawerMode === "vnc" ? "#f59e0b" : "rgba(99,102,241,0.35)";
 
       tabs.innerHTML = deliverables.map((f, i) => `
         <button onclick="activeDeliverableIdx=${i}; renderDeliverableDrawer();" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px; ${i === activeDeliverableIdx ? 'border-color:#f59e0b; color:#ffffff;' : ''}">
@@ -4520,17 +4853,28 @@
     }
 
     async function probeLocalModel() {
+      const leadBot = state.bots[0] || { provider: "local", baseUrl: "http://192.168.68.102:1234/v1", apiKey: "" };
       try {
         const res = await fetch("/api/llm/models", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider: "local", baseUrl: "http://192.168.68.102:1234/v1" })
+          body: JSON.stringify({
+            provider: leadBot.provider || "local",
+            baseUrl: leadBot.baseUrl || "http://192.168.68.102:1234/v1",
+            apiKey: leadBot.apiKey || ""
+          })
         });
         const data = await res.json();
         if (res.ok && Array.isArray(data.models) && data.models.length > 0) {
           detectedLocalModel = data.models[0];
+          llmOnlineStatus = true;
+        } else {
+          llmOnlineStatus = Boolean(leadBot.apiKey);
         }
-      } catch {}
+      } catch {
+        llmOnlineStatus = false;
+      }
+      updateHeaderPills();
     }
 
     function initMultiplayerStream() {

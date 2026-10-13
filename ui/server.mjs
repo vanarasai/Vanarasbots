@@ -469,10 +469,76 @@ const server = http.createServer(async (req, res) => {
             savedNames.push(cleanRel);
           }
         }
+        // Automatically stage & commit the agent's code changes onto its isolated branch (vanara/<bot>)
+        let autoCommitOut = "";
+        if (savedNames.length > 0) {
+          const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+          const autoMsg = `feat(${slug}): update ${savedNames.join(", ")} in agent workspace`;
+          try {
+            autoCommitOut = execSync(`git add -A && git commit -m "${autoMsg.replace(/"/g, "'")}"`, {
+              cwd: wt.worktreePath,
+              stdio: "pipe",
+              timeout: 5000
+            }).toString("utf8").trim();
+          } catch (e) {
+            autoCommitOut = (e.stdout ? e.stdout.toString("utf8") : "").trim();
+          }
+        }
         const updatedWt = ensureAgentWorktree(botId, botName, customWorkspacePath);
         return sendJson(res, 200, {
           ...updatedWt,
           savedNames,
+          autoCommitOut,
+          files: listAgentCodeFiles(updatedWt.codeDir)
+        });
+      }
+
+      if (action === "commit_workspace") {
+        const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+        const commitMsg = (command || `feat(${slug}): checkpoint agent workspace`).replace(/"/g, "'");
+        let output = "";
+        try {
+          output = execSync(`git add -A && (git commit -m "${commitMsg}" || true) && git log --oneline -n 4`, {
+            cwd: wt.worktreePath,
+            stdio: "pipe",
+            timeout: 6000
+          }).toString("utf8").trim();
+        } catch (err) {
+          output = err.message;
+        }
+        const updatedWt = ensureAgentWorktree(botId, botName, customWorkspacePath);
+        return sendJson(res, 200, {
+          ...updatedWt,
+          output,
+          files: listAgentCodeFiles(updatedWt.codeDir)
+        });
+      }
+
+      if (action === "merge_to_main") {
+        const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+        let output = "";
+        try {
+          // Ensure worktree changes are committed on the agent's branch first
+          execSync(`git add -A && (git commit -m "feat(${slug}): pre-merge checkpoint" || true)`, {
+            cwd: wt.worktreePath,
+            stdio: "pipe",
+            timeout: 5000
+          });
+          // Copy agent_workspace/<slug> into main ROOT_DIR/agent_workspace/<slug> and commit on main
+          const mainDest = path.resolve(ROOT_DIR, "agent_workspace", slug);
+          fs.mkdirSync(mainDest, { recursive: true });
+          fs.cpSync(wt.codeDir, mainDest, { recursive: true, force: true });
+          output = execSync(
+            `git add "agent_workspace/${slug}" && (git commit -m "feat(${slug}): merge ${wt.branch} workspace into main" || true) && git log --oneline -n 3`,
+            { cwd: ROOT_DIR, stdio: "pipe", timeout: 6000 }
+          ).toString("utf8").trim();
+        } catch (err) {
+          output = err.message;
+        }
+        const updatedWt = ensureAgentWorktree(botId, botName, customWorkspacePath);
+        return sendJson(res, 200, {
+          ...updatedWt,
+          output,
           files: listAgentCodeFiles(updatedWt.codeDir)
         });
       }
@@ -633,15 +699,39 @@ const server = http.createServer(async (req, res) => {
         if (target.startsWith(wt.codeDir)) {
           fs.mkdirSync(path.dirname(target), { recursive: true });
           fs.writeFileSync(target, bodyContent, "utf8");
+          const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+          try {
+            execSync(`git add -A && git commit -m "feat(${slug}): write ${rel} in agent workspace"`, {
+              cwd: wt.worktreePath,
+              stdio: "pipe",
+              timeout: 5000
+            });
+          } catch {}
           return sendJson(res, 200, {
             ok: true,
             bytesWritten: bodyContent.length,
             worktreePath: wt.worktreePath,
             codeDir: wt.codeDir,
             branch: wt.branch,
-            output: `Wrote ${bodyContent.length} bytes to ${rel} in ${botName || botId}'s code workspace (${wt.branch})`
+            output: `Wrote ${bodyContent.length} bytes to ${rel} & committed to ${wt.branch}`
           });
         }
+      }
+
+      if (toolName === "git_commit") {
+        const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+        const msg = String(content || filePath || args.message || `feat(${slug}): autonomous agent commit`).replace(/"/g, "'");
+        let out = "";
+        try {
+          out = execSync(`git add -A && (git commit -m "${msg}" || true) && git log --oneline -n 3`, {
+            cwd: wt.worktreePath,
+            stdio: "pipe",
+            timeout: 5000
+          }).toString("utf8").trim();
+        } catch (err) {
+          out = err.message;
+        }
+        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, output: out });
       }
 
       if (toolName === "git_status" || toolName === "git_diff") {

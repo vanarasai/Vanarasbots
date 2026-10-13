@@ -1,14 +1,20 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { exec } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
+const REPO_ROOT = path.resolve(ROOT_DIR, "..");
+const WORKSPACE_FILE = path.join(__dirname, ".vanaras-workspace.json");
 const PORT = 3000;
 
 // Connected real-time multiplayer clients (SSE)
 const sseClients = new Set();
+
+// Background tasks registry
+const backgroundJobs = new Map();
 
 function broadcastEvent(eventType, payload) {
   const frame = `event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`;
@@ -18,6 +24,64 @@ function broadcastEvent(eventType, payload) {
     } catch {
       sseClients.delete(client);
     }
+  }
+}
+
+function loadWorkspaceDiskState() {
+  try {
+    if (fs.existsSync(WORKSPACE_FILE)) {
+      return JSON.parse(fs.readFileSync(WORKSPACE_FILE, "utf8"));
+    }
+  } catch (e) {
+    console.warn("Could not read workspace file:", e.message);
+  }
+  return null;
+}
+
+function saveWorkspaceDiskState(state) {
+  try {
+    // Strip transient API keys before writing to disk for credential hygiene
+    const sanitized = JSON.parse(JSON.stringify(state));
+    if (Array.isArray(sanitized.bots)) {
+      sanitized.bots.forEach(b => { delete b.apiKey; });
+    }
+    fs.writeFileSync(WORKSPACE_FILE, JSON.stringify(sanitized, null, 2), "utf8");
+  } catch (e) {
+    console.warn("Could not write workspace file:", e.message);
+  }
+}
+
+// Gather grounded filesystem & git snapshot from a mounted directory
+function inspectMountedDirectory(targetPath) {
+  const resolved = path.resolve(ROOT_DIR, targetPath || ".");
+  if (!fs.existsSync(resolved)) {
+    return { exists: false, path: resolved, summary: `Directory not found: ${resolved}` };
+  }
+
+  try {
+    const entries = fs.readdirSync(resolved, { withFileTypes: true })
+      .filter(e => !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "target")
+      .slice(0, 35)
+      .map(e => (e.isDirectory() ? `${e.name}/` : e.name));
+
+    const snippets = [];
+    for (const candidate of ["Cargo.toml", "package.json", "README.md"]) {
+      const p = path.join(resolved, candidate);
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+        const content = fs.readFileSync(p, "utf8").slice(0, 800);
+        snippets.push(`--- ${candidate} ---\n${content}`);
+      }
+    }
+
+    return {
+      exists: true,
+      path: resolved,
+      entries,
+      snippets,
+      summary: `Mounted Path: ${resolved}\nTop-level files: ${entries.join(", ")}\n${snippets.join("\n\n")}`
+    };
+  } catch (e) {
+    return { exists: false, path: resolved, summary: `Error inspecting ${resolved}: ${e.message}` };
   }
 }
 
@@ -57,7 +121,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Real-time Multiplayer & System Agent Event Stream (SSE)
+  // 1. Real-time Multiplayer & Background Task Event Stream (SSE)
   if (req.method === "GET" && req.url.startsWith("/api/events")) {
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -71,8 +135,71 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // External Human Peer / CLI System Agent Message Injection Endpoint
-  // Allows other people on LAN or external system agents (e.g. curl/CLI) to post into any thread!
+  // 2. Shared Disk-Backed Workspace State (GET & POST /api/workspace)
+  if (req.method === "GET" && req.url === "/api/workspace") {
+    const saved = loadWorkspaceDiskState();
+    return sendJson(res, 200, { state: saved, defaultMountPath: ROOT_DIR, repoRoot: REPO_ROOT });
+  }
+
+  if (req.method === "POST" && req.url === "/api/workspace") {
+    try {
+      const { state } = await readJsonBody(req);
+      if (state) {
+        saveWorkspaceDiskState(state);
+        broadcastEvent("workspace_synced", { updatedAt: Date.now() });
+      }
+      return sendJson(res, 200, { ok: true });
+    } catch (e) {
+      return sendJson(res, 400, { error: e.message });
+    }
+  }
+
+  // 3. Grounded Folder Inspection Endpoint (POST /api/workspace/context)
+  if (req.method === "POST" && req.url === "/api/workspace/context") {
+    try {
+      const { mountPath } = await readJsonBody(req);
+      const info = inspectMountedDirectory(mountPath || ROOT_DIR);
+      return sendJson(res, 200, info);
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // 4. Asynchronous Background Command / Tool Runner (POST /api/workspace/exec)
+  if (req.method === "POST" && req.url === "/api/workspace/exec") {
+    try {
+      const { command, cwd, threadId, botId, botName } = await readJsonBody(req);
+      if (!command) return sendJson(res, 400, { error: "Missing command" });
+
+      const targetCwd = cwd && fs.existsSync(cwd) ? cwd : ROOT_DIR;
+      const jobId = "job_" + Date.now();
+      backgroundJobs.set(jobId, { id: jobId, command, status: "running", startedAt: Date.now() });
+
+      broadcastEvent("job_started", { jobId, command, threadId, botId, botName });
+
+      exec(command, { cwd: targetCwd, timeout: 25000, maxBuffer: 1024 * 512 }, (error, stdout, stderr) => {
+        const output = ((stdout || "") + (stderr ? `\n${stderr}` : "")).trim().slice(0, 4000);
+        const exitCode = error ? (error.code || 1) : 0;
+        backgroundJobs.set(jobId, { id: jobId, command, status: "done", exitCode, output });
+        broadcastEvent("job_finished", {
+          jobId,
+          command,
+          cwd: targetCwd,
+          exitCode,
+          output: output || "(Command completed with no output)",
+          threadId,
+          botId,
+          botName
+        });
+      });
+
+      return sendJson(res, 200, { jobId, status: "started", cwd: targetCwd });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // 5. External Human Peer / CLI System Agent Message Injection
   if (req.method === "POST" && req.url === "/api/room/post") {
     try {
       const msg = await readJsonBody(req);
@@ -83,7 +210,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 1. Universal Multi-Provider LLM Chat Proxy (Local, OpenRouter, Gemini, OpenAI, Claude, Qwen, Grok)
+  // 6. Universal Multi-Provider LLM Chat Proxy (Local, OpenRouter, Gemini, OpenAI, Claude, Qwen, Grok)
   if (req.method === "POST" && req.url === "/api/llm/chat") {
     try {
       const {
@@ -218,7 +345,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 2. Universal Model Discovery
+  // 7. Universal Model Discovery
   if (req.method === "POST" && req.url === "/api/llm/models") {
     try {
       const { provider = "local", baseUrl = "http://192.168.68.102:1234/v1", apiKey = "" } = await readJsonBody(req);
@@ -254,26 +381,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 3. Multi-File Project / Deliverable Save
+  // 8. Multi-File Project / Deliverable Save (Supports saving into Mounted Folder or vanaras/projects/)
   if (req.method === "POST" && req.url === "/api/save-project") {
     try {
-      const { projectName, files = [] } = await readJsonBody(req);
-      if (!projectName || !Array.isArray(files) || files.length === 0) {
-        return sendJson(res, 400, { error: "Missing projectName or files array" });
+      const { projectName, mountPath, files = [] } = await readJsonBody(req);
+      if (!Array.isArray(files) || files.length === 0) {
+        return sendJson(res, 400, { error: "Missing files array" });
       }
-      const slug = projectName.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^-+|-+$/g, "") || "workspace-output";
+      const slug = (projectName || "workspace-output").replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
+      const baseTarget = mountPath && fs.existsSync(mountPath)
+        ? path.resolve(mountPath)
+        : path.resolve(ROOT_DIR, "projects", slug);
+
       const savedPaths = [];
       for (const file of files) {
         const relName = (file.name || "artifact.md").replace(/^\/+/, "").replace(/\.\./g, "");
-        const safePath = path.resolve(ROOT_DIR, "projects", slug, relName);
-        if (!safePath.startsWith(ROOT_DIR)) continue;
+        const safePath = path.resolve(baseTarget, relName);
+        if (!safePath.startsWith(baseTarget)) continue;
         fs.mkdirSync(path.dirname(safePath), { recursive: true });
         fs.writeFileSync(safePath, file.content || "", "utf8");
         savedPaths.push(safePath);
       }
       return sendJson(res, 200, {
         success: true,
-        projectDir: path.resolve(ROOT_DIR, "projects", slug),
+        projectDir: baseTarget,
         savedPaths
       });
     } catch (e) {

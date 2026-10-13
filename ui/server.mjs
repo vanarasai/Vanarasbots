@@ -69,9 +69,83 @@ function saveAgentMemory(botId, memories) {
 }
 
 // ============================================================================
-// PER-AGENT ISOLATED GIT WORKTREE MANAGER (.worktrees/<botId>)
+// PER-AGENT ISOLATED GIT WORKTREE & CODE WORKSPACE MANAGER (.worktrees/<botId>)
 // ============================================================================
-function ensureAgentWorktree(botId, botName) {
+const STARTER_AGENT_CODE = {
+  bot_r1: {
+    "gguf_dump.py": `#!/usr/bin/env python3
+"""R1 — GGUF Header & Per-Layer Embedding Table Inspector"""
+import os, struct, sys
+
+def inspect_workspace_models(root="."):
+    print("[R1 Code Workspace] Scanning for GGUF / quantization artifacts...")
+    print("Target Architecture : Gemma 4 E2B (5B stored params, 4-bit PLE tables)")
+    print("Saved via 4-bit PLE : ~680 MB")
+    print("Candidate Quants    : Q3_K_M (~3.5 bpw) | IQ3_M (~3.0 bpw)")
+    print("Active CWD          :", os.getcwd())
+
+if __name__ == "__main__":
+    inspect_workspace_models()
+`,
+    "quant_architecture.md": `# R1 Quantization & PLE Architecture\n\n- Main GGUF is text-only; vision/audio projector lives in separate \`mmproj\`.\n- Test \`Q3_K_M\` and \`IQ3_M\` with imatrix calibration before shrinking PLE tables further.\n`
+  },
+  bot_r2: {
+    "embedding_lookup.py": `#!/usr/bin/env python3
+"""R2 — Per-Layer Embedding (PLE) Mmap vs Resident Lookup Benchmark"""
+import mmap, time
+
+def simulate_ple_lookup():
+    rows, cols = 4096, 256
+    buf = bytearray(rows * cols)
+    t0 = time.perf_counter()
+    acc = sum(buf[i * cols] for i in range(0, rows, 16))
+    dt_ms = (time.perf_counter() - t0) * 1000.0
+    print(f"[R2 Code Workspace] 64B-aligned PLE lookup pass complete in {dt_ms:.3f} ms (checksum={acc})")
+
+if __name__ == "__main__":
+    simulate_ple_lookup()
+`,
+    "lookup_table.rs": `// R2 — 64-Byte Cache-Line Aligned PLE Lookup Table
+#[repr(align(64))]
+pub struct PleBlock4Bit {
+    pub scale: f16,
+    pub zero: f16,
+    pub qs: [u8; 60],
+}
+`
+  },
+  bot_r3: {
+    "calibrate_q3.py": `#!/usr/bin/env python3
+"""R3 — Hard Eval & imatrix Calibration Harness for Q3_K_M vs IQ3_M"""
+import json
+
+SUITE = [
+    {"quant": "Q4_K_M (baseline)", "bpw": 4.5, "size_gb": 2.70, "hard_eval_pass": "96.4%"},
+    {"quant": "Q3_K_M (imatrix)",  "bpw": 3.5, "size_gb": 2.12, "hard_eval_pass": "94.8%"},
+    {"quant": "IQ3_M  (imatrix)",  "bpw": 3.0, "size_gb": 1.84, "hard_eval_pass": "93.1%"},
+]
+
+if __name__ == "__main__":
+    print("[R3 Code Workspace] Calibration Matrix:")
+    print(json.dumps(SUITE, indent=2))
+`
+  },
+  bot_r4: {
+    "phone_rss_probe.py": `#!/usr/bin/env python3
+"""R4 — On-Device LiteRT-LM / llama.cpp Resident Set Size (RSS) Budget Calculator"""
+def compute_phone_rss(file_gb=2.70, ple_gb=0.95, use_mmap_ple=True):
+    resident = (file_gb - ple_gb) if use_mmap_ple else file_gb
+    kv_cache = 0.18
+    total_rss = resident + kv_cache
+    print(f"[R4 Code Workspace] File={file_gb:.2f}GB | mmap_PLE={use_mmap_ple} -> Peak Phone RSS = {total_rss:.2f} GB (Budget < 2.00 GB: {'PASS' if total_rss < 2.0 else 'TIGHT'})")
+
+if __name__ == "__main__":
+    compute_phone_rss()
+`
+  }
+};
+
+function ensureAgentWorktree(botId, botName, customWorkspacePath = "") {
   const botSlug = sanitizeSlug(botId, "bot");
   const nameSlug = sanitizeSlug(botName || botId, "vanara");
   const branchName = `vanara/${nameSlug}`;
@@ -87,9 +161,29 @@ function ensureAgentWorktree(botId, botName) {
       });
     }
   } catch {
-    // Fallback if git worktree is locked or already exists
     fs.mkdirSync(worktreePath, { recursive: true });
   }
+
+  // Dedicated Code Workspace folder for this agent inside its isolated worktree (or custom path)
+  const codeDir = customWorkspacePath && path.isAbsolute(customWorkspacePath)
+    ? customWorkspacePath
+    : path.join(worktreePath, "agent_workspace", nameSlug);
+  fs.mkdirSync(codeDir, { recursive: true });
+
+  // Seed starter code files if the agent's code workspace is empty
+  try {
+    const existing = fs.readdirSync(codeDir);
+    if (existing.length === 0) {
+      const starters = STARTER_AGENT_CODE[botId] || {
+        "main.py": `#!/usr/bin/env python3\nprint("Hello from ${botName || botId}'s isolated code workspace on branch ${branchName}!")\n`
+      };
+      for (const [fname, fcontent] of Object.entries(starters)) {
+        const dest = path.join(codeDir, fname);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, fcontent, "utf8");
+      }
+    }
+  } catch {}
 
   let status = "";
   let diffStat = "";
@@ -105,10 +199,43 @@ function ensureAgentWorktree(botId, botName) {
     botName,
     branch: branchName,
     worktreePath,
+    worktreeDir: worktreePath,
+    codeDir,
     status: status || "Clean worktree",
     diffStat: diffStat || "No uncommitted diff",
+    diff: diffStat || "No uncommitted diff",
     commits
   };
+}
+
+function listAgentCodeFiles(codeDir) {
+  const results = [];
+  function walk(dir, relPrefix = "") {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "target" || entry.name === "__pycache__") continue;
+      const fullPath = path.join(dir, entry.name);
+      const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        walk(fullPath, relPath);
+      } else if (entry.isFile() && results.length < 40) {
+        try {
+          const stat = fs.statSync(fullPath);
+          if (stat.size <= 256 * 1024) {
+            results.push({
+              name: relPath,
+              size: stat.size,
+              updatedAt: stat.mtimeMs,
+              content: fs.readFileSync(fullPath, "utf8")
+            });
+          }
+        } catch {}
+      }
+    }
+  }
+  walk(codeDir);
+  return results;
 }
 
 // ============================================================================
@@ -315,28 +442,119 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // 2A. Per-Agent Dedicated Code Workspace Endpoint (/api/agent/workspace)
+  if (req.method === "POST" && req.url === "/api/agent/workspace") {
+    try {
+      const {
+        botId = "bot_r1",
+        botName = "R1",
+        customWorkspacePath = "",
+        action = "list",
+        files = [],
+        fileName = "",
+        command = ""
+      } = await readJsonBody(req);
+
+      const wt = ensureAgentWorktree(botId, botName, customWorkspacePath);
+
+      if (action === "save_files" && Array.isArray(files)) {
+        const savedNames = [];
+        for (const f of files) {
+          if (!f || !f.name) continue;
+          const cleanRel = String(f.name).replace(/^\/+/, "").replace(/\.\./g, "");
+          const dest = path.resolve(wt.codeDir, cleanRel);
+          if (dest.startsWith(wt.codeDir)) {
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.writeFileSync(dest, String(f.content ?? ""), "utf8");
+            savedNames.push(cleanRel);
+          }
+        }
+        const updatedWt = ensureAgentWorktree(botId, botName, customWorkspacePath);
+        return sendJson(res, 200, {
+          ...updatedWt,
+          savedNames,
+          files: listAgentCodeFiles(updatedWt.codeDir)
+        });
+      }
+
+      if (action === "delete_file" && fileName) {
+        const cleanRel = String(fileName).replace(/^\/+/, "").replace(/\.\./g, "");
+        const dest = path.resolve(wt.codeDir, cleanRel);
+        if (dest.startsWith(wt.codeDir) && fs.existsSync(dest) && fs.statSync(dest).isFile()) {
+          fs.unlinkSync(dest);
+        }
+        return sendJson(res, 200, {
+          ...wt,
+          files: listAgentCodeFiles(wt.codeDir)
+        });
+      }
+
+      if (action === "run_file") {
+        let runCmd = command;
+        if (!runCmd && fileName) {
+          const ext = path.extname(fileName).toLowerCase();
+          if (ext === ".py") runCmd = `python3 "${fileName}"`;
+          else if (ext === ".js" || ext === ".mjs") runCmd = `node "${fileName}"`;
+          else if (ext === ".sh") runCmd = `sh "${fileName}"`;
+          else if (ext === ".rs") runCmd = `rustc "${fileName}" -o /tmp/vanara_bin && /tmp/vanara_bin`;
+          else runCmd = `cat "${fileName}"`;
+        }
+        if (!runCmd) runCmd = "ls -la";
+
+        let output = "";
+        let exitCode = 0;
+        try {
+          output = execSync(runCmd, {
+            cwd: wt.codeDir,
+            stdio: "pipe",
+            timeout: 15000
+          }).toString("utf8").trim();
+        } catch (err) {
+          exitCode = err.status || 1;
+          output = ((err.stdout ? err.stdout.toString("utf8") : "") + "\n" + (err.stderr ? err.stderr.toString("utf8") : "")).trim() || err.message;
+        }
+
+        return sendJson(res, 200, {
+          ok: exitCode === 0,
+          exitCode,
+          command: runCmd,
+          cwd: wt.codeDir,
+          branch: wt.branch,
+          output: output || "(Completed with exit code 0)"
+        });
+      }
+
+      return sendJson(res, 200, {
+        ...wt,
+        files: listAgentCodeFiles(wt.codeDir)
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
   // 2B. Per-Agent Isolated Git Worktree Endpoint (/api/agent/worktree)
   if (req.method === "POST" && req.url === "/api/agent/worktree") {
     try {
-      const { botId, botName, action = "ensure", filePath, content, commitMessage } = await readJsonBody(req);
-      const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
+      const { botId, botName, customWorkspacePath = "", action = "ensure", filePath, content, commitMessage, message } = await readJsonBody(req);
+      const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1", customWorkspacePath);
 
       if (action === "write_file" && filePath) {
         const cleanRel = filePath.replace(/^\/+/, "").replace(/\.\./g, "");
-        const absTarget = path.resolve(wt.worktreePath, cleanRel);
-        if (absTarget.startsWith(wt.worktreePath)) {
+        const absTarget = path.resolve(wt.codeDir, cleanRel);
+        if (absTarget.startsWith(wt.codeDir)) {
           fs.mkdirSync(path.dirname(absTarget), { recursive: true });
           fs.writeFileSync(absTarget, content || "", "utf8");
         }
-        return sendJson(res, 200, { ...ensureAgentWorktree(botId, botName), writtenFile: cleanRel });
+        return sendJson(res, 200, { ...ensureAgentWorktree(botId, botName, customWorkspacePath), writtenFile: cleanRel });
       }
 
       if (action === "commit") {
-        const msg = (commitMessage || `feat(${wt.botName}): autonomous worktree update`).replace(/"/g, "'");
+        const msg = (commitMessage || message || `feat(${wt.botName}): autonomous worktree update`).replace(/"/g, "'");
         try {
           execSync(`git add -A && git commit -m "${msg}"`, { cwd: wt.worktreePath, stdio: "pipe" });
         } catch {}
-        return sendJson(res, 200, ensureAgentWorktree(botId, botName));
+        return sendJson(res, 200, ensureAgentWorktree(botId, botName, customWorkspacePath));
       }
 
       if (action === "diff") {
@@ -356,10 +574,11 @@ const server = http.createServer(async (req, res) => {
   // 2C. Per-Agent Persistent Memory Endpoint (/api/agent/memory)
   if (req.method === "POST" && req.url === "/api/agent/memory") {
     try {
-      const { botId, action = "get", fact, index, memories } = await readJsonBody(req);
+      const { botId, action = "get", fact, item, index, memories } = await readJsonBody(req);
+      const memoryItem = fact || item;
       let current = loadAgentMemory(botId);
-      if (action === "add" && fact) {
-        if (!current.includes(fact)) current.unshift(fact);
+      if (action === "add" && memoryItem) {
+        if (!current.includes(memoryItem)) current.unshift(memoryItem);
         saveAgentMemory(botId, current);
       } else if (action === "remove" && typeof index === "number") {
         current.splice(index, 1);
@@ -377,15 +596,17 @@ const server = http.createServer(async (req, res) => {
   // 2D. Per-Agent Tool & MCP Server Executor (/api/agent/tool)
   if (req.method === "POST" && req.url === "/api/agent/tool") {
     try {
-      const { botId, botName, tool, args = {}, mcpCommand } = await readJsonBody(req);
+      const { botId, botName, tool, action, args = {}, filePath, content, mcpCommand } = await readJsonBody(req);
+      const toolName = tool || action;
       const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
 
-      if (tool === "mcp_probe" && mcpCommand) {
+      if (toolName === "mcp_probe" && mcpCommand) {
         const mcpRes = await callStdioMcpServer({ commandLine: mcpCommand, cwd: wt.worktreePath, method: "tools/list" });
-        return sendJson(res, 200, mcpRes);
+        const tools = mcpRes.result?.tools || [];
+        return sendJson(res, 200, { ...mcpRes, tools });
       }
 
-      if (tool === "mcp_call" && mcpCommand) {
+      if (toolName === "mcp_call" && mcpCommand) {
         const mcpRes = await callStdioMcpServer({
           commandLine: mcpCommand,
           cwd: wt.worktreePath,
@@ -395,38 +616,41 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, mcpRes);
       }
 
-      if (tool === "fs_read") {
-        const rel = String(args.path || "README.md").replace(/^\/+/, "").replace(/\.\./g, "");
-        const target = path.resolve(wt.worktreePath, rel);
+      if (toolName === "fs_read") {
+        const rel = String(filePath || args.path || "README.md").replace(/^\/+/, "").replace(/\.\./g, "");
+        const target = path.resolve(wt.codeDir, rel);
         if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
           return sendJson(res, 200, { ok: false, output: `File not found in ${wt.branch}: ${rel}` });
         }
         const text = fs.readFileSync(target, "utf8").slice(0, 3000);
-        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, output: text });
+        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, codeDir: wt.codeDir, branch: wt.branch, output: text });
       }
 
-      if (tool === "fs_write") {
-        const rel = String(args.path || "notes.md").replace(/^\/+/, "").replace(/\.\./g, "");
-        const target = path.resolve(wt.worktreePath, rel);
-        if (target.startsWith(wt.worktreePath)) {
+      if (toolName === "fs_write") {
+        const rel = String(filePath || args.path || "notes.md").replace(/^\/+/, "").replace(/\.\./g, "");
+        const bodyContent = String(content ?? args.content ?? "");
+        const target = path.resolve(wt.codeDir, rel);
+        if (target.startsWith(wt.codeDir)) {
           fs.mkdirSync(path.dirname(target), { recursive: true });
-          fs.writeFileSync(target, String(args.content || ""), "utf8");
+          fs.writeFileSync(target, bodyContent, "utf8");
           return sendJson(res, 200, {
             ok: true,
+            bytesWritten: bodyContent.length,
             worktreePath: wt.worktreePath,
+            codeDir: wt.codeDir,
             branch: wt.branch,
-            output: `Wrote ${ (args.content || "").length } bytes to ${rel} in worktree (${wt.branch})`
+            output: `Wrote ${bodyContent.length} bytes to ${rel} in ${botName || botId}'s code workspace (${wt.branch})`
           });
         }
       }
 
-      if (tool === "git_status" || tool === "git_diff") {
-        const cmd = tool === "git_diff" ? "git diff HEAD" : "git status --short && git branch --show-current";
+      if (toolName === "git_status" || toolName === "git_diff") {
+        const cmd = toolName === "git_diff" ? "git diff HEAD" : "git status --short && git branch --show-current";
         const out = execSync(cmd, { cwd: wt.worktreePath, stdio: "pipe", timeout: 5000 }).toString("utf8").trim();
         return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, output: out || "(Clean worktree)" });
       }
 
-      return sendJson(res, 400, { error: `Unknown agent tool: ${tool}` });
+      return sendJson(res, 400, { error: `Unknown agent tool: ${toolName}` });
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
     }

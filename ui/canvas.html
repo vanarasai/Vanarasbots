@@ -1201,12 +1201,12 @@
             <span>Collab</span>
           </button>
 
-          <button onclick="toggleDeliverableDrawer()" class="header-tool-pill" title="Open Deliverable Studio">
+          <button onclick="openAgentCodeWorkspace()" class="header-tool-pill" title="Open Per-Agent Code Workspace">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-              <line x1="15" y1="3" x2="15" y2="21"></line>
+              <polyline points="16 18 22 12 16 6"></polyline>
+              <polyline points="8 6 2 12 8 18"></polyline>
             </svg>
-            <span id="artifactCountPill" class="mono" style="font-size:11px;">Studio</span>
+            <span id="artifactCountPill" class="mono" style="font-size:11px;">Code Workspace</span>
           </button>
         </div>
       </header>
@@ -1241,6 +1241,15 @@
               <div>
                 <div class="popover-title">Autonomous Monkey Collab</div>
                 <div class="popover-sub">Debate, plan & synthesize deliverables</div>
+              </div>
+            </button>
+            <button onclick="openAgentCodeWorkspace(); hideComposerMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:#60a5fa;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              </div>
+              <div>
+                <div class="popover-title">Open Agent Code Workspace</div>
+                <div class="popover-sub">Each coding bot gets its own IDE & files</div>
               </div>
             </button>
             <button onclick="openWorktreeModal(); hideComposerMenu();" class="popover-item">
@@ -1328,29 +1337,48 @@
     </main>
 
     <!-- =================================================================== -->
-    <!-- RIGHT DELIVERABLE STUDIO DRAWER                                     -->
+    <!-- RIGHT PER-AGENT CODE WORKSPACE & DELIVERABLE STUDIO DRAWER          -->
     <!-- =================================================================== -->
-    <aside id="deliverableDrawer" class="studio-drawer hidden">
+    <aside id="deliverableDrawer" class="studio-drawer hidden" style="width:490px;">
       <div class="studio-header">
-        <div style="display:flex; align-items:center; gap:8px;">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-          <span style="font-weight:600; font-size:13px;">Deliverable Studio</span>
+        <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <select id="workspaceAgentSelect" onchange="onSwitchWorkspaceAgent(this.value)" class="field-input" style="height:28px; padding:0 8px; font-size:12px; font-weight:600; background:#151519; border-color:#2c2c35; width:175px;"></select>
         </div>
-        <div style="display:flex; align-items:center; gap:6px;">
-          <button onclick="setDrawerMode('source')" id="btnModeSource" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px;">Code</button>
-          <button onclick="setDrawerMode('preview')" id="btnModePreview" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px;">Preview</button>
-          <button onclick="saveDeliverablesToDisk()" class="btn-primary" style="height:26px; padding:0 10px; font-size:11px; background:#10b981;">Save to Disk</button>
+        <div style="display:flex; align-items:center; gap:5px;">
+          <button onclick="createNewFileInAgentWorkspace()" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;" title="Create new file in this agent's workspace">+ File</button>
+          <button onclick="setDrawerMode('source')" id="btnModeSource" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;">Code</button>
+          <button onclick="setDrawerMode('preview')" id="btnModePreview" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;">Preview</button>
+          <button onclick="runActiveFileInAgentWorkspace()" class="btn-primary" style="height:26px; padding:0 10px; font-size:11px; background:#10b981;" title="Execute active file inside this agent's isolated workspace">▶ Run</button>
+          <button onclick="saveActiveEditorToAgentWorkspace()" class="btn-primary" style="height:26px; padding:0 10px; font-size:11px; background:#2563eb;" title="Save edits to disk">Save</button>
           <button onclick="toggleDeliverableDrawer(false)" class="side-icon-btn">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
       </div>
 
-      <div id="deliverableTabs" style="display:flex; gap:6px; padding:8px 14px; border-bottom:1px solid #1e1e22; overflow-x:auto;"></div>
+      <!-- Agent Workspace Branch & Disk Path Bar -->
+      <div style="padding:6px 14px; background:#121216; border-bottom:1px solid #1e1e24; display:flex; align-items:center; justify-content:space-between; gap:8px;" class="mono">
+        <span id="workspaceBranchBadge" style="font-size:10.5px; color:#38bdf8;">vanara/r1</span>
+        <span id="workspaceDiskPathLabel" style="font-size:10px; color:#787884; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">.worktrees/bot_r1/agent_workspace/r1</span>
+      </div>
 
+      <!-- Per-Agent Workspace File Tabs -->
+      <div id="deliverableTabs" style="display:flex; gap:6px; padding:8px 14px; border-bottom:1px solid #1e1e22; overflow-x:auto; flex-shrink:0;"></div>
+
+      <!-- Code Editor + Live HTML Preview -->
       <div style="flex:1; position:relative; overflow:hidden; display:flex; flex-direction:column;">
-        <pre id="deliverableCodeView" class="mono" style="flex:1; padding:16px; overflow:auto; font-size:12px; line-height:1.55; color:#d8d8e2; user-select:text;"></pre>
+        <textarea id="deliverableCodeView" spellcheck="false" class="mono" style="flex:1; width:100%; background:#0e0e11; border:none; padding:14px 16px; overflow:auto; font-size:12px; line-height:1.55; color:#e4e4ef; resize:none;"></textarea>
         <iframe id="deliverablePreviewFrame" class="hidden" style="flex:1; width:100%; border:none; background:#ffffff;"></iframe>
+      </div>
+
+      <!-- Per-Agent Workspace Live Execution Console -->
+      <div style="height:145px; background:#090a0d; border-top:1px solid #22222a; display:flex; flex-direction:column; flex-shrink:0;" class="mono">
+        <div style="padding:5px 12px; background:#121318; border-bottom:1px solid #1e1e26; display:flex; align-items:center; justify-content:space-between; font-size:10.5px; color:#888894;">
+          <span id="workspaceConsoleTitle">Agent Workspace Console</span>
+          <button onclick="openWorktreeModal(activeWorkspaceBotId)" style="font-size:10.5px; color:#38bdf8;">Git Status / Commit →</button>
+        </div>
+        <pre id="workspaceConsoleOutput" style="flex:1; padding:8px 12px; overflow:auto; font-size:11px; line-height:1.45; color:#a7f3d0; white-space:pre-wrap; user-select:text;">Click "▶ Run" to execute the active file inside this Vanara's isolated code workspace.</pre>
       </div>
     </aside>
 
@@ -2321,36 +2349,31 @@
           const mentionedBots = findMentionedBotsInText(m.text, m.botId);
           const runnableCmds = extractExecutableCommands(m.text);
 
-          let actionBarHtml = "";
-          if (mentionedBots.length > 0 || runnableCmds.length > 0 || m.hasDeliverables) {
-            actionBarHtml = `<div class="msg-action-bar">`;
-            mentionedBots.forEach(mb => {
-              actionBarHtml += `
-                <button onclick="handOffToBot('${mb.id}', ${idx})" class="handoff-chip">
-                  ${renderMonkeyAvatar(mb.avatarStyle, 16)}
-                  <span>Let ${escapeHtml(mb.name)} reply</span>
-                </button>
-              `;
-            });
-            runnableCmds.forEach((cmd, cIdx) => {
-              const encodedCmd = encodeURIComponent(cmd);
-              actionBarHtml += `
-                <button onclick="executeBackgroundCommand(decodeURIComponent('${encodedCmd}'))" class="run-cmd-chip mono">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                  <span>${escapeHtml(cmd.length > 30 ? cmd.slice(0, 30) + "…" : cmd)}</span>
-                </button>
-              `;
-            });
-            if (m.hasDeliverables) {
-              actionBarHtml += `
-                <button onclick="toggleDeliverableDrawer(true)" class="handoff-chip" style="border-color:rgba(245,158,11,0.4); color:#fcd34d;">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-                  <span>Open Studio Deliverables</span>
-                </button>
-              `;
-            }
-            actionBarHtml += `</div>`;
-          }
+          let actionBarHtml = `<div class="msg-action-bar">`;
+          mentionedBots.forEach(mb => {
+            actionBarHtml += `
+              <button onclick="handOffToBot('${mb.id}', ${idx})" class="handoff-chip">
+                ${renderMonkeyAvatar(mb.avatarStyle, 16)}
+                <span>Let ${escapeHtml(mb.name)} reply</span>
+              </button>
+            `;
+          });
+          runnableCmds.forEach((cmd) => {
+            const encodedCmd = encodeURIComponent(cmd);
+            actionBarHtml += `
+              <button onclick="executeBackgroundCommand(decodeURIComponent('${encodedCmd}'), getBot('${bot?.id || "bot_r1"}'))" class="run-cmd-chip mono">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <span>${escapeHtml(cmd.length > 30 ? cmd.slice(0, 30) + "…" : cmd)}</span>
+              </button>
+            `;
+          });
+          actionBarHtml += `
+            <button onclick="openAgentCodeWorkspace('${bot?.id || "bot_r1"}')" class="handoff-chip" style="${m.hasDeliverables ? 'border-color:rgba(56,189,248,0.55); color:#bae6fd; background:rgba(56,189,248,0.12);' : 'border-color:#2d2d36; color:#a2a2b0;'}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>${m.hasDeliverables ? `Saved to ${escapeHtml(bot?.name || "Bot")}'s Code Workspace` : `${escapeHtml(bot?.name || "Bot")}'s Code Workspace`}</span>
+            </button>
+          `;
+          actionBarHtml += `</div>`;
 
           row.innerHTML = `
             <div class="msg-bot-card">
@@ -2751,10 +2774,8 @@
         const extracted = parseDeliverableBlocks(reply.content);
         let hasDeliverables = false;
         if (extracted.length > 0) {
-          deliverables = extracted;
-          activeDeliverableIdx = 0;
           hasDeliverables = true;
-          renderDeliverableDrawer();
+          await saveFilesToAgentWorkspace(targetBot, extracted);
         }
 
         const cleanDisplay = reply.content
@@ -2891,7 +2912,7 @@
       const transcript = [];
 
       try {
-        const folderSummary = await ensureFolderSnapshot(thread.mountPath);
+        const folderSummary = await ensureFolderSnapshot(thread.mountPath, collabBots[0]);
 
         for (let i = 0; i < collabBots.length; i++) {
           const bot = collabBots[i];
@@ -2914,13 +2935,12 @@
           let displayContent = res.content;
           let hasDeliverables = false;
 
-          if (isLast) {
-            const extracted = parseDeliverableBlocks(res.content);
-            if (extracted.length > 0) {
-              deliverables = extracted;
-              activeDeliverableIdx = 0;
-              hasDeliverables = true;
-              displayContent = res.content.replace(/===FILE:[\s\S]*$/i, "").trim() || `Synthesized ${extracted.length} deliverable file(s) in the Studio (${extracted.map(f => '`' + f.name + '`').join(", ")}).`;
+          const extracted = parseDeliverableBlocks(res.content);
+          if (extracted.length > 0) {
+            hasDeliverables = true;
+            await saveFilesToAgentWorkspace(bot, extracted);
+            if (isLast) {
+              displayContent = res.content.replace(/===FILE:[\s\S]*$/i, "").trim() || `Synthesized ${extracted.length} deliverable file(s) in ${bot.name}'s Code Workspace (${extracted.map(f => '`' + f.name + '`').join(", ")}).`;
             }
           }
 
@@ -2930,7 +2950,7 @@
             botId: bot.id,
             text: displayContent,
             reasoning: res.reasoning,
-            collabRound: `Round ${i + 1}/${collabBots.length}`,
+            collabRound: `Round ${i + 1}/${collabBots.length} • ${bot.worktreeBranch}`,
             hasDeliverables
           });
 
@@ -2942,9 +2962,8 @@
           if (activeThreadId === threadId) renderActiveThread();
         }
 
-        if (deliverables.length > 0 && activeThreadId === threadId) {
-          renderDeliverableDrawer();
-          toggleDeliverableDrawer(true);
+        if (activeThreadId === threadId) {
+          openAgentCodeWorkspace(collabBots[collabBots.length - 1].id);
         }
       } catch (e) {
         thread.messages.push({
@@ -3592,16 +3611,171 @@
     }
 
     // =========================================================================
-    // 10. DELIVERABLE STUDIO DRAWER
+    // 10. PER-AGENT CODE WORKSPACE IDE DRAWER
     // =========================================================================
+    let activeWorkspaceBotId = "bot_r1";
+
+    function populateWorkspaceAgentSelector() {
+      const sel = document.getElementById("workspaceAgentSelect");
+      if (!sel) return;
+      if (!state.bots.some(b => b.id === activeWorkspaceBotId) && state.bots.length > 0) {
+        activeWorkspaceBotId = state.bots[0].id;
+      }
+      sel.innerHTML = state.bots.map(b =>
+        `<option value="${b.id}" ${b.id === activeWorkspaceBotId ? "selected" : ""}>${escapeHtml(b.name)} — ${escapeHtml(b.role || "Agent")}</option>`
+      ).join("");
+    }
+
+    async function openAgentCodeWorkspace(botId) {
+      if (botId) activeWorkspaceBotId = botId;
+      populateWorkspaceAgentSelector();
+      const drawer = document.getElementById("deliverableDrawer");
+      drawer.classList.remove("hidden");
+      await loadAgentCodeWorkspaceFromServer(activeWorkspaceBotId);
+    }
+
+    async function onSwitchWorkspaceAgent(botId) {
+      activeWorkspaceBotId = botId;
+      activeDeliverableIdx = 0;
+      await loadAgentCodeWorkspaceFromServer(botId);
+    }
+
+    async function loadAgentCodeWorkspaceFromServer(botId) {
+      const bot = getBot(botId) || state.bots[0];
+      if (!bot) return;
+      try {
+        const res = await fetch("/api/agent/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "list",
+            botId: bot.id,
+            botName: bot.name,
+            customWorkspacePath: bot.workspacePath || ""
+          })
+        });
+        const data = await res.json();
+        if (data && data.ok) {
+          document.getElementById("workspaceBranchBadge").textContent = data.branch || `vanara/${bot.name.toLowerCase()}`;
+          document.getElementById("workspaceDiskPathLabel").textContent = data.codeDir || data.worktreeDir || "";
+          if (Array.isArray(data.files) && data.files.length > 0) {
+            deliverables = data.files;
+            if (activeDeliverableIdx >= deliverables.length) activeDeliverableIdx = 0;
+          }
+        }
+      } catch (err) {
+        // Offline fallback keeps local deliverables array
+      }
+      renderDeliverableDrawer();
+    }
+
+    async function saveFilesToAgentWorkspace(bot, filesArray) {
+      if (!bot || !Array.isArray(filesArray) || filesArray.length === 0) return;
+      try {
+        const res = await fetch("/api/agent/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "save_files",
+            botId: bot.id,
+            botName: bot.name,
+            customWorkspacePath: bot.workspacePath || "",
+            files: filesArray
+          })
+        });
+        const data = await res.json();
+        if (data && data.ok && Array.isArray(data.files)) {
+          activeWorkspaceBotId = bot.id;
+          deliverables = data.files;
+          activeDeliverableIdx = 0;
+          populateWorkspaceAgentSelector();
+          document.getElementById("workspaceBranchBadge").textContent = data.branch || `vanara/${bot.name.toLowerCase()}`;
+          document.getElementById("workspaceDiskPathLabel").textContent = data.codeDir || "";
+          if (!document.getElementById("deliverableDrawer").classList.contains("hidden")) {
+            renderDeliverableDrawer();
+          }
+        }
+      } catch (err) {}
+    }
+
+    async function saveActiveEditorToAgentWorkspace() {
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      const active = deliverables[activeDeliverableIdx];
+      const codeView = document.getElementById("deliverableCodeView");
+      if (!bot || !active || !codeView) return;
+      active.content = codeView.value;
+      await saveFilesToAgentWorkspace(bot, [{ name: active.name, content: active.content }]);
+      showToast(`Saved ${active.name} to ${bot.name}'s workspace`);
+    }
+
+    async function createNewFileInAgentWorkspace() {
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      if (!bot) return;
+      const fileName = prompt(`Create new code file in ${bot.name}'s workspace (e.g. solution.py, index.html, main.rs):`, "main.py");
+      if (!fileName || !fileName.trim()) return;
+      const cleanName = fileName.trim().replace(/[^a-zA-Z0-9_.-]/g, "_");
+      const starterContent = cleanName.endsWith(".py")
+        ? `# ${bot.name} (${bot.role}) — ${cleanName}\n\nif __name__ == "__main__":\n    print("Hello from ${bot.name}'s isolated code workspace!")\n`
+        : `// ${bot.name} (${bot.role}) — ${cleanName}\n`;
+      await saveFilesToAgentWorkspace(bot, [{ name: cleanName, content: starterContent }]);
+      const idx = deliverables.findIndex(f => f.name === cleanName);
+      if (idx >= 0) activeDeliverableIdx = idx;
+      renderDeliverableDrawer();
+      showToast(`Created ${cleanName} in ${bot.name}'s workspace`);
+    }
+
+    async function runActiveFileInAgentWorkspace() {
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      const active = deliverables[activeDeliverableIdx];
+      const codeView = document.getElementById("deliverableCodeView");
+      const consoleOut = document.getElementById("workspaceConsoleOutput");
+      if (!bot || !active) return;
+
+      // Sync current editor buffer before running
+      if (drawerMode === "code" && codeView) {
+        active.content = codeView.value;
+        await saveFilesToAgentWorkspace(bot, [{ name: active.name, content: active.content }]);
+      }
+
+      if (consoleOut) {
+        consoleOut.textContent = `$ running ${active.name} inside ${bot.name}'s workspace...`;
+      }
+      try {
+        const res = await fetch("/api/agent/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "run_file",
+            botId: bot.id,
+            botName: bot.name,
+            customWorkspacePath: bot.workspacePath || "",
+            fileName: active.name
+          })
+        });
+        const data = await res.json();
+        if (consoleOut) {
+          consoleOut.textContent = `$ ${data.command || active.name}\n${data.output || "(no output)"}`;
+        }
+        showToast(`${bot.name}: Executed ${active.name}`);
+      } catch (err) {
+        if (consoleOut) {
+          consoleOut.textContent = `Execution error: ${err.message}`;
+        }
+      }
+    }
+
     function toggleDeliverableDrawer(forceOpen) {
       const drawer = document.getElementById("deliverableDrawer");
       const open = typeof forceOpen === "boolean" ? forceOpen : drawer.classList.contains("hidden");
       drawer.classList.toggle("hidden", !open);
-      if (open) renderDeliverableDrawer();
+      if (open) {
+        populateWorkspaceAgentSelector();
+        loadAgentCodeWorkspaceFromServer(activeWorkspaceBotId);
+      }
     }
 
     function renderDeliverableDrawer() {
+      populateWorkspaceAgentSelector();
       const tabs = document.getElementById("deliverableTabs");
       const codeView = document.getElementById("deliverableCodeView");
       const frame = document.getElementById("deliverablePreviewFrame");
@@ -3625,30 +3799,13 @@
       } else {
         frame.classList.add("hidden");
         codeView.classList.remove("hidden");
-        codeView.textContent = active.content;
+        codeView.value = active.content;
       }
     }
 
     function setDrawerMode(mode) {
       drawerMode = mode;
       renderDeliverableDrawer();
-    }
-
-    async function saveDeliverablesToDisk() {
-      const thread = getActiveThread();
-      const projectName = prompt("Save deliverable files to project folder:", (thread.name || "vanaras-output").toLowerCase().replace(/[^a-z0-9-]+/g, "-"));
-      if (!projectName) return;
-      try {
-        const res = await fetch("/api/save-project", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectName, mountPath: thread?.mountPath, files: deliverables })
-        });
-        const data = await res.json();
-        if (res.ok) showToast(`Saved to ${data.projectDir}`);
-      } catch (e) {
-        showToast(`Save error: ${e.message}`);
-      }
     }
 
     // =========================================================================

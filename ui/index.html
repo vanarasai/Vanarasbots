@@ -977,7 +977,7 @@
 
     .monkey-picker-grid {
       display: grid;
-      grid-template-columns: repeat(6, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 8px;
     }
     .monkey-pick-btn {
@@ -1672,12 +1672,16 @@
     // 1. BESPOKE ILLUSTRATED CUTE MONKEY ("VANARA") AVATAR SYSTEM
     // =========================================================================
     const MONKEY_STYLES = [
-      { id: "vanara-crimson", label: "Crimson", bg: "#f0283c", ear: "#b91c2c", face: "#ffd8be", fur: "#3a161a", accent: "#ffffff" },
-      { id: "vanara-slate",   label: "Slate",   bg: "#767680", ear: "#52525b", face: "#f5d5b8", fur: "#27272a", accent: "#38bdf8" },
-      { id: "vanara-amber",   label: "Amber",   bg: "#f59e0b", ear: "#b45309", face: "#fff0db", fur: "#451a03", accent: "#111114" },
-      { id: "vanara-cobalt",  label: "Cobalt",  bg: "#1877f2", ear: "#1d4ed8", face: "#ffe2c6", fur: "#0f172a", accent: "#60a5fa" },
-      { id: "vanara-snow",    label: "Snow",    bg: "#f4f4f6", ear: "#d4d4d8", face: "#e5b895", fur: "#27272a", accent: "#f59e0b", badge: "#f59e0b" },
-      { id: "vanara-mint",    label: "Mint",    bg: "#14b8a6", ear: "#0f766e", face: "#ffedd5", fur: "#042f2e", accent: "#fde047" }
+      { id: "vanara-crimson",    label: "Coral",      img: "avatars/monkey-01-coral.png",      bg: "#f0283c" },
+      { id: "vanara-amber",      label: "Gold",       img: "avatars/monkey-02-gold.png",       bg: "#f59e0b" },
+      { id: "vanara-cobalt",     label: "Blue",       img: "avatars/monkey-03-blue.png",       bg: "#1877f2" },
+      { id: "vanara-mint",       label: "Mint",       img: "avatars/monkey-04-mint.png",       bg: "#14b8a6" },
+      { id: "vanara-slate",      label: "Lavender",   img: "avatars/monkey-05-lavender.png",   bg: "#8b5cf6" },
+      { id: "vanara-peach",      label: "Peach",      img: "avatars/monkey-06-peach.png",      bg: "#fb923c" },
+      { id: "vanara-teal",       label: "Teal",       img: "avatars/monkey-07-teal.png",       bg: "#0d9488" },
+      { id: "vanara-rose",       label: "Rose",       img: "avatars/monkey-08-rose.png",       bg: "#f43f5e" },
+      { id: "vanara-periwinkle", label: "Periwinkle", img: "avatars/monkey-09-periwinkle.png", bg: "#6366f1" },
+      { id: "vanara-snow",       label: "Cream",      img: "avatars/monkey-10-cream.png",      bg: "#f4f4f6", badge: "#f59e0b" }
     ];
 
     function renderMonkeyAvatar(styleId, sizePx = 38) {
@@ -1690,35 +1694,12 @@
 
       return `
         <div style="width:${sizePx}px; height:${sizePx}px; position:relative; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center;">
-          <svg width="${sizePx}" height="${sizePx}" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- Vibrant Circle Base -->
-            <circle cx="20" cy="20" r="20" fill="${m.bg}"/>
-            <!-- Cute Monkey Ears -->
-            <circle cx="6.5" cy="20.5" r="4.8" fill="${m.fur}"/>
-            <circle cx="6.5" cy="20.5" r="2.7" fill="${m.face}"/>
-            <circle cx="33.5" cy="20.5" r="4.8" fill="${m.fur}"/>
-            <circle cx="33.5" cy="20.5" r="2.7" fill="${m.face}"/>
-            <!-- Monkey Head Fur Silhouette -->
-            <circle cx="20" cy="20" r="11.8" fill="${m.fur}"/>
-            <!-- Cute Forehead Hair Tuft -->
-            <path d="M17.5 8.8C18.5 6.3 21.2 6.3 22.4 8.5C23.5 6.8 25.2 7.5 24.4 9.6" stroke="${m.fur}" stroke-width="2.2" stroke-linecap="round"/>
-            <!-- Heart-Shaped Monkey Face Mask -->
-            <circle cx="16.2" cy="18.2" r="5.3" fill="${m.face}"/>
-            <circle cx="23.8" cy="18.2" r="5.3" fill="${m.face}"/>
-            <ellipse cx="20" cy="24.2" rx="7.6" ry="5.6" fill="${m.face}"/>
-            <!-- Cheek Blush -->
-            <ellipse cx="13.8" cy="23.2" rx="1.7" ry="1" fill="#f43f5e" fill-opacity="0.38"/>
-            <ellipse cx="26.2" cy="23.2" rx="1.7" ry="1" fill="#f43f5e" fill-opacity="0.38"/>
-            <!-- Big Glossy Kawaii Eyes -->
-            <circle cx="16.2" cy="18.4" r="2.1" fill="#111115"/>
-            <circle cx="15.5" cy="17.7" r="0.75" fill="#ffffff"/>
-            <circle cx="23.8" cy="18.4" r="2.1" fill="#111115"/>
-            <circle cx="23.1" cy="17.7" r="0.75" fill="#ffffff"/>
-            <!-- Cute Button Nose -->
-            <ellipse cx="20" cy="22.1" rx="1.6" ry="1.05" fill="#3a1d16"/>
-            <!-- Happy Monkey Smile -->
-            <path d="M17.2 25.1C18.4 26.6 21.6 26.6 22.8 25.1" stroke="#3a1d16" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
+          <img
+            src="${m.img}"
+            alt="${m.label} Vanara"
+            draggable="false"
+            style="width:${sizePx}px; height:${sizePx}px; border-radius:50%; object-fit:cover; display:block; background:${m.bg}; box-shadow:0 1px 4px rgba(0,0,0,0.35);"
+          />
           ${badgeHtml}
         </div>
       `;
@@ -2002,9 +1983,10 @@
     };
 
     const SYSTEM_AGENTS_CATALOG = [
-      { id: "sys_hanu", name: "Hanu (Clan Chief)", role: "Full-Stack Autonomous Builder", avatarStyle: "vanara-crimson", instructions: "You are Hanu, leader of the Vanaras clan. Architect and synthesize production-ready code and systems." },
-      { id: "sys_rea", name: "Nala (Binary Scout)", role: "Reverse Engineering & Decompiler Monkey", avatarStyle: "vanara-cobalt", instructions: "You are Nala, Reverse Engineering & Binary Scout. Inspect Mach-O/ELF/PE binaries, GGUF headers, and symbols with strict provenance." },
-      { id: "sys_angada", name: "Angada (Growth & GTM)", role: "Campaign & Launch Strategist", avatarStyle: "vanara-amber", instructions: "You are Angada, Growth & GTM Monkey. Build interactive landing pages, positioning copy, and launch campaigns." }
+      { id: "sys_hanu", name: "Hanu (Clan Chief)", role: "Full-Stack Autonomous Builder", avatarStyle: "vanara-peach", instructions: "You are Hanu, leader of the Vanaras clan. Architect and synthesize production-ready code and systems." },
+      { id: "sys_rea", name: "Nala (Binary Scout)", role: "Reverse Engineering & Decompiler Monkey", avatarStyle: "vanara-teal", instructions: "You are Nala, Reverse Engineering & Binary Scout. Inspect Mach-O/ELF/PE binaries, GGUF headers, and symbols with strict provenance." },
+      { id: "sys_angada", name: "Angada (Growth & GTM)", role: "Campaign & Launch Strategist", avatarStyle: "vanara-rose", instructions: "You are Angada, Growth & GTM Monkey. Build interactive landing pages, positioning copy, and launch campaigns." },
+      { id: "sys_sugriva", name: "Sugriva (Infra & MCP)", role: "Distributed Systems & MCP Orchestrator", avatarStyle: "vanara-periwinkle", instructions: "You are Sugriva, Distributed Systems & MCP Orchestrator. Coordinate tools, git worktrees, and background pipelines." }
     ];
 
     let state = JSON.parse(localStorage.getItem("vanaras_v5_monkeys") || "null") || JSON.parse(JSON.stringify(DEFAULT_STATE));

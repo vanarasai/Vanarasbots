@@ -939,15 +939,19 @@ const server = http.createServer(async (req, res) => {
   const targetFile = path.join(__dirname, reqPath);
 
   if (fs.existsSync(targetFile) && fs.statSync(targetFile).isFile()) {
-    const ext = path.extname(targetFile);
+    const ext = path.extname(targetFile).toLowerCase();
     let contentType = "text/html; charset=utf-8";
     if (ext === ".js" || ext === ".mjs") contentType = "application/javascript";
     else if (ext === ".css") contentType = "text/css";
     else if (ext === ".json") contentType = "application/json";
+    else if (ext === ".png") contentType = "image/png";
+    else if (ext === ".jpg" || ext === ".jpeg") contentType = "image/jpeg";
+    else if (ext === ".svg") contentType = "image/svg+xml";
+    else if (ext === ".webp") contentType = "image/webp";
 
     res.writeHead(200, {
       "Content-Type": contentType,
-      "Cache-Control": "no-cache, no-store, must-revalidate"
+      "Cache-Control": ext === ".png" ? "public, max-age=86400" : "no-cache, no-store, must-revalidate"
     });
     fs.createReadStream(targetFile).pipe(res);
   } else {

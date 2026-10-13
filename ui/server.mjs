@@ -350,7 +350,48 @@ function saveWorkspaceDiskState(state) {
   }
 }
 
-// Gather grounded filesystem & git snapshot from a mounted directory
+// Extract a compact architectural Symbol & Route Map from source files in a directory
+function extractRepositorySymbolMap(rootDir) {
+  const symbolMap = [];
+  const candidateDirs = [rootDir, path.join(rootDir, "src"), path.join(rootDir, "ui")];
+  const visited = new Set();
+
+  for (const dir of candidateDirs) {
+    if (!fs.existsSync(dir)) continue;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;
+      if (!/\.(js|mjs|ts|py|rs|go|swift)$/i.test(ent.name)) continue;
+      const fullPath = path.join(dir, ent.name);
+      if (visited.has(fullPath)) continue;
+      visited.add(fullPath);
+
+      try {
+        const src = fs.readFileSync(fullPath, "utf8").slice(0, 48000);
+        const relFile = path.relative(rootDir, fullPath);
+        const symbols = [];
+        const symRx = /(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z0-9_]+)|class\s+([a-zA-Z0-9_]+)|def\s+([a-zA-Z0-9_]+)\s*\(|(?:pub\s+)?(?:fn|struct|enum)\s+([a-zA-Z0-9_]+)|req\.url\s*===\s*["'](\/api\/[^"']+)["']/g;
+        let m;
+        while ((m = symRx.exec(src)) !== null && symbols.length < 18) {
+          const sym = m[1] || m[2] || m[3] || m[4] || (m[5] ? `route:${m[5]}` : "");
+          if (sym && !symbols.includes(sym)) symbols.push(sym);
+        }
+        if (symbols.length > 0) {
+          symbolMap.push({ file: relFile, symbols });
+        }
+      } catch {}
+      if (symbolMap.length >= 16) break;
+    }
+  }
+  return symbolMap;
+}
+
+// Gather grounded filesystem, symbol map & git snapshot from a mounted directory
 function inspectMountedDirectory(targetPath) {
   const resolved = path.resolve(ROOT_DIR, targetPath || ".");
   if (!fs.existsSync(resolved)) {
@@ -372,12 +413,18 @@ function inspectMountedDirectory(targetPath) {
       }
     }
 
+    const symbolMap = extractRepositorySymbolMap(resolved);
+    const symbolDigest = symbolMap.length > 0
+      ? `--- SYMBOL & ROUTE MAP ---\n` + symbolMap.map(s => `• ${s.file}: ${s.symbols.join(", ")}`).join("\n")
+      : "";
+
     return {
       exists: true,
       path: resolved,
       entries,
+      symbolMap,
       snippets,
-      summary: `Mounted Path: ${resolved}\nTop-level files: ${entries.join(", ")}\n${snippets.join("\n\n")}`
+      summary: `Mounted Path: ${resolved}\nTop-level files: ${entries.join(", ")}\n${symbolDigest ? symbolDigest + "\n\n" : ""}${snippets.join("\n\n")}`
     };
   } catch (e) {
     return { exists: false, path: resolved, summary: `Error inspecting ${resolved}: ${e.message}` };
@@ -462,11 +509,72 @@ const server = http.createServer(async (req, res) => {
         customWorkspacePath = "",
         action = "list",
         files = [],
+        patches = [],
         fileName = "",
         command = ""
       } = await readJsonBody(req);
 
       const wt = ensureAgentWorktree(botId, botName, customWorkspacePath);
+
+      if (action === "apply_patch" && Array.isArray(patches)) {
+        const appliedPatches = [];
+        for (const p of patches) {
+          if (!p || !p.name) continue;
+          const cleanRel = String(p.name).replace(/^\/+/, "").replace(/\.\./g, "");
+          const destInCodeDir = path.resolve(wt.codeDir, cleanRel);
+          const destInWorktree = path.resolve(wt.worktreePath, cleanRel);
+          const targetDest = (!fs.existsSync(destInCodeDir) && fs.existsSync(destInWorktree) && destInWorktree.startsWith(wt.worktreePath))
+            ? destInWorktree
+            : destInCodeDir;
+          if (!targetDest.startsWith(wt.worktreePath)) continue;
+
+          fs.mkdirSync(path.dirname(targetDest), { recursive: true });
+          const currentContent = fs.existsSync(targetDest) ? fs.readFileSync(targetDest, "utf8") : "";
+          const searchStr = String(p.search ?? "");
+          const replaceStr = String(p.replace ?? "");
+          let updatedContent = currentContent;
+          let matched = false;
+          if (searchStr && currentContent.includes(searchStr)) {
+            updatedContent = currentContent.replace(searchStr, replaceStr);
+            matched = true;
+          } else if (!currentContent) {
+            updatedContent = replaceStr;
+            matched = true;
+          } else if (searchStr.trim() && currentContent.includes(searchStr.trim())) {
+            updatedContent = currentContent.replace(searchStr.trim(), replaceStr);
+            matched = true;
+          }
+          if (matched) {
+            fs.writeFileSync(targetDest, updatedContent, "utf8");
+            appliedPatches.push({ file: cleanRel, matched: true });
+          } else {
+            appliedPatches.push({ file: cleanRel, matched: false, reason: "SEARCH block not found in target file" });
+          }
+        }
+
+        let autoCommitOut = "";
+        const modifiedFiles = appliedPatches.filter(x => x.matched).map(x => x.file);
+        if (modifiedFiles.length > 0) {
+          const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+          const autoMsg = `fix(${slug}): apply surgical patch to ${modifiedFiles.join(", ")}`;
+          try {
+            autoCommitOut = execSync(`git add -A && git commit -m "${autoMsg.replace(/"/g, "'")}"`, {
+              cwd: wt.worktreePath,
+              stdio: "pipe",
+              timeout: 5000
+            }).toString("utf8").trim();
+          } catch (e) {
+            autoCommitOut = (e.stdout ? e.stdout.toString("utf8") : "").trim();
+          }
+        }
+        const updatedWt = ensureAgentWorktree(botId, botName, customWorkspacePath);
+        return sendJson(res, 200, {
+          ...updatedWt,
+          appliedPatches,
+          autoCommitOut,
+          files: listAgentCodeFiles(updatedWt.codeDir)
+        });
+      }
 
       if (action === "save_files" && Array.isArray(files)) {
         const savedNames = [];
@@ -528,27 +636,43 @@ const server = http.createServer(async (req, res) => {
       if (action === "merge_to_main") {
         const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
         let output = "";
+        const verifiedFiles = [];
         try {
-          // Ensure worktree changes are committed on the agent's branch first
+          // 1. Pre-merge syntax verification on .js/.mjs/.py files in wt.codeDir
+          const codeFiles = listAgentCodeFiles(wt.codeDir);
+          for (const cf of codeFiles) {
+            const fullFile = path.join(wt.codeDir, cf.name);
+            if (/\.(js|mjs)$/i.test(cf.name)) {
+              execSync(`node --check "${fullFile}"`, { cwd: wt.codeDir, stdio: "pipe", timeout: 4000 });
+              verifiedFiles.push(`${cf.name} (node --check PASS)`);
+            } else if (/\.py$/i.test(cf.name)) {
+              execSync(`python3 -m py_compile "${fullFile}"`, { cwd: wt.codeDir, stdio: "pipe", timeout: 4000 });
+              verifiedFiles.push(`${cf.name} (py_compile PASS)`);
+            }
+          }
+
+          // 2. Ensure worktree changes are committed on the agent's branch first
           execSync(`git add -A && (git commit -m "feat(${slug}): pre-merge checkpoint" || true)`, {
             cwd: wt.worktreePath,
             stdio: "pipe",
             timeout: 5000
           });
-          // Copy agent_workspace/<slug> into main ROOT_DIR/agent_workspace/<slug> and commit on main
+          // 3. Copy agent_workspace/<slug> into main ROOT_DIR/agent_workspace/<slug> and commit on main
           const mainDest = path.resolve(ROOT_DIR, "agent_workspace", slug);
           fs.mkdirSync(mainDest, { recursive: true });
           fs.cpSync(wt.codeDir, mainDest, { recursive: true, force: true });
-          output = execSync(
+          const commitLog = execSync(
             `git add "agent_workspace/${slug}" && (git commit -m "feat(${slug}): merge ${wt.branch} workspace into main" || true) && git log --oneline -n 3`,
             { cwd: ROOT_DIR, stdio: "pipe", timeout: 6000 }
           ).toString("utf8").trim();
+          output = (verifiedFiles.length > 0 ? `[Pre-Merge Syntax Check: ${verifiedFiles.join(", ")}]\n` : "") + commitLog;
         } catch (err) {
-          output = err.message;
+          output = `Pre-merge verification or git merge failed: ${err.message}`;
         }
         const updatedWt = ensureAgentWorktree(botId, botName, customWorkspacePath);
         return sendJson(res, 200, {
           ...updatedWt,
+          verifiedFiles,
           output,
           files: listAgentCodeFiles(updatedWt.codeDir)
         });

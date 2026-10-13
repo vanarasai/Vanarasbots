@@ -2716,18 +2716,26 @@
       const mcpLine = bot.mcpCommand ? `\n- Connected MCP Server: ${bot.mcpCommand}` : "";
       const toolsProtocolBlock = `\n\nYOUR ENABLED AGENT TOOLS & MULTI-STEP ReAct SOFTWARE CREATION PROTOCOL (${enabledTools})${mcpLine}:
 - Multi-Step ReAct Inspection: You can inspect files or git state first using [TOOL: fs_read | <relative_path>], [TOOL: git_status], or [TOOL: git_diff]; the runtime executes them and feeds the real output back to you inside the same turn before your final reply.
-- When creating or modifying software, scripts, web apps, or tests, output complete runnable files using:
+- When creating new files or replacing a file completely, output:
 ===FILE: <relative_filename>===
 <full file source code>
 ===END_FILE===
-  Every ===FILE: ...=== block is automatically written to your disk workspace, Git-committed to ${wtBranch}, and executed/verified!
+- When surgically modifying an existing file, output a SEARCH/REPLACE patch block:
+===PATCH: <relative_filename>===
+<<<<<<< SEARCH
+<exact existing lines>
+=======
+<replacement lines>
+>>>>>>> REPLACE
+===END_PATCH===
+  Every ===FILE: ...=== and ===PATCH: ...=== block is automatically applied to your disk workspace, Git-committed to ${wtBranch}, and executed/verified!
 - To save a new fact to your private agent memory, include: [REMEMBER: concise technical fact]
 - To read a file in your isolated worktree, include: [TOOL: fs_read | <relative_path>]
 - To run a command in your isolated worktree, include: [TOOL: shell | <command>]
 - To write a file in your isolated worktree, include: [TOOL: write_file | <relative_path> | <content>]
 - To hand off & self-trigger another Vanara autonomously, mention them by @handle (e.g. @R2, @R3, @R4, @R1) with a clear next action.`;
       const mountBlock = folderSummary
-        ? `\n\nWORKSPACE SNAPSHOT:\n${folderSummary.slice(0, 1200)}`
+        ? `\n\nWORKSPACE & SYMBOL MAP SNAPSHOT:\n${folderSummary.slice(0, 1500)}`
         : "";
       const teamNames = state.bots.map(b => `@${b.name} (${b.role})`).join(", ");
       return `You are ${bot.name} (${bot.role}) in the Vanaras autonomous multi-agent software engineering workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${mountBlock}\n\nFellow Vanara agents: ${teamNames}.\nBe concise, high-signal, and write real runnable code.`;
@@ -3105,14 +3113,23 @@
         const postThoughtContent = thoughtHook.cleanedOutput || reply.content;
 
         const extracted = parseDeliverableBlocks(postThoughtContent);
+        const extractedPatches = parseSurgicalPatches(postThoughtContent);
         let hasDeliverables = false;
         let autoVerifyFailedFile = null;
         let autoVerifyErrorOutput = "";
-        if (extracted.length > 0) {
+        if (extractedPatches.length > 0) {
           hasDeliverables = true;
-          await saveFilesToAgentWorkspace(targetBot, extracted);
+          await applyPatchesToAgentWorkspace(targetBot, extractedPatches);
+          hooksTrace.push(`AppliedPatches(${extractedPatches.length})`);
+        }
+        if (extracted.length > 0 || extractedPatches.length > 0) {
+          hasDeliverables = true;
+          if (extracted.length > 0) {
+            await saveFilesToAgentWorkspace(targetBot, extracted);
+          }
           // Automatically verify/run the first executable file (.py, .js, .mjs, .sh, .rs) in the agent's workspace
-          const runnableFile = extracted.find(f => /\.(py|js|mjs|sh|rs)$/i.test(f.name));
+          const candidateList = extracted.length > 0 ? extracted : extractedPatches;
+          const runnableFile = candidateList.find(f => /\.(py|js|mjs|sh|rs)$/i.test(f.name));
           if (runnableFile && (targetBot.tools || []).includes("shell_exec")) {
             try {
               const runRes = await fetch("/api/agent/workspace", {
@@ -3176,7 +3193,7 @@
         // Self-Healing Loop: If auto-verification of generated software failed, self-trigger targetBot to fix the error
         if (autoVerifyFailedFile && state.autoTriggerEnabled !== false && chainDepth < 2) {
           nextAutoBot = targetBot;
-          nextAutoPrompt = `[PostToolUseFailure Auto-Heal] Executing '${autoVerifyFailedFile}' in your workspace exited with an error:\n\`\`\`\n${autoVerifyErrorOutput.slice(0, 800)}\n\`\`\`\nFix '${autoVerifyFailedFile}' and output the corrected ===FILE: ${autoVerifyFailedFile}=== block so the build passes.`;
+          nextAutoPrompt = `[PostToolUseFailure Auto-Heal] Executing '${autoVerifyFailedFile}' in your workspace exited with an error:\n\`\`\`\n${autoVerifyErrorOutput.slice(0, 800)}\n\`\`\`\nFix '${autoVerifyFailedFile}' and output a surgical ===PATCH: ${autoVerifyFailedFile}=== or corrected ===FILE: ${autoVerifyFailedFile}=== block so the build passes.`;
         } else if (state.autoTriggerEnabled !== false && chainDepth < 2 && (targetBot.tools || []).includes("handoff")) {
           // UPGRADE 1: Vanaras Self-Triggered Autonomous Chaining (SubagentStart / SubagentStop)
           const mentionedBots = findMentionedBotsInText(cleanDisplay, targetBot.id);
@@ -3410,6 +3427,52 @@
       }
     }
 
+    function parseSurgicalPatches(rawText) {
+      const patches = [];
+      const rx = /===PATCH:\s*([^\n=]+)===\s*\n<<<<<<<\s*SEARCH\n([\s\S]*?)\n=======\n([\s\S]*?)\n>>>>>>>\s*REPLACE\s*(?:===END_PATCH===)?/gi;
+      let m;
+      while ((m = rx.exec(rawText)) !== null) {
+        const name = m[1].trim();
+        const search = m[2];
+        const replace = m[3];
+        if (name) patches.push({ name, search, replace });
+      }
+      return patches;
+    }
+
+    async function applyPatchesToAgentWorkspace(bot, patchesArray) {
+      if (!bot || !Array.isArray(patchesArray) || patchesArray.length === 0) return;
+      try {
+        const res = await fetch("/api/agent/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "apply_patch",
+            botId: bot.id,
+            botName: bot.name,
+            customWorkspacePath: bot.workspacePath || "",
+            patches: patchesArray
+          })
+        });
+        const data = await res.json();
+        if (data && data.ok && Array.isArray(data.files)) {
+          activeWorkspaceBotId = bot.id;
+          deliverables = data.files;
+          activeDeliverableIdx = 0;
+          populateWorkspaceAgentSelector();
+          document.getElementById("workspaceBranchBadge").textContent = data.branch || `vanara/${bot.name.toLowerCase()}`;
+          document.getElementById("workspaceDiskPathLabel").textContent = data.codeDir || "";
+          const consoleOut = document.getElementById("workspaceConsoleOutput");
+          if (consoleOut) {
+            consoleOut.textContent = `[Surgical Patch Applied on ${data.branch}]\n${data.autoCommitOut || JSON.stringify(data.appliedPatches)}`;
+          }
+          if (!document.getElementById("deliverableDrawer").classList.contains("hidden")) {
+            renderDeliverableDrawer();
+          }
+        }
+      } catch {}
+    }
+
     function parseDeliverableBlocks(rawText) {
       const files = [];
       const regex = /===FILE:\s*([^\n=]+)===\s*\n([\s\S]*?)(?:===END_FILE===|(?====FILE:)|$)/gi;
@@ -3421,7 +3484,7 @@
         if (fence) content = fence[1].trim();
         if (name && content) files.push({ name, content });
       }
-      if (files.length === 0) {
+      if (files.length === 0 && parseSurgicalPatches(rawText).length === 0) {
         const codeRegex = /```([a-zA-Z0-9_.-]+)\n([\s\S]*?)```/g;
         let cIdx = 1;
         while ((m = codeRegex.exec(rawText)) !== null) {

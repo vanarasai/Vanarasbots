@@ -2598,10 +2598,15 @@
         : "";
       const wtBranch = bot.worktreeBranch || `vanara/${bot.name.toLowerCase()}`;
       const wtPath = agentWorktrees[bot.id]?.worktreeDir || `.worktrees/${bot.id}`;
-      const worktreeBlock = `\n\nYOUR ISOLATED GIT WORKTREE:\n- Branch: ${wtBranch}\n- Path: ${wtPath}\nAll your file writes and shell commands run in your isolated worktree so you never collide with other Vanaras.`;
-      const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "handoff"]).join(", ");
+      const worktreeBlock = `\n\nYOUR ISOLATED GIT WORKTREE & CODE WORKSPACE:\n- Branch: ${wtBranch}\n- Path: ${wtPath}\nAll your file writes and shell commands run in your isolated worktree and are automatically Git-committed onto ${wtBranch}.`;
+      const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"]).join(", ");
       const mcpLine = bot.mcpCommand ? `\n- Connected MCP Server: ${bot.mcpCommand}` : "";
-      const toolsProtocolBlock = `\n\nYOUR ENABLED AGENT TOOLS (${enabledTools})${mcpLine}:
+      const toolsProtocolBlock = `\n\nYOUR ENABLED AGENT TOOLS & SOFTWARE CREATION PROTOCOL (${enabledTools})${mcpLine}:
+- When creating or modifying software, scripts, web apps, or tests, output complete runnable files using:
+===FILE: <relative_filename>===
+<full file source code>
+===END_FILE===
+  Every ===FILE: ...=== block is automatically written to your disk workspace, Git-committed to ${wtBranch}, and executed/verified!
 - To save a new fact to your private agent memory, include: [REMEMBER: concise technical fact]
 - To run a command in your isolated worktree, include: [TOOL: shell | <command>]
 - To write a file in your isolated worktree, include: [TOOL: write_file | <relative_path> | <content>]
@@ -2610,7 +2615,7 @@
         ? `\n\nWORKSPACE SNAPSHOT:\n${folderSummary.slice(0, 1200)}`
         : "";
       const teamNames = state.bots.map(b => `@${b.name} (${b.role})`).join(", ");
-      return `You are ${bot.name} (${bot.role}) in the Vanaras autonomous multi-agent workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${mountBlock}\n\nFellow Vanara agents: ${teamNames}.\nBe concise, high-signal, and proactive.`;
+      return `You are ${bot.name} (${bot.role}) in the Vanaras autonomous multi-agent software engineering workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${mountBlock}\n\nFellow Vanara agents: ${teamNames}.\nBe concise, high-signal, and write real runnable code.`;
     }
 
     async function invokeAgentLifecycleHook(hook, payload = {}) {
@@ -2900,9 +2905,40 @@
 
         const extracted = parseDeliverableBlocks(postThoughtContent);
         let hasDeliverables = false;
+        let autoVerifyFailedFile = null;
+        let autoVerifyErrorOutput = "";
         if (extracted.length > 0) {
           hasDeliverables = true;
           await saveFilesToAgentWorkspace(targetBot, extracted);
+          // Automatically verify/run the first executable file (.py, .js, .mjs, .sh, .rs) in the agent's workspace
+          const runnableFile = extracted.find(f => /\.(py|js|mjs|sh|rs)$/i.test(f.name));
+          if (runnableFile && (targetBot.tools || []).includes("shell_exec")) {
+            try {
+              const runRes = await fetch("/api/agent/workspace", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "run_file",
+                  botId: targetBot.id,
+                  botName: targetBot.name,
+                  customWorkspacePath: targetBot.workspacePath || "",
+                  fileName: runnableFile.name
+                })
+              });
+              const runData = await runRes.json();
+              const consoleOut = document.getElementById("workspaceConsoleOutput");
+              if (consoleOut) {
+                consoleOut.textContent = `$ ${runData.command || runnableFile.name}\n${runData.output || "(exit 0)"}`;
+              }
+              if (runData.exitCode !== 0) {
+                hooksTrace.push(`PostToolUseFailure(${runnableFile.name}:exit=${runData.exitCode})`);
+                autoVerifyFailedFile = runnableFile.name;
+                autoVerifyErrorOutput = runData.output || "Execution failed";
+              } else {
+                hooksTrace.push(`AutoVerified(${runnableFile.name}:PASS)`);
+              }
+            } catch {}
+          }
         }
 
         // Grok-Bot Hook 3: PreToolUseRequest -> Tool -> PostToolUseRequest
@@ -2944,8 +2980,12 @@
           showToast(`${targetBot.name} completed turn in ${targetThread.name || targetBot.name}`);
         }
 
-        // UPGRADE 1: Grok-Bots Style Self-Triggered Autonomous Chaining (SubagentStart / SubagentStop)
-        if (state.autoTriggerEnabled !== false && chainDepth < 2 && (targetBot.tools || []).includes("handoff")) {
+        // Self-Healing Loop: If auto-verification of generated software failed, self-trigger targetBot to fix the error
+        if (autoVerifyFailedFile && state.autoTriggerEnabled !== false && chainDepth < 2) {
+          nextAutoBot = targetBot;
+          nextAutoPrompt = `[PostToolUseFailure Auto-Heal] Executing '${autoVerifyFailedFile}' in your workspace exited with an error:\n\`\`\`\n${autoVerifyErrorOutput.slice(0, 800)}\n\`\`\`\nFix '${autoVerifyFailedFile}' and output the corrected ===FILE: ${autoVerifyFailedFile}=== block so the build passes.`;
+        } else if (state.autoTriggerEnabled !== false && chainDepth < 2 && (targetBot.tools || []).includes("handoff")) {
+          // UPGRADE 1: Grok-Bots Style Self-Triggered Autonomous Chaining (SubagentStart / SubagentStop)
           const mentionedBots = findMentionedBotsInText(cleanDisplay, targetBot.id);
           if (mentionedBots.length > 0) {
             nextAutoBot = mentionedBots[0];

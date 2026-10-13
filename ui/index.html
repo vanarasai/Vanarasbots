@@ -1189,7 +1189,7 @@
 
         <!-- Right Autonomous Loop, Collab & Studio Actions -->
         <div class="chat-header-slot">
-          <button onclick="toggleAutoTriggerMode()" id="autoTriggerPill" class="header-tool-pill" style="border-color:rgba(16,185,129,0.38); color:#6ee7b7;" title="Grok-Bots Style Self-Triggered Autonomous Chaining & Background Execution">
+          <button onclick="toggleAutoTriggerMode()" id="autoTriggerPill" class="header-tool-pill" style="border-color:rgba(16,185,129,0.38); color:#6ee7b7;" title="Vanaras Self-Triggered Autonomous Chaining & Background Execution">
             <span id="autoTriggerDot" style="width:7px; height:7px; border-radius:50%; background:#10b981; display:inline-block;"></span>
             <span id="autoTriggerLabel" class="mono" style="font-size:11px;">Auto: ON</span>
           </button>
@@ -1339,29 +1339,37 @@
     <!-- =================================================================== -->
     <!-- RIGHT PER-AGENT CODE WORKSPACE & DELIVERABLE STUDIO DRAWER          -->
     <!-- =================================================================== -->
-    <aside id="deliverableDrawer" class="studio-drawer hidden" style="width:490px;">
+    <aside id="deliverableDrawer" class="studio-drawer hidden" style="width:520px;">
       <div class="studio-header">
         <div style="display:flex; align-items:center; gap:8px; min-width:0;">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          <select id="workspaceAgentSelect" onchange="onSwitchWorkspaceAgent(this.value)" class="field-input" style="height:28px; padding:0 8px; font-size:12px; font-weight:600; background:#151519; border-color:#2c2c35; width:175px;"></select>
+          <select id="workspaceAgentSelect" onchange="onSwitchWorkspaceAgent(this.value)" class="field-input" style="height:28px; padding:0 8px; font-size:12px; font-weight:600; background:#151519; border-color:#2c2c35; width:155px;"></select>
         </div>
         <div style="display:flex; align-items:center; gap:5px;">
-          <button onclick="createNewFileInAgentWorkspace()" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;" title="Create new file in this agent's workspace">+ File</button>
-          <button onclick="setDrawerMode('source')" id="btnModeSource" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;">Code</button>
-          <button onclick="setDrawerMode('preview')" id="btnModePreview" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;">Preview</button>
-          <button onclick="setDrawerMode('vnc')" id="btnModeVnc" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;" title="Grok-Bot preload-vnc style Browser & Remote Desktop Mount">VNC/Web</button>
-          <button onclick="runActiveFileInAgentWorkspace()" class="btn-primary" style="height:26px; padding:0 10px; font-size:11px; background:#10b981;" title="Execute active file inside this agent's isolated workspace">▶ Run</button>
-          <button onclick="saveActiveEditorToAgentWorkspace()" class="btn-primary" style="height:26px; padding:0 10px; font-size:11px; background:#2563eb;" title="Save edits to disk">Save</button>
+          <button onclick="createNewFileInAgentWorkspace()" class="btn-secondary" style="height:26px; padding:0 7px; font-size:11px;" title="Create new file in this agent's workspace">+ File</button>
+          <button onclick="setDrawerMode('source')" id="btnModeSource" class="btn-secondary" style="height:26px; padding:0 7px; font-size:11px;">Code</button>
+          <button onclick="setDrawerMode('preview')" id="btnModePreview" class="btn-secondary" style="height:26px; padding:0 7px; font-size:11px;">Preview</button>
+          <button onclick="setDrawerMode('vnc')" id="btnModeVnc" class="btn-secondary" style="height:26px; padding:0 7px; font-size:11px;" title="Vanaras Browser & Remote Desktop Mount">VNC/Web</button>
+          <button onclick="toggleAgentDevServer()" id="btnAgentServe" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px; border-color:rgba(56,189,248,0.4); color:#7dd3fc;" title="Start/Stop persistent Dev Server on dedicated port for this agent">⚡ Serve</button>
+          <button onclick="runActiveFileInAgentWorkspace()" class="btn-primary" style="height:26px; padding:0 9px; font-size:11px; background:#10b981;" title="Execute active file inside this agent's isolated workspace">▶ Run</button>
+          <button onclick="saveActiveEditorToAgentWorkspace()" class="btn-primary" style="height:26px; padding:0 9px; font-size:11px; background:#2563eb;" title="Save edits to disk">Save</button>
           <button onclick="toggleDeliverableDrawer(false)" class="side-icon-btn">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
       </div>
 
-      <!-- Agent Workspace Branch & Disk Path Bar -->
-      <div style="padding:6px 14px; background:#121216; border-bottom:1px solid #1e1e24; display:flex; align-items:center; justify-content:space-between; gap:8px;" class="mono">
-        <span id="workspaceBranchBadge" style="font-size:10.5px; color:#38bdf8;">vanara/r1</span>
-        <span id="workspaceDiskPathLabel" style="font-size:10px; color:#787884; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">.worktrees/bot_r1/agent_workspace/r1</span>
+      <!-- Agent Workspace Branch, Disk Path, File Watcher & Sandbox Bar -->
+      <div style="padding:6px 12px; background:#121216; border-bottom:1px solid #1e1e24; display:flex; align-items:center; justify-content:space-between; gap:8px;" class="mono">
+        <div style="display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden;">
+          <span id="workspaceBranchBadge" style="font-size:10.5px; color:#38bdf8; flex-shrink:0;">vanara/r1</span>
+          <span id="workspaceDiskPathLabel" style="font-size:10px; color:#787884; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">.worktrees/bot_r1/agent_workspace/r1</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:5px; flex-shrink:0;">
+          <button onclick="toggleAgentWorkspaceWatcher()" id="btnAgentWatch" style="font-size:10px; color:#a7f3d0; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); border-radius:6px; padding:2px 6px;" title="Start fs.watch + scheduled heartbeat daemon for this agent">👁 Watch</button>
+          <button onclick="manageActiveAgentSandbox('HibernateSandBox')" style="font-size:10px; color:#c4b5fd; background:rgba(139,92,246,0.1); border:1px solid rgba(139,92,246,0.3); border-radius:6px; padding:2px 6px;" title="Snapshot & hibernate this agent's sandbox">Hibernate</button>
+          <button onclick="manageActiveAgentSandbox('RecreateSandBox')" style="font-size:10px; color:#fda4af; background:rgba(244,63,94,0.1); border:1px solid rgba(244,63,94,0.3); border-radius:6px; padding:2px 6px;" title="Recreate clean sandbox for this agent">Reset Box</button>
+        </div>
       </div>
 
       <!-- Per-Agent Workspace File Tabs -->
@@ -1374,24 +1382,27 @@
         <div id="deliverableVncWrap" class="hidden" style="flex:1; display:flex; flex-direction:column; background:#0b0b0e;">
           <div style="padding:6px 10px; background:#15151b; border-bottom:1px solid #262630; display:flex; align-items:center; gap:6px;">
             <span class="mono" style="font-size:10.5px; color:#a7f3d0;">VNC / Web Mount:</span>
-            <input id="vncMountUrlInput" type="text" value="http://localhost:3000" class="field-input mono" style="height:24px; font-size:11px; padding:0 8px; flex:1;" placeholder="http://localhost:6080/vnc.html or web URL">
+            <input id="vncMountUrlInput" type="text" value="http://localhost:4101" class="field-input mono" style="height:24px; font-size:11px; padding:0 8px; flex:1;" placeholder="http://localhost:4101 or VNC URL">
             <button onclick="mountVncBrowserUrl()" class="btn-secondary" style="height:24px; padding:0 8px; font-size:10.5px;">Mount</button>
+            <button onclick="verifyActiveAgentWebUrl()" class="btn-secondary" style="height:24px; padding:0 8px; font-size:10.5px; border-color:rgba(16,185,129,0.4); color:#6ee7b7;" title="Headless HTTP/DOM smoke probe of the mounted web app">Verify Web</button>
           </div>
           <iframe id="deliverableVncFrame" style="flex:1; width:100%; border:none; background:#111115;"></iframe>
         </div>
       </div>
 
-      <!-- Per-Agent Workspace Live Execution & Git Commit Console -->
-      <div style="height:150px; background:#090a0d; border-top:1px solid #22222a; display:flex; flex-direction:column; flex-shrink:0;" class="mono">
+      <!-- Per-Agent Workspace Live Execution, Peer Review & Git Commit Console -->
+      <div style="height:155px; background:#090a0d; border-top:1px solid #22222a; display:flex; flex-direction:column; flex-shrink:0;" class="mono">
         <div style="padding:5px 12px; background:#121318; border-bottom:1px solid #1e1e26; display:flex; align-items:center; justify-content:space-between; font-size:10.5px; color:#888894;">
-          <span id="workspaceConsoleTitle">Agent Workspace Console & Git</span>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <button onclick="commitActiveAgentWorkspace()" style="font-size:10.5px; color:#6ee7b7; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.35); border-radius:6px; padding:2px 7px;">Commit Branch</button>
-            <button onclick="mergeActiveAgentWorkspaceToMain()" style="font-size:10.5px; color:#fcd34d; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); border-radius:6px; padding:2px 7px;" title="Merge this agent's workspace into the main repository branch">Merge → main</button>
-            <button onclick="openWorktreeModal(activeWorkspaceBotId)" style="font-size:10.5px; color:#38bdf8;">Worktree Diff →</button>
+          <span id="workspaceConsoleTitle">Workspace Console & Git</span>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <button onclick="triggerPeerReviewForActiveWorkspace()" style="font-size:10px; color:#93c5fd; background:rgba(59,130,246,0.12); border:1px solid rgba(59,130,246,0.35); border-radius:6px; padding:2px 6px;" title="Ask @R3 (Verification & Eval) to review this branch diff against main">Peer Review (@R3)</button>
+            <button onclick="commitActiveAgentWorkspace()" style="font-size:10px; color:#6ee7b7; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.35); border-radius:6px; padding:2px 6px;">Commit</button>
+            <button onclick="mergeActiveAgentWorkspaceToMain()" style="font-size:10px; color:#fcd34d; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); border-radius:6px; padding:2px 6px;" title="Merge this agent's workspace into the main repository branch">Merge → main</button>
+            <button onclick="createPrForActiveWorkspace()" style="font-size:10px; color:#f9a8d4; background:rgba(236,72,153,0.12); border:1px solid rgba(236,72,153,0.35); border-radius:6px; padding:2px 6px;" title="Push branch & open GitHub PR from this agent's worktree">Open PR</button>
+            <button onclick="openWorktreeModal(activeWorkspaceBotId)" style="font-size:10px; color:#38bdf8;">Diff →</button>
           </div>
         </div>
-        <pre id="workspaceConsoleOutput" style="flex:1; padding:8px 12px; overflow:auto; font-size:11px; line-height:1.45; color:#a7f3d0; white-space:pre-wrap; user-select:text;">Every file generated by an agent is auto-committed to its branch (vanara/&lt;bot&gt;). Click "▶ Run", "Commit Branch", or "Merge → main".</pre>
+        <pre id="workspaceConsoleOutput" style="flex:1; padding:8px 12px; overflow:auto; font-size:11px; line-height:1.45; color:#a7f3d0; white-space:pre-wrap; user-select:text;">Every file generated by an agent is auto-committed to its branch (vanara/&lt;bot&gt;). Click "▶ Run", "⚡ Serve", "Peer Review (@R3)", or "Merge → main".</pre>
       </div>
     </aside>
 
@@ -1489,7 +1500,7 @@
           <div id="botPrivateMemoryList" style="display:flex; flex-direction:column; gap:5px; max-height:110px; overflow-y:auto;"></div>
         </div>
 
-        <!-- UPGRADE 3: PER-AGENT TOOLS & MCP SERVER + GROK-BOT MCP POLICIES -->
+        <!-- UPGRADE 3: PER-AGENT TOOLS & MCP SERVER POLICIES -->
         <div style="padding:12px; border-radius:12px; background:#121216; border:1px solid #26262f;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <label class="field-label" style="margin-bottom:0; color:#bae6fd;">Per-Agent Tools, MCP & PreToolUse Blacklist</label>
@@ -2356,7 +2367,7 @@
 
           const hooksBadgeHtml = Array.isArray(m.hooksTrace) && m.hooksTrace.length > 0
             ? `<div class="mono" style="margin-top:8px; font-size:10px; color:#6ee7b7; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.22); border-radius:8px; padding:4px 8px; display:inline-block;">
-                 sand hooks: ${escapeHtml(m.hooksTrace.join(" → "))}
+                 vanara hooks: ${escapeHtml(m.hooksTrace.join(" → "))}
                </div>`
             : "";
 
@@ -2601,13 +2612,15 @@
       const worktreeBlock = `\n\nYOUR ISOLATED GIT WORKTREE & CODE WORKSPACE:\n- Branch: ${wtBranch}\n- Path: ${wtPath}\nAll your file writes and shell commands run in your isolated worktree and are automatically Git-committed onto ${wtBranch}.`;
       const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"]).join(", ");
       const mcpLine = bot.mcpCommand ? `\n- Connected MCP Server: ${bot.mcpCommand}` : "";
-      const toolsProtocolBlock = `\n\nYOUR ENABLED AGENT TOOLS & SOFTWARE CREATION PROTOCOL (${enabledTools})${mcpLine}:
+      const toolsProtocolBlock = `\n\nYOUR ENABLED AGENT TOOLS & MULTI-STEP ReAct SOFTWARE CREATION PROTOCOL (${enabledTools})${mcpLine}:
+- Multi-Step ReAct Inspection: You can inspect files or git state first using [TOOL: fs_read | <relative_path>], [TOOL: git_status], or [TOOL: git_diff]; the runtime executes them and feeds the real output back to you inside the same turn before your final reply.
 - When creating or modifying software, scripts, web apps, or tests, output complete runnable files using:
 ===FILE: <relative_filename>===
 <full file source code>
 ===END_FILE===
   Every ===FILE: ...=== block is automatically written to your disk workspace, Git-committed to ${wtBranch}, and executed/verified!
 - To save a new fact to your private agent memory, include: [REMEMBER: concise technical fact]
+- To read a file in your isolated worktree, include: [TOOL: fs_read | <relative_path>]
 - To run a command in your isolated worktree, include: [TOOL: shell | <command>]
 - To write a file in your isolated worktree, include: [TOOL: write_file | <relative_path> | <content>]
 - To hand off & self-trigger another Vanara autonomously, mention them by @handle (e.g. @R2, @R3, @R4, @R1) with a clear next action.`;
@@ -2658,7 +2671,7 @@
       }
     }
 
-    async function processBotAutonomousActions(thread, bot, replyText, hooksTrace = []) {
+    async function processBotAutonomousActions(thread, bot, replyText, hooksTrace = [], observationsOut = []) {
       const executedTools = [];
       if (!replyText) return executedTools;
 
@@ -2679,11 +2692,17 @@
       let tMatch;
       while ((tMatch = toolRx.exec(replyText)) !== null) {
         const rawTool = tMatch[1].trim().toLowerCase();
-        const normalizedTool = rawTool === "shell" ? "shell_exec" : rawTool === "write_file" ? "fs_write" : rawTool;
+        const normalizedTool = rawTool === "shell"
+          ? "shell_exec"
+          : rawTool === "write_file"
+            ? "fs_write"
+            : rawTool === "read_file"
+              ? "fs_read"
+              : rawTool;
         const arg1 = (tMatch[2] || "").trim();
         const arg2 = (tMatch[3] || "").trim();
 
-        // Grok-Bot PreToolUseRequest permission & mcpDisabledTools check
+        // Vanaras PreToolUseRequest permission & mcpDisabledTools check
         const preCheck = await invokeAgentLifecycleHook("PreToolUseRequest", {
           botId: bot.id,
           botName: bot.name,
@@ -2711,6 +2730,23 @@
             });
             executedTools.push(`shell: ${arg1}`);
             hooksTrace.push(`PostToolUse(shell_exec)`);
+          } else if (normalizedTool === "fs_read" && arg1) {
+            const res = await fetch("/api/agent/tool", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "fs_read", botId: bot.id, botName: bot.name, filePath: arg1 })
+            });
+            const data = await res.json();
+            const readOut = data.output || data.error || "(empty file)";
+            thread.messages.push({
+              senderType: "terminal",
+              command: `[${bot.name} worktree] read ${arg1}`,
+              exitCode: res.ok ? 0 : 1,
+              text: readOut.slice(0, 1200)
+            });
+            observationsOut.push({ tool: `fs_read(${arg1})`, output: readOut.slice(0, 1800) });
+            executedTools.push(`fs_read: ${arg1}`);
+            hooksTrace.push(`PostToolUse(fs_read)`);
           } else if (normalizedTool === "fs_write" && arg1) {
             const res = await fetch("/api/agent/tool", {
               method: "POST",
@@ -2736,12 +2772,16 @@
             });
             const data = await res.json();
             if (res.ok) {
+              const gitOut = data.output || "(clean worktree)";
               thread.messages.push({
                 senderType: "terminal",
                 command: `[${bot.name} ${data.branch}] ${normalizedTool}`,
                 exitCode: 0,
-                text: data.output || "(clean worktree)"
+                text: gitOut
               });
+              if (normalizedTool === "git_status" || normalizedTool === "git_diff") {
+                observationsOut.push({ tool: normalizedTool, output: gitOut.slice(0, 1800) });
+              }
               executedTools.push(normalizedTool);
               hooksTrace.push(`PostToolUse(${normalizedTool})`);
             }
@@ -2843,15 +2883,28 @@
       let nextAutoPrompt = "";
       const hooksTrace = [];
 
+      // Insert live streaming message placeholder so Capability #3 streams tokens directly into the UI
+      const liveMsg = {
+        senderType: "bot",
+        botId: targetBot.id,
+        text: "▍",
+        reasoning: "",
+        hooksTrace,
+        collabRound: chainDepth > 0 ? `Auto-Triggered • ${targetBot.worktreeBranch}` : targetBot.worktreeBranch,
+        hasDeliverables: false
+      };
+      targetThread.messages.push(liveMsg);
+      if (activeThreadId === threadId) renderActiveThread();
+
       try {
         await ensureAgentWorktreeOnServer(targetBot);
 
-        // Grok-Bot Hook 0: Automatic PreCompactRequest when conversation history grows > 18 messages
-        if (targetThread.messages.length > 18) {
+        // Vanaras Hook 0: Automatic PreCompactRequest when conversation history grows > 18 messages
+        if (targetThread.messages.length > 19) {
           const compactRes = await invokeAgentLifecycleHook("PreCompactRequest", {
             botId: targetBot.id,
             botName: targetBot.name,
-            messages: targetThread.messages
+            messages: targetThread.messages.slice(0, -1)
           });
           if (compactRes && compactRes.compactedCount > 0 && Array.isArray(compactRes.keptMessages)) {
             targetThread.messages = [
@@ -2861,13 +2914,14 @@
                 exitCode: 0,
                 text: compactRes.compactDigest
               },
-              ...compactRes.keptMessages
+              ...compactRes.keptMessages,
+              liveMsg
             ];
             hooksTrace.push("PreCompact");
           }
         }
 
-        // Grok-Bot Hook 1: BeforeSubmitPromptRequest (enriches prompt with SandBox Manifest & mcpCustomInstructions)
+        // Vanaras Hook 1: BeforeSubmitPromptRequest (enriches prompt with SandBox Manifest & mcpCustomInstructions)
         const beforeHook = await invokeAgentLifecycleHook("BeforeSubmitPromptRequest", {
           botId: targetBot.id,
           botName: targetBot.name,
@@ -2877,7 +2931,7 @@
         hooksTrace.push("BeforeSubmitPrompt");
 
         const folderSummary = await ensureFolderSnapshot(targetThread.mountPath, targetBot);
-        const historyContext = targetThread.messages.slice(-8).map(m => {
+        const historyContext = targetThread.messages.slice(0, -1).slice(-8).map(m => {
           if (m.senderType === "user") return `${state.currentUser.name}: ${m.text}`;
           if (m.senderType === "terminal") return `[Worktree Terminal ${m.command}]: ${m.text.slice(0, 400)}`;
           const b = getBot(m.botId);
@@ -2886,11 +2940,53 @@
 
         const sysPrompt = buildGroundedSystemPrompt(targetBot, targetThread, folderSummary);
         const enrichedTrigger = beforeHook.enrichedPrompt || triggerText;
-        const userPrompt = `Recent conversation:\n${historyContext}\n\nLatest trigger:\n${enrichedTrigger}\n\nRespond directly as ${targetBot.name}:`;
+        let currentPrompt = `Recent conversation:\n${historyContext}\n\nLatest trigger:\n${enrichedTrigger}\n\nRespond directly as ${targetBot.name}:`;
 
-        const reply = await queryBotLLM(targetBot, sysPrompt, userPrompt, 2000);
+        let lastRenderTs = 0;
+        const onStreamProgress = (partialContent, partialReasoning) => {
+          liveMsg.text = (partialContent || "▍");
+          if (partialReasoning) liveMsg.reasoning = partialReasoning;
+          const now = Date.now();
+          if (activeThreadId === threadId && now - lastRenderTs > 95) {
+            lastRenderTs = now;
+            renderActiveThread();
+          }
+        };
 
-        // Grok-Bot Hook 2: AfterAgentThoughtRequest (extracts <think>...</think> or [THOUGHT: ...])
+        // Capability #1: Multi-Step ReAct Tool Loop inside a single turn (up to 2 internal inspect->observe rounds)
+        let reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 2000, onStreamProgress);
+        let accumulatedReasoning = reply.reasoning || "";
+
+        for (let reactStep = 0; reactStep < 2; reactStep++) {
+          const stepHook = await invokeAgentLifecycleHook("AfterAgentThoughtRequest", {
+            botId: targetBot.id,
+            botName: targetBot.name,
+            rawOutput: reply.content
+          });
+          const stepCleaned = stepHook.cleanedOutput || reply.content;
+          const stepObservations = [];
+          await processBotAutonomousActions(targetThread, targetBot, stepCleaned, hooksTrace, stepObservations);
+
+          // If the agent executed read/inspect tools (fs_read, git_status, git_diff) and hasn't emitted final ===FILE:=== yet, feed observation back in-turn
+          const hasFilesAlready = parseDeliverableBlocks(stepCleaned).length > 0;
+          if (stepObservations.length === 0 || hasFilesAlready) {
+            reply.content = stepCleaned;
+            if (Array.isArray(stepHook.thoughts) && stepHook.thoughts.length > 0) {
+              accumulatedReasoning = [accumulatedReasoning, ...stepHook.thoughts].filter(Boolean).join("\n\n");
+            }
+            break;
+          }
+
+          hooksTrace.push(`ReActObsStep(${reactStep + 1})`);
+          const obsDigest = stepObservations.map(o => `[Tool Output: ${o.tool}]\n${o.output}`).join("\n\n");
+          currentPrompt += `\n\nYour previous step invoked inspection tool(s). Real output from your worktree:\n${obsDigest}\n\nNow synthesize your final answer and/or ===FILE: ...=== deliverables based on this evidence:`;
+          reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 2200, onStreamProgress);
+          if (reply.reasoning) {
+            accumulatedReasoning = [accumulatedReasoning, reply.reasoning].filter(Boolean).join("\n\n");
+          }
+        }
+
+        // Vanaras Hook 2: AfterAgentThoughtRequest
         const thoughtHook = await invokeAgentLifecycleHook("AfterAgentThoughtRequest", {
           botId: targetBot.id,
           botName: targetBot.name,
@@ -2898,7 +2994,7 @@
         });
         hooksTrace.push("AfterAgentThought");
         const combinedReasoning = [
-          reply.reasoning,
+          accumulatedReasoning,
           ...(Array.isArray(thoughtHook.thoughts) ? thoughtHook.thoughts : [])
         ].filter(Boolean).join("\n\n");
         const postThoughtContent = thoughtHook.cleanedOutput || reply.content;
@@ -2941,10 +3037,7 @@
           }
         }
 
-        // Grok-Bot Hook 3: PreToolUseRequest -> Tool -> PostToolUseRequest
-        await processBotAutonomousActions(targetThread, targetBot, postThoughtContent, hooksTrace);
-
-        // Grok-Bot Hook 4: CommitSandBoxStoreManifest & NotifySandAgentTurnFinished
+        // Vanaras Hook 4: CommitSandBoxStoreManifest & NotifySandAgentTurnFinished
         await fetch("/api/agent/store", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2965,15 +3058,10 @@
           .replace(/\[REMEMBER:\s*[^\]]+\]/gi, "")
           .trim() || postThoughtContent;
 
-        targetThread.messages.push({
-          senderType: "bot",
-          botId: targetBot.id,
-          text: cleanDisplay,
-          reasoning: combinedReasoning,
-          hooksTrace,
-          collabRound: chainDepth > 0 ? `Auto-Triggered • ${targetBot.worktreeBranch}` : targetBot.worktreeBranch,
-          hasDeliverables
-        });
+        liveMsg.text = cleanDisplay;
+        liveMsg.reasoning = combinedReasoning;
+        liveMsg.hooksTrace = hooksTrace;
+        liveMsg.hasDeliverables = hasDeliverables;
 
         if (activeThreadId !== threadId) {
           unreadCounts[threadId] = (unreadCounts[threadId] || 0) + 1;
@@ -2985,7 +3073,7 @@
           nextAutoBot = targetBot;
           nextAutoPrompt = `[PostToolUseFailure Auto-Heal] Executing '${autoVerifyFailedFile}' in your workspace exited with an error:\n\`\`\`\n${autoVerifyErrorOutput.slice(0, 800)}\n\`\`\`\nFix '${autoVerifyFailedFile}' and output the corrected ===FILE: ${autoVerifyFailedFile}=== block so the build passes.`;
         } else if (state.autoTriggerEnabled !== false && chainDepth < 2 && (targetBot.tools || []).includes("handoff")) {
-          // UPGRADE 1: Grok-Bots Style Self-Triggered Autonomous Chaining (SubagentStart / SubagentStop)
+          // UPGRADE 1: Vanaras Self-Triggered Autonomous Chaining (SubagentStart / SubagentStop)
           const mentionedBots = findMentionedBotsInText(cleanDisplay, targetBot.id);
           if (mentionedBots.length > 0) {
             nextAutoBot = mentionedBots[0];
@@ -2997,11 +3085,7 @@
           }
         }
       } catch (e) {
-        targetThread.messages.push({
-          senderType: "bot",
-          botId: targetBot.id,
-          text: `Connection error (${targetBot.provider}/${targetBot.model}): ${e.message}`
-        });
+        liveMsg.text = `Connection error (${targetBot.provider}/${targetBot.model}): ${e.message}`;
       } finally {
         delete activeWorkingThreads[threadId];
         saveState();
@@ -3026,26 +3110,72 @@
       }
     }
 
-    async function queryBotLLM(bot, systemPrompt, userPrompt, maxTokens = 2000) {
+    async function queryBotLLM(bot, systemPrompt, userPrompt, maxTokens = 2000, onStreamDelta = null) {
       const modelToUse = (bot.provider === "local" && (!bot.model || bot.model === "auto"))
         ? detectedLocalModel
         : bot.model;
 
+      const payload = {
+        provider: bot.provider,
+        baseUrl: bot.baseUrl,
+        apiKey: bot.apiKey,
+        model: modelToUse,
+        max_tokens: maxTokens,
+        temperature: 0.7,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ]
+      };
+
+      // Capability #3: Real-Time SSE Token & Thought Streaming when onStreamDelta is provided
+      if (typeof onStreamDelta === "function") {
+        try {
+          const streamRes = await fetch("/api/llm/stream", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (streamRes.ok && streamRes.body) {
+            const reader = streamRes.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = "";
+            let fullContent = "";
+            let fullReasoning = "";
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              buf += decoder.decode(value, { stream: true });
+              const lines = buf.split("\n");
+              buf = lines.pop() || "";
+              for (const rawLine of lines) {
+                const line = rawLine.trim();
+                if (!line.startsWith("data:")) continue;
+                const dataStr = line.slice(5).trim();
+                if (!dataStr || dataStr === "[DONE]") continue;
+                try {
+                  const parsed = JSON.parse(dataStr);
+                  if (parsed.error) throw new Error(parsed.error);
+                  if (parsed.token) fullContent += parsed.token;
+                  if (parsed.reasoning) fullReasoning += parsed.reasoning;
+                  onStreamDelta(fullContent, fullReasoning);
+                } catch {}
+              }
+            }
+            if (fullContent.trim() || fullReasoning.trim()) {
+              return {
+                content: fullContent.trim() || fullReasoning.trim(),
+                reasoning: fullContent.trim() && fullReasoning.trim() ? fullReasoning.trim() : ""
+              };
+            }
+          }
+        } catch {}
+      }
+
       const res = await fetch("/api/llm/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: bot.provider,
-          baseUrl: bot.baseUrl,
-          apiKey: bot.apiKey,
-          model: modelToUse,
-          max_tokens: maxTokens,
-          temperature: 0.7,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ]
-        })
+        body: JSON.stringify(payload)
       });
 
       const data = await res.json();
@@ -3054,6 +3184,9 @@
       const msg = data.choices?.[0]?.message || {};
       const content = (msg.content || "").trim();
       const reasoning = (msg.reasoning_content || "").trim();
+      if (typeof onStreamDelta === "function") {
+        onStreamDelta(content, reasoning);
+      }
       return {
         content: content || (reasoning ? reasoning : "(Empty response)"),
         reasoning: content && reasoning ? reasoning : ""
@@ -4029,6 +4162,226 @@
       }
     }
 
+    let activeDevServersByBot = {};
+    let activeWatchersByBot = {};
+
+    async function toggleAgentDevServer() {
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      if (!bot) return;
+      const consoleOut = document.getElementById("workspaceConsoleOutput");
+      const btn = document.getElementById("btnAgentServe");
+      const isRunning = Boolean(activeDevServersByBot[bot.id]);
+      const action = isRunning ? "stop_server" : "start_server";
+      try {
+        const res = await fetch("/api/agent/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            botId: bot.id,
+            botName: bot.name,
+            customWorkspacePath: bot.workspacePath || ""
+          })
+        });
+        const data = await res.json();
+        if (!isRunning && data.running) {
+          activeDevServersByBot[bot.id] = data.url;
+          if (btn) {
+            btn.textContent = `⏹ :${data.port}`;
+            btn.style.color = "#f87171";
+            btn.style.borderColor = "rgba(248,113,113,0.45)";
+          }
+          if (consoleOut) {
+            consoleOut.textContent = `[Dev Server Started • PID ${data.pid || ""}]\nURL: ${data.url}\nCommand: ${data.command}\n${data.logs || ""}`;
+          }
+          const urlInput = document.getElementById("vncMountUrlInput");
+          if (urlInput) urlInput.value = data.url;
+          setDrawerMode("vnc");
+          mountVncBrowserUrl();
+          showToast(`${bot.name} dev server live at ${data.url}`);
+        } else {
+          delete activeDevServersByBot[bot.id];
+          if (btn) {
+            btn.textContent = "⚡ Serve";
+            btn.style.color = "#7dd3fc";
+            btn.style.borderColor = "rgba(56,189,248,0.4)";
+          }
+          if (consoleOut) {
+            consoleOut.textContent = `[Dev Server Stopped for ${bot.name}]`;
+          }
+          showToast(`Stopped ${bot.name}'s dev server`);
+        }
+      } catch (err) {
+        if (consoleOut) consoleOut.textContent = `Dev server error: ${err.message}`;
+      }
+    }
+
+    async function toggleAgentWorkspaceWatcher() {
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      if (!bot) return;
+      const btn = document.getElementById("btnAgentWatch");
+      const consoleOut = document.getElementById("workspaceConsoleOutput");
+      const isWatching = Boolean(activeWatchersByBot[bot.id]);
+      const action = isWatching ? "stop_watch" : "start_watch";
+      try {
+        const res = await fetch("/api/agent/watcher", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            botId: bot.id,
+            botName: bot.name,
+            customWorkspacePath: bot.workspacePath || "",
+            intervalSec: 60
+          })
+        });
+        const data = await res.json();
+        if (!isWatching && data.watching) {
+          activeWatchersByBot[bot.id] = true;
+          if (btn) {
+            btn.textContent = "👁 Watching";
+            btn.style.background = "rgba(16,185,129,0.28)";
+          }
+          if (consoleOut) {
+            consoleOut.textContent = `[File Watcher & Heartbeat Active for ${bot.name}]\nWatching: ${data.codeDir}\nHeartbeat every ${data.intervalSec}s`;
+          }
+          showToast(`Watching ${bot.name}'s workspace + 60s heartbeat`);
+        } else {
+          delete activeWatchersByBot[bot.id];
+          if (btn) {
+            btn.textContent = "👁 Watch";
+            btn.style.background = "rgba(16,185,129,0.1)";
+          }
+          if (consoleOut) {
+            consoleOut.textContent = `[File Watcher Stopped for ${bot.name}]`;
+          }
+          showToast(`Stopped watcher for ${bot.name}`);
+        }
+      } catch (err) {
+        if (consoleOut) consoleOut.textContent = `Watcher error: ${err.message}`;
+      }
+    }
+
+    async function manageActiveAgentSandbox(action) {
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      if (!bot) return;
+      const consoleOut = document.getElementById("workspaceConsoleOutput");
+      try {
+        const res = await fetch("/api/agent/sandbox", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            botId: bot.id,
+            botName: bot.name,
+            customWorkspacePath: bot.workspacePath || ""
+          })
+        });
+        const data = await res.json();
+        if (consoleOut) {
+          consoleOut.textContent = `[Sandbox ${action} • ${bot.name}]\nState: ${data.state || "ok"}\nBranch: ${data.branch || ""}\n${data.snapshotRef ? "Snapshot: " + data.snapshotRef : ""}`;
+        }
+        if (action === "RecreateSandBox") {
+          await loadAgentCodeWorkspaceFromServer(bot.id);
+        }
+        showToast(`${bot.name}: ${action} (${data.state || "ready"})`);
+      } catch (err) {
+        if (consoleOut) consoleOut.textContent = `Sandbox error: ${err.message}`;
+      }
+    }
+
+    async function verifyActiveAgentWebUrl() {
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      const urlInput = document.getElementById("vncMountUrlInput");
+      const consoleOut = document.getElementById("workspaceConsoleOutput");
+      const url = (urlInput && urlInput.value.trim()) || "http://localhost:4101";
+      if (consoleOut) consoleOut.textContent = `$ probing ${url} (HTTP + DOM smoke check)...`;
+      try {
+        const res = await fetch("/api/agent/sandbox", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "VerifyWebUrl",
+            botId: bot?.id || "bot_r1",
+            botName: bot?.name || "R1",
+            url
+          })
+        });
+        const data = await res.json();
+        if (consoleOut) {
+          consoleOut.textContent = `[Web Smoke Verification • ${data.url}]\nStatus: ${data.status || "ERR"} (${data.ok ? "PASS" : "FAIL"})\nTitle: ${data.title || "(none)"}\nBytes: ${data.bodyBytes || 0}\nPreview:\n${data.snippet || data.error || ""}`;
+        }
+        showToast(data.ok ? `Verified ${url} (HTTP ${data.status})` : `Verify failed: ${data.error || data.status}`);
+      } catch (err) {
+        if (consoleOut) consoleOut.textContent = `Web verification error: ${err.message}`;
+      }
+    }
+
+    async function triggerPeerReviewForActiveWorkspace() {
+      const authorBot = getBot(activeWorkspaceBotId) || state.bots[0];
+      if (!authorBot) return;
+      const reviewerBot = state.bots.find(b => b.name.toLowerCase() === "r3" && b.id !== authorBot.id)
+        || state.bots.find(b => b.id !== authorBot.id)
+        || authorBot;
+      const consoleOut = document.getElementById("workspaceConsoleOutput");
+      if (consoleOut) consoleOut.textContent = `$ computing git diff main...${authorBot.worktreeBranch || ""} for peer review by @${reviewerBot.name}...`;
+      try {
+        const res = await fetch("/api/agent/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "peer_review_diff",
+            botId: authorBot.id,
+            botName: authorBot.name,
+            customWorkspacePath: authorBot.workspacePath || ""
+          })
+        });
+        const data = await res.json();
+        if (consoleOut) {
+          consoleOut.textContent = `[Peer Review Diff • ${data.branch} vs ${data.baseRef}]\n${data.stat || ""}\n\nTriggering @${reviewerBot.name} in active chat...`;
+        }
+        const thread = getActiveThread();
+        if (thread) {
+          const reviewPrompt = `@${reviewerBot.name} Peer-review @${authorBot.name}'s branch \`${data.branch}\` against \`${data.baseRef}\`:\n\nCommits:\n\`\`\`\n${data.commits || "(none)"}\n\`\`\`\n\nDiff:\n\`\`\`diff\n${(data.diff || "").slice(0, 2800)}\n\`\`\`\n\nProvide a rigorous code review (bugs, edge cases, security, and whether it is ready to merge into main).`;
+          showToast(`Sent ${data.branch} diff to @${reviewerBot.name} for peer review`);
+          await runBotTurnInThread(thread.id, reviewerBot, reviewPrompt, 0);
+        }
+      } catch (err) {
+        if (consoleOut) consoleOut.textContent = `Peer review error: ${err.message}`;
+      }
+    }
+
+    async function createPrForActiveWorkspace() {
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      if (!bot) return;
+      const slug = bot.name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+      const title = prompt(`Pull Request title for vanara/${slug} -> main:`, `feat(${slug}): autonomous deliverables from ${bot.name}`);
+      if (!title) return;
+      const consoleOut = document.getElementById("workspaceConsoleOutput");
+      if (consoleOut) consoleOut.textContent = `$ pushing vanara/${slug} and creating Pull Request...`;
+      try {
+        const res = await fetch("/api/agent/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "create_pr",
+            botId: bot.id,
+            botName: bot.name,
+            customWorkspacePath: bot.workspacePath || "",
+            title,
+            body: `Automated Pull Request generated from ${bot.name}'s isolated Vanaras worktree.`
+          })
+        });
+        const data = await res.json();
+        if (consoleOut) {
+          consoleOut.textContent = `$ git push & gh pr create (${data.branch})\n${data.output || ""}`;
+        }
+        showToast(`PR action completed for ${data.branch}`);
+      } catch (err) {
+        if (consoleOut) consoleOut.textContent = `PR error: ${err.message}`;
+      }
+    }
+
     function toggleDeliverableDrawer(forceOpen) {
       const drawer = document.getElementById("deliverableDrawer");
       const open = typeof forceOpen === "boolean" ? forceOpen : drawer.classList.contains("hidden");
@@ -4043,7 +4396,7 @@
       const urlInput = document.getElementById("vncMountUrlInput");
       const vncFrame = document.getElementById("deliverableVncFrame");
       if (!urlInput || !vncFrame) return;
-      const url = urlInput.value.trim() || "http://localhost:3000";
+      const url = urlInput.value.trim() || "http://localhost:4101";
       vncFrame.src = url;
       showToast(`Mounted VNC/Web Sandbox: ${url}`);
     }
@@ -4220,6 +4573,33 @@
             renderThreadList();
             if (activeThreadId === targetThread.id) renderActiveThread();
             showToast(`Finished: ${data.command}`);
+          }
+        });
+
+        // Capability #2: Stream persistent Dev Server logs into the workspace console
+        es.addEventListener("agent_server_log", ev => {
+          const data = JSON.parse(ev.data);
+          if (data.botId === activeWorkspaceBotId && data.chunk) {
+            const consoleOut = document.getElementById("workspaceConsoleOutput");
+            if (consoleOut) {
+              consoleOut.textContent = (consoleOut.textContent + "\n" + data.chunk).slice(-3500);
+              consoleOut.scrollTop = consoleOut.scrollHeight;
+            }
+          }
+        });
+
+        // Capability #5: File-Watcher & Scheduled Heartbeat events
+        es.addEventListener("agent_heartbeat", ev => {
+          const data = JSON.parse(ev.data);
+          const consoleOut = document.getElementById("workspaceConsoleOutput");
+          if (consoleOut && data.botId === activeWorkspaceBotId) {
+            consoleOut.textContent = `[${data.trigger === "fs_watch" ? "File Changed" : "Heartbeat"} • ${data.botName}]\n${data.fileName ? "Modified: " + data.fileName : "Scheduled check OK"}`;
+          }
+          if (data.trigger === "fs_watch" && data.fileName) {
+            showToast(`Watcher (${data.botName}): ${data.fileName} changed`);
+            if (data.botId === activeWorkspaceBotId) {
+              loadAgentCodeWorkspaceFromServer(data.botId);
+            }
           }
         });
       } catch {}

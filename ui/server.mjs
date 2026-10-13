@@ -18,8 +18,19 @@ fs.mkdirSync(WORKTREES_DIR, { recursive: true });
 // Connected real-time multiplayer clients (SSE)
 const sseClients = new Set();
 
-// Background tasks registry
+// Background tasks, per-agent dev servers, file watchers & heartbeat timers
 const backgroundJobs = new Map();
+const agentDevServers = new Map();
+const agentWatchers = new Map();
+const agentHeartbeats = new Map();
+
+function getAgentAssignedPort(botId = "bot_r1") {
+  const known = { bot_r1: 4101, bot_r2: 4102, bot_r3: 4103, bot_r4: 4104, bot_waffle: 4105, bot_new: 4106 };
+  if (known[botId]) return known[botId];
+  let hash = 0;
+  for (let i = 0; i < botId.length; i++) hash = (hash * 31 + botId.charCodeAt(i)) % 800;
+  return 4110 + hash;
+}
 
 function broadcastEvent(eventType, payload) {
   const frame = `event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`;
@@ -555,6 +566,155 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
+      if (action === "start_server") {
+        const existing = agentDevServers.get(botId);
+        if (existing && existing.proc && !existing.proc.killed) {
+          try { existing.proc.kill("SIGTERM"); } catch {}
+        }
+        const port = getAgentAssignedPort(botId);
+        let serveCmd = command;
+        if (!serveCmd) {
+          if (fileName && (fileName.endsWith(".js") || fileName.endsWith(".mjs"))) {
+            serveCmd = `PORT=${port} node "${fileName}"`;
+          } else if (fileName && fileName.endsWith(".py") && fs.existsSync(path.join(wt.codeDir, fileName))) {
+            const src = fs.readFileSync(path.join(wt.codeDir, fileName), "utf8");
+            if (/http\.server|Flask|FastAPI|uvicorn|socketserver/i.test(src)) {
+              serveCmd = `PORT=${port} python3 "${fileName}"`;
+            } else {
+              serveCmd = `python3 -m http.server ${port}`;
+            }
+          } else {
+            serveCmd = `python3 -m http.server ${port}`;
+          }
+        }
+
+        const proc = spawn("sh", ["-c", serveCmd], {
+          cwd: wt.codeDir,
+          env: { ...process.env, PORT: String(port) },
+          stdio: ["ignore", "pipe", "pipe"]
+        });
+
+        const serverRecord = {
+          botId,
+          botName,
+          port,
+          url: `http://localhost:${port}`,
+          command: serveCmd,
+          cwd: wt.codeDir,
+          startedAt: Date.now(),
+          logs: [`[Vanara Dev Server] Started '${serveCmd}' on http://localhost:${port} in ${wt.codeDir}`],
+          proc
+        };
+        agentDevServers.set(botId, serverRecord);
+
+        const onChunk = chunk => {
+          const line = chunk.toString("utf8").trim();
+          if (!line) return;
+          serverRecord.logs.push(line);
+          if (serverRecord.logs.length > 80) serverRecord.logs.shift();
+          broadcastEvent("agent_server_log", {
+            botId,
+            botName,
+            port,
+            url: serverRecord.url,
+            line,
+            logs: serverRecord.logs.join("\n")
+          });
+        };
+        proc.stdout.on("data", onChunk);
+        proc.stderr.on("data", onChunk);
+        proc.on("exit", code => {
+          serverRecord.logs.push(`[Server exited with code ${code ?? 0}]`);
+          broadcastEvent("agent_server_log", {
+            botId,
+            botName,
+            port,
+            url: serverRecord.url,
+            stopped: true,
+            logs: serverRecord.logs.join("\n")
+          });
+        });
+
+        return sendJson(res, 200, {
+          ok: true,
+          running: true,
+          botId,
+          botName,
+          port,
+          url: serverRecord.url,
+          command: serveCmd,
+          logs: serverRecord.logs.join("\n")
+        });
+      }
+
+      if (action === "stop_server") {
+        const existing = agentDevServers.get(botId);
+        if (existing && existing.proc && !existing.proc.killed) {
+          try { existing.proc.kill("SIGTERM"); } catch {}
+        }
+        agentDevServers.delete(botId);
+        return sendJson(res, 200, { ok: true, running: false, botId });
+      }
+
+      if (action === "server_status") {
+        const existing = agentDevServers.get(botId);
+        const running = Boolean(existing && existing.proc && !existing.proc.killed && existing.proc.exitCode === null);
+        return sendJson(res, 200, {
+          ok: true,
+          running,
+          port: existing?.port || getAgentAssignedPort(botId),
+          url: existing?.url || `http://localhost:${getAgentAssignedPort(botId)}`,
+          command: existing?.command || "",
+          logs: existing ? existing.logs.join("\n") : ""
+        });
+      }
+
+      if (action === "peer_review_diff") {
+        let diffText = "";
+        let statusText = "";
+        try {
+          statusText = execSync("git status --short", { cwd: wt.worktreePath, stdio: "pipe", timeout: 4000 }).toString("utf8").trim();
+          diffText = execSync("git diff main...HEAD || git diff HEAD~1 || true", { cwd: wt.worktreePath, stdio: "pipe", timeout: 5000 }).toString("utf8").trim();
+        } catch {}
+        const files = listAgentCodeFiles(wt.codeDir);
+        return sendJson(res, 200, {
+          ok: true,
+          botId,
+          botName,
+          branch: wt.branch,
+          status: statusText || "(clean)",
+          diff: diffText.slice(0, 3500) || "(all changes committed on branch)",
+          files
+        });
+      }
+
+      if (action === "create_pr") {
+        const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+        const prTitle = (command || `feat(${slug}): ${wt.botName} autonomous workspace changes`).replace(/"/g, "'");
+        let output = "";
+        try {
+          execSync(`git add -A && (git commit -m "${prTitle}" || true)`, { cwd: wt.worktreePath, stdio: "pipe", timeout: 5000 });
+          const pushOut = execSync(`git push -u origin "${wt.branch}" 2>&1 || true`, { cwd: wt.worktreePath, stdio: "pipe", timeout: 10000 }).toString("utf8").trim();
+          let prOut = "";
+          try {
+            prOut = execSync(
+              `gh pr create --title "${prTitle}" --body "Automated PR from Vanara agent **${wt.botName}** on isolated worktree branch \`${wt.branch}\`." --head "${wt.branch}" --base main 2>&1`,
+              { cwd: wt.worktreePath, stdio: "pipe", timeout: 10000 }
+            ).toString("utf8").trim();
+          } catch (ghErr) {
+            prOut = (ghErr.stdout ? ghErr.stdout.toString("utf8") : "") + "\n" + (ghErr.stderr ? ghErr.stderr.toString("utf8") : "");
+          }
+          output = [pushOut, prOut.trim()].filter(Boolean).join("\n\n");
+        } catch (err) {
+          output = err.message;
+        }
+        return sendJson(res, 200, {
+          ok: true,
+          branch: wt.branch,
+          output: output || `Branch ${wt.branch} ready for PR.`
+        });
+      }
+
       if (action === "run_file") {
         let runCmd = command;
         if (!runCmd && fileName) {
@@ -590,8 +750,12 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
+      const srv = agentDevServers.get(botId);
       return sendJson(res, 200, {
         ...wt,
+        serverRunning: Boolean(srv && srv.proc && !srv.proc.killed && srv.proc.exitCode === null),
+        serverPort: srv?.port || getAgentAssignedPort(botId),
+        serverUrl: srv?.url || `http://localhost:${getAgentAssignedPort(botId)}`,
         files: listAgentCodeFiles(wt.codeDir)
       });
     } catch (e) {
@@ -746,7 +910,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 2E. Grok-Bot ("sand") Local-Exec-Daemon Lifecycle Hooks & PreCompact Engine (/api/agent/hooks)
+  // 2E. Vanaras Local-Exec-Daemon Lifecycle Hooks & PreCompact Engine (/api/agent/hooks)
   if (req.method === "POST" && req.url === "/api/agent/hooks") {
     try {
       const {
@@ -769,7 +933,7 @@ const server = http.createServer(async (req, res) => {
       if (hook === "BeforeSubmitPromptRequest") {
         const files = listAgentCodeFiles(wt.codeDir).map(f => f.name);
         const enrichedBlock = [
-          `[SandBox Manifest: branch=${wt.branch}, codeDir=${wt.codeDir}, files=${files.join(", ") || "none"}]`,
+          `[Vanara Sandbox Manifest: branch=${wt.branch}, codeDir=${wt.codeDir}, files=${files.join(", ") || "none"}]`,
           mcpCustomInstructions ? `[MCP Custom Instructions: ${mcpCustomInstructions}]` : ""
         ].filter(Boolean).join("\n");
         broadcastEvent("agent_hook", { hook, botId, botName, branch: wt.branch, timestamp });
@@ -845,7 +1009,7 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // 5. SubagentStart / SubagentStop / NotifySandAgentTurnFinished
+      // 5. SubagentStart / SubagentStop / NotifyAgentTurnFinished
       broadcastEvent("agent_hook", { hook, botId, botName, branch: wt.branch, timestamp });
       return sendJson(res, 200, { ok: true, hook, botId, branch: wt.branch, timestamp });
     } catch (e) {
@@ -853,7 +1017,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 2F. Grok-Bot ("sand") AgentStoreService & SandBox Manifest Store (/api/agent/store)
+  // 2F. Vanaras AgentStoreService & Sandbox Manifest Store (/api/agent/store)
   if (req.method === "POST" && req.url === "/api/agent/store") {
     try {
       const {
@@ -893,7 +1057,7 @@ const server = http.createServer(async (req, res) => {
           updatedAt: f.updatedAt
         }));
         const manifest = {
-          sandboxId: `sand-${sanitizeSlug(botId)}`,
+          sandboxId: `vanara-box-${sanitizeSlug(botId)}`,
           botId,
           botName,
           branch: wt.branch,
@@ -914,6 +1078,183 @@ const server = http.createServer(async (req, res) => {
       }
 
       return sendJson(res, 200, { ok: true, action, locks });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // 2G. Vanaras File-Watcher & Scheduled Heartbeat Daemon (/api/agent/watcher)
+  if (req.method === "POST" && req.url === "/api/agent/watcher") {
+    try {
+      const {
+        action = "status",
+        botId = "bot_r1",
+        botName = "R1",
+        threadId = "thread_r1",
+        intervalSec = 0
+      } = await readJsonBody(req);
+
+      const wt = ensureAgentWorktree(botId, botName);
+
+      if (action === "start_watch") {
+        if (agentWatchers.has(botId)) {
+          try { agentWatchers.get(botId).close(); } catch {}
+          agentWatchers.delete(botId);
+        }
+        let debounceTimer = null;
+        const watcher = fs.watch(wt.codeDir, { recursive: true }, (eventType, filename) => {
+          if (!filename || filename.startsWith(".")) return;
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            broadcastEvent("agent_heartbeat", {
+              type: "file_change",
+              botId,
+              botName,
+              threadId,
+              branch: wt.branch,
+              filename,
+              eventType,
+              timestamp: new Date().toISOString()
+            });
+          }, 900);
+        });
+        agentWatchers.set(botId, watcher);
+
+        if (agentHeartbeats.has(botId)) {
+          clearInterval(agentHeartbeats.get(botId));
+          agentHeartbeats.delete(botId);
+        }
+        if (Number(intervalSec) >= 15) {
+          const timer = setInterval(() => {
+            broadcastEvent("agent_heartbeat", {
+              type: "scheduled_heartbeat",
+              botId,
+              botName,
+              threadId,
+              branch: wt.branch,
+              intervalSec: Number(intervalSec),
+              timestamp: new Date().toISOString()
+            });
+          }, Number(intervalSec) * 1000);
+          agentHeartbeats.set(botId, timer);
+        }
+
+        return sendJson(res, 200, {
+          ok: true,
+          watching: true,
+          botId,
+          codeDir: wt.codeDir,
+          heartbeatSec: Number(intervalSec) || 0
+        });
+      }
+
+      if (action === "stop_watch") {
+        if (agentWatchers.has(botId)) {
+          try { agentWatchers.get(botId).close(); } catch {}
+          agentWatchers.delete(botId);
+        }
+        if (agentHeartbeats.has(botId)) {
+          clearInterval(agentHeartbeats.get(botId));
+          agentHeartbeats.delete(botId);
+        }
+        return sendJson(res, 200, { ok: true, watching: false, botId });
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        watching: agentWatchers.has(botId),
+        heartbeatActive: agentHeartbeats.has(botId),
+        botId
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // 2H. Vanaras Sandbox Lifecycle & Headless Web Verification (/api/agent/sandbox)
+  if (req.method === "POST" && req.url === "/api/agent/sandbox") {
+    try {
+      const {
+        action = "EnsureSandBox",
+        botId = "bot_r1",
+        botName = "R1",
+        url = ""
+      } = await readJsonBody(req);
+
+      const wt = ensureAgentWorktree(botId, botName);
+
+      if (action === "EnsureSandBox") {
+        return sendJson(res, 200, {
+          ok: true,
+          action,
+          sandboxId: `vanara-box-${sanitizeSlug(botId)}`,
+          status: "ACTIVE",
+          branch: wt.branch,
+          codeDir: wt.codeDir,
+          assignedPort: getAgentAssignedPort(botId),
+          files: listAgentCodeFiles(wt.codeDir)
+        });
+      }
+
+      if (action === "HibernateSandBox") {
+        const srv = agentDevServers.get(botId);
+        if (srv && srv.proc && !srv.proc.killed) {
+          try { srv.proc.kill("SIGTERM"); } catch {}
+        }
+        agentDevServers.delete(botId);
+        if (agentWatchers.has(botId)) {
+          try { agentWatchers.get(botId).close(); } catch {}
+          agentWatchers.delete(botId);
+        }
+        return sendJson(res, 200, {
+          ok: true,
+          action,
+          sandboxId: `vanara-box-${sanitizeSlug(botId)}`,
+          status: "HIBERNATED",
+          branch: wt.branch
+        });
+      }
+
+      if (action === "RecreateSandBox") {
+        const srv = agentDevServers.get(botId);
+        if (srv && srv.proc && !srv.proc.killed) {
+          try { srv.proc.kill("SIGTERM"); } catch {}
+        }
+        agentDevServers.delete(botId);
+        fs.rmSync(wt.codeDir, { recursive: true, force: true });
+        const freshWt = ensureAgentWorktree(botId, botName);
+        return sendJson(res, 200, {
+          ok: true,
+          action,
+          sandboxId: `vanara-box-${sanitizeSlug(botId)}`,
+          status: "RECREATED",
+          branch: freshWt.branch,
+          codeDir: freshWt.codeDir,
+          files: listAgentCodeFiles(freshWt.codeDir)
+        });
+      }
+
+      if (action === "VerifyWebUrl") {
+        const targetUrl = url || `http://localhost:${getAgentAssignedPort(botId)}`;
+        const upstream = await fetch(targetUrl);
+        const html = await upstream.text();
+        const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const scriptCount = (html.match(/<script\b/gi) || []).length;
+        const buttonCount = (html.match(/<button\b/gi) || []).length;
+        return sendJson(res, 200, {
+          ok: upstream.ok,
+          action,
+          url: targetUrl,
+          status: upstream.status,
+          title: titleMatch ? titleMatch[1].trim() : "(no <title>)",
+          bytes: html.length,
+          scriptCount,
+          buttonCount,
+          snippet: html.replace(/\s+/g, " ").slice(0, 360)
+        });
+      }
+
+      return sendJson(res, 400, { error: `Unknown sandbox action: ${action}` });
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
     }
@@ -995,7 +1336,79 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 6. Universal Multi-Provider LLM Chat Proxy (Local, OpenRouter, Gemini, OpenAI, Claude, Qwen, Grok)
+  // 6A. Real-Time Token & Thought Streaming Proxy (POST /api/llm/stream)
+  if (req.method === "POST" && req.url === "/api/llm/stream") {
+    try {
+      const {
+        provider = "local",
+        baseUrl = "http://192.168.68.102:1234/v1",
+        apiKey = "",
+        model = "",
+        messages = [],
+        temperature = 0.7,
+        max_tokens = 2500
+      } = await readJsonBody(req);
+
+      const cleanBase = baseUrl.replace(/\/+$/, "");
+      const chatUrl = cleanBase.endsWith("/chat/completions") ? cleanBase : `${cleanBase}/chat/completions`;
+      const headers = { "Content-Type": "application/json" };
+      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+      const upstream = await fetch(chatUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, messages, temperature, max_tokens, stream: true })
+      });
+
+      if (!upstream.ok || !upstream.body) {
+        const errText = await upstream.text().catch(() => "");
+        return sendJson(res, upstream.status || 502, { error: `Stream HTTP ${upstream.status}: ${errText}` });
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive"
+      });
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for await (const chunk of upstream.body) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line.startsWith("data:")) continue;
+          const dataStr = line.slice(5).trim();
+          if (dataStr === "[DONE]") {
+            res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+            continue;
+          }
+          try {
+            const parsed = JSON.parse(dataStr);
+            const delta = parsed.choices?.[0]?.delta || {};
+            const token = delta.content || "";
+            const reasoning = delta.reasoning_content || delta.reasoning || "";
+            if (token || reasoning) {
+              res.write(`data: ${JSON.stringify({ token, reasoning })}\n\n`);
+            }
+          } catch {}
+        }
+      }
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+    } catch (e) {
+      if (!res.headersSent) {
+        sendJson(res, 502, { error: e.message });
+      } else {
+        res.end();
+      }
+    }
+    return;
+  }
+
+  // 6B. Universal Multi-Provider LLM Chat Proxy (Local, OpenRouter, Gemini, OpenAI, Claude, Qwen)
   if (req.method === "POST" && req.url === "/api/llm/chat") {
     try {
       const {
@@ -1097,7 +1510,7 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // OpenAI-Compatible (Local LM Studio, Ollama, OpenRouter, OpenAI, Qwen, xAI Grok)
+      // OpenAI-Compatible (Local LM Studio, Ollama, OpenRouter, OpenAI, Qwen)
       const chatUrl = cleanBase.endsWith("/chat/completions")
         ? cleanBase
         : `${cleanBase}/chat/completions`;

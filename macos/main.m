@@ -48,17 +48,20 @@
 
 - (void)loadAppWithRetry:(NSInteger)attempts {
     NSURL *url = [NSURL URLWithString:@"http://localhost:3000"];
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    NSURLRequest *req = [NSURLRequest requestWithURL:url
+                                         cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+                                     timeoutInterval:10.0];
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
             if (httpResp && httpResp.statusCode == 200) {
-                [self.webView loadRequest:[NSURLRequest requestWithURL:url]];
+                [self.webView loadRequest:req];
             } else if (attempts > 1) {
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     [self loadAppWithRetry:attempts - 1];
                 });
             } else {
-                [self.webView loadRequest:[NSURLRequest requestWithURL:url]];
+                [self.webView loadRequest:req];
             }
         });
     }];
@@ -72,6 +75,17 @@
     [alert addButtonWithTitle:@"OK"];
     [alert beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse returnCode) {
         completionHandler();
+    }];
+}
+
+- (void)webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL))completionHandler {
+    NSAlert *alert = [[NSAlert alloc] init];
+    [alert setMessageText:@"Vanaras"];
+    [alert setInformativeText:message];
+    [alert addButtonWithTitle:@"OK"];
+    [alert addButtonWithTitle:@"Cancel"];
+    [alert beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse returnCode) {
+        completionHandler(returnCode == NSAlertFirstButtonReturn);
     }];
 }
 

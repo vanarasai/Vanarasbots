@@ -916,7 +916,7 @@
     function extractExecutableCommands(text) {
       if (!text) return [];
       const cmds = [];
-      const rx = /`((?:cargo|git|python3?|node|npm|ls|cat|sh|./)[^`\n]{2,80})`/g;
+      const rx = /`((?:cargo|git|python3?|node|npm|ls|cat|sh|\.\/)[^`\n]{2,80})`/g;
       let m;
       while ((m = rx.exec(text)) !== null) {
         cmds.push(m[1].trim());

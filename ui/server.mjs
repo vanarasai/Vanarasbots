@@ -1,7 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { exec, execSync, spawn } from "node:child_process";
+import { exec, execFileSync, execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -49,6 +49,38 @@ function sanitizeSlug(str, fallback = "agent") {
     .replace(/[^a-z0-9_-]/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "") || fallback;
+}
+
+function isPathInside(childPath, parentDir) {
+  const resolvedChild = path.resolve(childPath);
+  const resolvedParent = path.resolve(parentDir);
+  const rel = path.relative(resolvedParent, resolvedChild);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function safeGitCommit(cwd, message, timeout = 5000) {
+  try {
+    execFileSync("git", ["add", "-A"], { cwd, stdio: "pipe", timeout });
+    return execFileSync("git", ["commit", "-m", String(message || "checkpoint")], {
+      cwd,
+      stdio: "pipe",
+      timeout
+    }).toString("utf8").trim();
+  } catch (e) {
+    return (e.stdout ? e.stdout.toString("utf8") : "").trim();
+  }
+}
+
+function getHeadSha(cwd) {
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd,
+      stdio: "pipe",
+      timeout: 3000
+    }).toString("utf8").trim();
+  } catch {
+    return "HEAD";
+  }
 }
 
 // ============================================================================
@@ -165,7 +197,7 @@ function ensureAgentWorktree(botId, botName, customWorkspacePath = "") {
   try {
     if (!fs.existsSync(path.join(worktreePath, ".git"))) {
       fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
-      execSync(`git worktree add -B "${branchName}" "${worktreePath}" HEAD`, {
+      execFileSync("git", ["worktree", "add", "-B", branchName, worktreePath, "HEAD"], {
         cwd: ROOT_DIR,
         stdio: "pipe",
         timeout: 10000
@@ -435,7 +467,14 @@ function inspectMountedDirectory(targetPath) {
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let body = "";
-    req.on("data", chunk => { body += chunk; });
+    const MAX_BYTES = 15 * 1024 * 1024;
+    req.on("data", chunk => {
+      body += chunk;
+      if (body.length > MAX_BYTES) {
+        req.destroy();
+        reject(new Error("Request payload exceeds 15MB limit"));
+      }
+    });
     req.on("end", () => {
       try {
         resolve(body ? JSON.parse(body) : {});
@@ -526,10 +565,10 @@ const server = http.createServer(async (req, res) => {
           const cleanRel = String(p.name).replace(/^\/+/, "").replace(/\.\./g, "");
           const destInCodeDir = path.resolve(wt.codeDir, cleanRel);
           const destInWorktree = path.resolve(wt.worktreePath, cleanRel);
-          const targetDest = (!fs.existsSync(destInCodeDir) && fs.existsSync(destInWorktree) && destInWorktree.startsWith(wt.worktreePath))
+          const targetDest = (!fs.existsSync(destInCodeDir) && fs.existsSync(destInWorktree) && isPathInside(destInWorktree, wt.worktreePath))
             ? destInWorktree
             : destInCodeDir;
-          if (!targetDest.startsWith(wt.worktreePath)) continue;
+          if (!isPathInside(targetDest, wt.worktreePath) && !isPathInside(targetDest, wt.codeDir)) continue;
 
           fs.mkdirSync(path.dirname(targetDest), { recursive: true });
           const currentContent = fs.existsSync(targetDest) ? fs.readFileSync(targetDest, "utf8") : "";
@@ -560,15 +599,7 @@ const server = http.createServer(async (req, res) => {
         if (modifiedFiles.length > 0) {
           const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
           const autoMsg = `fix(${slug}): apply surgical patch to ${modifiedFiles.join(", ")}`;
-          try {
-            autoCommitOut = execSync(`git add -A && git commit -m "${autoMsg.replace(/"/g, "'")}"`, {
-              cwd: wt.worktreePath,
-              stdio: "pipe",
-              timeout: 5000
-            }).toString("utf8").trim();
-          } catch (e) {
-            autoCommitOut = (e.stdout ? e.stdout.toString("utf8") : "").trim();
-          }
+          autoCommitOut = safeGitCommit(wt.worktreePath, autoMsg, 5000);
         }
         const updatedWt = ensureAgentWorktree(botId, botName, customWorkspacePath);
         return sendJson(res, 200, {
@@ -585,7 +616,7 @@ const server = http.createServer(async (req, res) => {
           if (!f || !f.name) continue;
           const cleanRel = String(f.name).replace(/^\/+/, "").replace(/\.\./g, "");
           const dest = path.resolve(wt.codeDir, cleanRel);
-          if (dest.startsWith(wt.codeDir)) {
+          if (isPathInside(dest, wt.codeDir)) {
             fs.mkdirSync(path.dirname(dest), { recursive: true });
             fs.writeFileSync(dest, String(f.content ?? ""), "utf8");
             savedNames.push(cleanRel);
@@ -596,15 +627,7 @@ const server = http.createServer(async (req, res) => {
         if (savedNames.length > 0) {
           const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
           const autoMsg = `feat(${slug}): update ${savedNames.join(", ")} in agent workspace`;
-          try {
-            autoCommitOut = execSync(`git add -A && git commit -m "${autoMsg.replace(/"/g, "'")}"`, {
-              cwd: wt.worktreePath,
-              stdio: "pipe",
-              timeout: 5000
-            }).toString("utf8").trim();
-          } catch (e) {
-            autoCommitOut = (e.stdout ? e.stdout.toString("utf8") : "").trim();
-          }
+          autoCommitOut = safeGitCommit(wt.worktreePath, autoMsg, 5000);
         }
         const updatedWt = ensureAgentWorktree(botId, botName, customWorkspacePath);
         return sendJson(res, 200, {
@@ -617,13 +640,14 @@ const server = http.createServer(async (req, res) => {
 
       if (action === "commit_workspace") {
         const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-        const commitMsg = (command || `feat(${slug}): checkpoint agent workspace`).replace(/"/g, "'");
+        const commitMsg = String(command || `feat(${slug}): checkpoint agent workspace`);
         let output = "";
         try {
-          output = execSync(`git add -A && (git commit -m "${commitMsg}" || true) && git log --oneline -n 4`, {
+          safeGitCommit(wt.worktreePath, commitMsg, 5000);
+          output = execFileSync("git", ["log", "--oneline", "-n", "4"], {
             cwd: wt.worktreePath,
             stdio: "pipe",
-            timeout: 6000
+            timeout: 5000
           }).toString("utf8").trim();
         } catch (err) {
           output = err.message;
@@ -646,28 +670,30 @@ const server = http.createServer(async (req, res) => {
           for (const cf of codeFiles) {
             const fullFile = path.join(wt.codeDir, cf.name);
             if (/\.(js|mjs)$/i.test(cf.name)) {
-              execSync(`node --check "${fullFile}"`, { cwd: wt.codeDir, stdio: "pipe", timeout: 4000 });
+              execFileSync("node", ["--check", fullFile], { cwd: wt.codeDir, stdio: "pipe", timeout: 4000 });
               verifiedFiles.push(`${cf.name} (node --check PASS)`);
             } else if (/\.py$/i.test(cf.name)) {
-              execSync(`python3 -m py_compile "${fullFile}"`, { cwd: wt.codeDir, stdio: "pipe", timeout: 4000 });
+              execFileSync("python3", ["-m", "py_compile", fullFile], { cwd: wt.codeDir, stdio: "pipe", timeout: 4000 });
               verifiedFiles.push(`${cf.name} (py_compile PASS)`);
             }
           }
 
           // 2. Ensure worktree changes are committed on the agent's branch first
-          execSync(`git add -A && (git commit -m "feat(${slug}): pre-merge checkpoint" || true)`, {
-            cwd: wt.worktreePath,
-            stdio: "pipe",
-            timeout: 5000
-          });
+          safeGitCommit(wt.worktreePath, `feat(${slug}): pre-merge checkpoint`, 5000);
+
           // 3. Copy agent_workspace/<slug> into main ROOT_DIR/agent_workspace/<slug> and commit on main
           const mainDest = path.resolve(ROOT_DIR, "agent_workspace", slug);
           fs.mkdirSync(mainDest, { recursive: true });
           fs.cpSync(wt.codeDir, mainDest, { recursive: true, force: true });
-          const commitLog = execSync(
-            `git add "agent_workspace/${slug}" && (git commit -m "feat(${slug}): merge ${wt.branch} workspace into main" || true) && git log --oneline -n 3`,
-            { cwd: ROOT_DIR, stdio: "pipe", timeout: 6000 }
-          ).toString("utf8").trim();
+          try {
+            execFileSync("git", ["add", `agent_workspace/${slug}`], { cwd: ROOT_DIR, stdio: "pipe", timeout: 4000 });
+            execFileSync("git", ["commit", "-m", `feat(${slug}): merge ${wt.branch} workspace into main`], { cwd: ROOT_DIR, stdio: "pipe", timeout: 4000 });
+          } catch {}
+          const commitLog = execFileSync("git", ["log", "--oneline", "-n", "3"], {
+            cwd: ROOT_DIR,
+            stdio: "pipe",
+            timeout: 4000
+          }).toString("utf8").trim();
           output = (verifiedFiles.length > 0 ? `[Pre-Merge Syntax Check: ${verifiedFiles.join(", ")}]\n` : "") + commitLog;
         } catch (err) {
           output = `Pre-merge verification or git merge failed: ${err.message}`;
@@ -684,7 +710,7 @@ const server = http.createServer(async (req, res) => {
       if (action === "delete_file" && fileName) {
         const cleanRel = String(fileName).replace(/^\/+/, "").replace(/\.\./g, "");
         const dest = path.resolve(wt.codeDir, cleanRel);
-        if (dest.startsWith(wt.codeDir) && fs.existsSync(dest) && fs.statSync(dest).isFile()) {
+        if (isPathInside(dest, wt.codeDir) && fs.existsSync(dest) && fs.statSync(dest).isFile()) {
           fs.unlinkSync(dest);
         }
         return sendJson(res, 200, {
@@ -829,15 +855,22 @@ const server = http.createServer(async (req, res) => {
 
       if (action === "create_pr") {
         const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-        const prTitle = (command || title || `feat(${slug}): ${wt.botName} autonomous workspace changes`).replace(/"/g, "'");
+        const prTitle = String(command || title || `feat(${slug}): ${wt.botName} autonomous workspace changes`);
+        const prBody = String(body || `Automated PR from Vanara agent **${wt.botName}** on isolated worktree branch \`${wt.branch}\`.`);
         let output = "";
         try {
-          execSync(`git add -A && (git commit -m "${prTitle}" || true)`, { cwd: wt.worktreePath, stdio: "pipe", timeout: 5000 });
-          const pushOut = execSync(`git push -u origin "${wt.branch}" 2>&1 || true`, { cwd: wt.worktreePath, stdio: "pipe", timeout: 10000 }).toString("utf8").trim();
+          safeGitCommit(wt.worktreePath, prTitle, 5000);
+          let pushOut = "";
+          try {
+            pushOut = execFileSync("git", ["push", "-u", "origin", wt.branch], { cwd: wt.worktreePath, stdio: "pipe", timeout: 10000 }).toString("utf8").trim();
+          } catch (pushErr) {
+            pushOut = ((pushErr.stdout ? pushErr.stdout.toString("utf8") : "") + "\n" + (pushErr.stderr ? pushErr.stderr.toString("utf8") : "")).trim();
+          }
           let prOut = "";
           try {
-            prOut = execSync(
-              `gh pr create --title "${prTitle}" --body "Automated PR from Vanara agent **${wt.botName}** on isolated worktree branch \`${wt.branch}\`." --head "${wt.branch}" --base main 2>&1`,
+            prOut = execFileSync(
+              "gh",
+              ["pr", "create", "--title", prTitle, "--body", prBody, "--head", wt.branch, "--base", "main"],
               { cwd: wt.worktreePath, stdio: "pipe", timeout: 10000 }
             ).toString("utf8").trim();
           } catch (ghErr) {
@@ -856,13 +889,14 @@ const server = http.createServer(async (req, res) => {
 
       if (action === "run_file") {
         let runCmd = command;
-        if (!runCmd && fileName) {
-          const ext = path.extname(fileName).toLowerCase();
-          if (ext === ".py") runCmd = `python3 "${fileName}"`;
-          else if (ext === ".js" || ext === ".mjs") runCmd = `node "${fileName}"`;
-          else if (ext === ".sh") runCmd = `sh "${fileName}"`;
-          else if (ext === ".rs") runCmd = `rustc "${fileName}" -o /tmp/vanara_bin && /tmp/vanara_bin`;
-          else runCmd = `cat "${fileName}"`;
+        const cleanFile = String(fileName || "").replace(/\.\./g, "").replace(/^\/+/, "");
+        if (!runCmd && cleanFile) {
+          const ext = path.extname(cleanFile).toLowerCase();
+          if (ext === ".py") runCmd = `python3 "${cleanFile}"`;
+          else if (ext === ".js" || ext === ".mjs") runCmd = `node "${cleanFile}"`;
+          else if (ext === ".sh") runCmd = `sh "${cleanFile}"`;
+          else if (ext === ".rs") runCmd = `rustc "${cleanFile}" -o /tmp/vanara_bin && /tmp/vanara_bin`;
+          else runCmd = `cat "${cleanFile}"`;
         }
         if (!runCmd) runCmd = "ls -la";
 
@@ -911,7 +945,7 @@ const server = http.createServer(async (req, res) => {
       if (action === "write_file" && filePath) {
         const cleanRel = filePath.replace(/^\/+/, "").replace(/\.\./g, "");
         const absTarget = path.resolve(wt.codeDir, cleanRel);
-        if (absTarget.startsWith(wt.codeDir)) {
+        if (isPathInside(absTarget, wt.codeDir)) {
           fs.mkdirSync(path.dirname(absTarget), { recursive: true });
           fs.writeFileSync(absTarget, content || "", "utf8");
         }
@@ -919,10 +953,8 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (action === "commit") {
-        const msg = (commitMessage || message || `feat(${wt.botName}): autonomous worktree update`).replace(/"/g, "'");
-        try {
-          execSync(`git add -A && git commit -m "${msg}"`, { cwd: wt.worktreePath, stdio: "pipe" });
-        } catch {}
+        const msg = String(commitMessage || message || `feat(${wt.botName}): autonomous worktree update`);
+        safeGitCommit(wt.worktreePath, msg, 5000);
         return sendJson(res, 200, ensureAgentWorktree(botId, botName, customWorkspacePath));
       }
 
@@ -987,11 +1019,16 @@ const server = http.createServer(async (req, res) => {
 
       if (toolName === "fs_read") {
         const rel = String(filePath || args.path || "README.md").replace(/^\/+/, "").replace(/\.\./g, "");
-        const target = path.resolve(wt.codeDir, rel);
-        if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
-          return sendJson(res, 200, { ok: false, output: `File not found in ${wt.branch}: ${rel}` });
+        const candidates = [
+          { path: path.resolve(wt.codeDir, rel), root: wt.codeDir },
+          { path: path.resolve(wt.worktreePath, rel), root: wt.worktreePath },
+          { path: path.resolve(ROOT_DIR, rel), root: ROOT_DIR }
+        ];
+        const found = candidates.find(c => isPathInside(c.path, c.root) && fs.existsSync(c.path) && fs.statSync(c.path).isFile());
+        if (!found) {
+          return sendJson(res, 200, { ok: false, error: `File not found in ${wt.branch} or mounted repository: ${rel}` });
         }
-        const text = fs.readFileSync(target, "utf8").slice(0, 3000);
+        const text = fs.readFileSync(found.path, "utf8").slice(0, 4000);
         return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, codeDir: wt.codeDir, branch: wt.branch, output: text });
       }
 
@@ -999,17 +1036,11 @@ const server = http.createServer(async (req, res) => {
         const rel = String(filePath || args.path || "notes.md").replace(/^\/+/, "").replace(/\.\./g, "");
         const bodyContent = String(content ?? args.content ?? "");
         const target = path.resolve(wt.codeDir, rel);
-        if (target.startsWith(wt.codeDir)) {
+        if (isPathInside(target, wt.codeDir)) {
           fs.mkdirSync(path.dirname(target), { recursive: true });
           fs.writeFileSync(target, bodyContent, "utf8");
           const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-          try {
-            execSync(`git add -A && git commit -m "feat(${slug}): write ${rel} in agent workspace"`, {
-              cwd: wt.worktreePath,
-              stdio: "pipe",
-              timeout: 5000
-            });
-          } catch {}
+          safeGitCommit(wt.worktreePath, `feat(${slug}): write ${rel} in agent workspace`, 5000);
           return sendJson(res, 200, {
             ok: true,
             bytesWritten: bodyContent.length,
@@ -1023,10 +1054,11 @@ const server = http.createServer(async (req, res) => {
 
       if (toolName === "git_commit") {
         const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-        const msg = String(content || filePath || args.message || `feat(${slug}): autonomous agent commit`).replace(/"/g, "'");
+        const msg = String(content || filePath || args.message || `feat(${slug}): autonomous agent commit`);
         let out = "";
         try {
-          out = execSync(`git add -A && (git commit -m "${msg}" || true) && git log --oneline -n 3`, {
+          safeGitCommit(wt.worktreePath, msg, 5000);
+          out = execFileSync("git", ["log", "--oneline", "-n", "3"], {
             cwd: wt.worktreePath,
             stdio: "pipe",
             timeout: 5000
@@ -1333,12 +1365,14 @@ const server = http.createServer(async (req, res) => {
       const wt = ensureAgentWorktree(botId, botName);
 
       if (action === "EnsureSandBox") {
+        const snapshotRef = getHeadSha(wt.worktreePath);
         return sendJson(res, 200, {
           ok: true,
           action,
           sandboxId: `vanara-box-${sanitizeSlug(botId)}`,
           status: "ACTIVE",
           state: "ACTIVE",
+          snapshotRef,
           branch: wt.branch,
           codeDir: wt.codeDir,
           assignedPort: getAgentAssignedPort(botId),
@@ -1356,12 +1390,14 @@ const server = http.createServer(async (req, res) => {
           try { agentWatchers.get(botId).close(); } catch {}
           agentWatchers.delete(botId);
         }
+        const snapshotRef = getHeadSha(wt.worktreePath);
         return sendJson(res, 200, {
           ok: true,
           action,
           sandboxId: `vanara-box-${sanitizeSlug(botId)}`,
           status: "HIBERNATED",
           state: "HIBERNATED",
+          snapshotRef,
           branch: wt.branch
         });
       }
@@ -1374,12 +1410,14 @@ const server = http.createServer(async (req, res) => {
         agentDevServers.delete(botId);
         fs.rmSync(wt.codeDir, { recursive: true, force: true });
         const freshWt = ensureAgentWorktree(botId, botName);
+        const snapshotRef = getHeadSha(freshWt.worktreePath);
         return sendJson(res, 200, {
           ok: true,
           action,
           sandboxId: `vanara-box-${sanitizeSlug(botId)}`,
           status: "RECREATED",
           state: "RECREATED",
+          snapshotRef,
           branch: freshWt.branch,
           codeDir: freshWt.codeDir,
           files: listAgentCodeFiles(freshWt.codeDir)
@@ -1498,6 +1536,38 @@ const server = http.createServer(async (req, res) => {
     return `${trimmed}/v1`;
   }
 
+  async function fetchWithLocalFallback(cleanBase, pathSuffix, init = {}, connectTimeoutMs = 3500) {
+    const candidates = [
+      cleanBase,
+      "http://192.168.68.102:1234/v1",
+      "http://127.0.0.1:1234/v1",
+      "http://localhost:1234/v1",
+      "http://127.0.0.1:11434/v1"
+    ];
+    const seen = new Set();
+    let lastError = null;
+    for (const base of candidates) {
+      const norm = normalizeOpenAIBaseUrl(base);
+      if (seen.has(norm)) continue;
+      seen.add(norm);
+      const targetUrl = norm.endsWith(pathSuffix) ? norm : `${norm}${pathSuffix}`;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), connectTimeoutMs);
+      try {
+        const res = await fetch(targetUrl, { ...init, signal: ctrl.signal });
+        clearTimeout(timer);
+        if (res.ok) return res;
+        lastError = new Error(`HTTP ${res.status} from ${targetUrl}`);
+        // If this was the primary requested base and it responded with an HTTP error (e.g. 400), return it if no fallback works
+        if (norm === cleanBase && candidates.length === 1) return res;
+      } catch (err) {
+        clearTimeout(timer);
+        lastError = err;
+      }
+    }
+    throw lastError || new Error("All local LLM endpoints unreachable");
+  }
+
   // 6A. Real-Time Token & Thought Streaming Proxy (POST /api/llm/stream)
   if (req.method === "POST" && req.url === "/api/llm/stream") {
     try {
@@ -1516,11 +1586,14 @@ const server = http.createServer(async (req, res) => {
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-      const upstream = await fetch(chatUrl, {
+      const reqInit = {
         method: "POST",
         headers,
         body: JSON.stringify({ model, messages, temperature, max_tokens, stream: true })
-      });
+      };
+      const upstream = provider === "local"
+        ? await fetchWithLocalFallback(cleanBase, "/chat/completions", reqInit, 8000)
+        : await fetch(chatUrl, reqInit);
 
       if (!upstream.ok || !upstream.body) {
         const errText = await upstream.text().catch(() => "");
@@ -1687,11 +1760,14 @@ const server = http.createServer(async (req, res) => {
       const payload = { messages, temperature, max_tokens };
       if (model) payload.model = model;
 
-      const upstream = await fetch(chatUrl, {
+      const reqInit = {
         method: "POST",
         headers,
         body: JSON.stringify(payload)
-      });
+      };
+      const upstream = provider === "local"
+        ? await fetchWithLocalFallback(cleanBase, "/chat/completions", reqInit, 25000)
+        : await fetch(chatUrl, reqInit);
 
       const raw = await upstream.text();
       if (!upstream.ok) {
@@ -1730,7 +1806,9 @@ const server = http.createServer(async (req, res) => {
       const headers = {};
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-      const upstream = await fetch(modelsUrl, { method: "GET", headers });
+      const upstream = provider === "local"
+        ? await fetchWithLocalFallback(cleanBase, "/models", { method: "GET", headers }, 2500)
+        : await fetch(modelsUrl, { method: "GET", headers });
       if (!upstream.ok) return sendJson(res, upstream.status, { error: `Models HTTP ${upstream.status}` });
       const data = await upstream.json();
       const models = (data.data || []).map(m => m.id).filter(Boolean);
@@ -1757,7 +1835,7 @@ const server = http.createServer(async (req, res) => {
       for (const file of files) {
         const relName = (file.name || "artifact.md").replace(/^\/+/, "").replace(/\.\./g, "");
         const safePath = path.resolve(baseTarget, relName);
-        if (!safePath.startsWith(baseTarget)) continue;
+        if (!isPathInside(safePath, baseTarget)) continue;
         fs.mkdirSync(path.dirname(safePath), { recursive: true });
         fs.writeFileSync(safePath, file.content || "", "utf8");
         savedPaths.push(safePath);
@@ -1773,10 +1851,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Static files
-  const reqPath = req.url === "/" ? "/index.html" : req.url.split("?")[0];
-  const targetFile = path.join(__dirname, reqPath);
+  const reqPath = req.url === "/" ? "/index.html" : decodeURIComponent(req.url.split("?")[0]);
+  const targetFile = path.resolve(__dirname, "." + reqPath);
 
-  if (fs.existsSync(targetFile) && fs.statSync(targetFile).isFile()) {
+  if (isPathInside(targetFile, __dirname) && fs.existsSync(targetFile) && fs.statSync(targetFile).isFile()) {
     const ext = path.extname(targetFile).toLowerCase();
     let contentType = "text/html; charset=utf-8";
     if (ext === ".js" || ext === ".mjs") contentType = "application/javascript";

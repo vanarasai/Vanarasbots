@@ -2679,8 +2679,11 @@ Auto-save: enabled</pre>
       const llmDot = document.getElementById("llmStatusDot");
       const llmTxt = document.getElementById("llmStatusText");
       if (llmDot && llmTxt && leadBot) {
-        llmDot.style.background = "#10b981";
-        llmTxt.innerText = llmOnlineStatus ? "Connected" : (leadBot.model || "Connected");
+        const shortModel = (leadBot.model || detectedLocalModel || "Local LLM").split("/").pop();
+        llmDot.style.background = llmOnlineStatus ? "#10b981" : "#f59e0b";
+        llmTxt.innerText = llmOnlineStatus
+          ? `Connected · ${shortModel}`
+          : `${shortModel} · Configure`;
       }
     }
 
@@ -4046,7 +4049,10 @@ Auto-save: enabled</pre>
       }
 
       const threadId = thread.id;
+      const turnCtx = cancelActiveTurnForThread(thread);
+
       thread.messages.push({
+        id: "msg_collab_goal_" + Date.now(),
         senderType: "user",
         text: `Collab Goal: ${goal}`
       });
@@ -4071,6 +4077,7 @@ Auto-save: enabled</pre>
         const folderSummary = await ensureFolderSnapshot(thread.mountPath, collabBots[0]);
 
         for (let i = 0; i < collabBots.length; i++) {
+          if (turnCtx.aborted) return;
           const bot = collabBots[i];
           activeWorkingThreads[threadId] = `Collab (${i + 1}/${collabBots.length}): ${bot.name}...`;
           renderThreadList();
@@ -4087,28 +4094,70 @@ Auto-save: enabled</pre>
           const sys = buildGroundedSystemPrompt(bot, thread, folderSummary) + `\nCollaborating squad: ${teamStr}.${deliverableInstruction}`;
           const usr = `COLLAB GOAL:\n${goal}\n\nDISCUSSION SO FAR:\n${priorText}\n\nYour turn (${bot.name}):`;
 
-          const res = await queryBotLLM(bot, sys, usr, isLast ? 3500 : 1800);
-          let displayContent = res.content;
+          const liveMsg = {
+            id: `msg_collab_${Date.now()}_${i}`,
+            senderType: "bot",
+            botId: bot.id,
+            text: "Synthesizing squad contribution…",
+            reasoning: "",
+            collabRound: `Round ${i + 1}/${collabBots.length} • ${bot.worktreeBranch}`,
+            streaming: true
+          };
+          thread.messages.push(liveMsg);
+          if (activeThreadId === threadId) renderActiveThread();
+
+          let lastRenderTs = 0;
+          const res = await queryBotLLM(bot, sys, usr, isLast ? 3500 : 1800, (partialText, partialReason) => {
+            if (turnCtx.aborted) return;
+            const split = extractInlineThinkBlocks(partialText || "");
+            liveMsg.text = split.visibleText || (split.thoughtText ? "Reasoning through squad architecture…" : "Synthesizing squad contribution…");
+            liveMsg.reasoning = [partialReason || "", split.thoughtText || ""].filter(Boolean).join("\n\n").trim();
+            const now = Date.now();
+            if (activeThreadId === threadId && now - lastRenderTs > 95) {
+              lastRenderTs = now;
+              renderActiveThread();
+            }
+          }, turnCtx.abortController.signal);
+
+          if (turnCtx.aborted) {
+            const idx = thread.messages.indexOf(liveMsg);
+            if (idx >= 0) thread.messages.splice(idx, 1);
+            return;
+          }
+
+          delete liveMsg.streaming;
+          const thoughtHook = await invokeLifecycleHook("AfterAgentThoughtRequest", {
+            botId: bot.id,
+            botName: bot.name,
+            content: res.content,
+            reasoning: res.reasoning || ""
+          });
+          const cleanedContent = thoughtHook?.cleanedContent || res.content;
+          const cleanedReasoning = thoughtHook?.reasoning !== undefined ? thoughtHook.reasoning : res.reasoning;
+
+          let displayContent = cleanedContent;
           let hasDeliverables = false;
 
-          const extracted = parseDeliverableBlocks(res.content);
+          const patches = parseSurgicalPatches(cleanedContent);
+          if (patches.length > 0) {
+            hasDeliverables = true;
+            await applyPatchesToAgentWorkspace(bot, patches);
+          }
+
+          const extracted = parseDeliverableBlocks(cleanedContent);
           if (extracted.length > 0) {
             hasDeliverables = true;
             await saveFilesToAgentWorkspace(bot, extracted);
             if (isLast) {
-              displayContent = res.content.replace(/===FILE:[\s\S]*$/i, "").trim() || `Synthesized ${extracted.length} deliverable file(s) in ${bot.name}'s Code Workspace (${extracted.map(f => '`' + f.name + '`').join(", ")}).`;
+              displayContent = cleanedContent.replace(/===FILE:[\s\S]*$/i, "").trim() || `Synthesized ${extracted.length} deliverable file(s) in ${bot.name}'s Code Workspace (${extracted.map(f => '`' + f.name + '`').join(", ")}).`;
             }
           }
 
+          liveMsg.text = displayContent;
+          liveMsg.reasoning = cleanedReasoning;
+          liveMsg.hasDeliverables = hasDeliverables;
+
           transcript.push({ name: bot.name, role: bot.role, text: displayContent });
-          thread.messages.push({
-            senderType: "bot",
-            botId: bot.id,
-            text: displayContent,
-            reasoning: res.reasoning,
-            collabRound: `Round ${i + 1}/${collabBots.length} • ${bot.worktreeBranch}`,
-            hasDeliverables
-          });
 
           if (activeThreadId !== threadId) {
             unreadCounts[threadId] = (unreadCounts[threadId] || 0) + 1;
@@ -4118,17 +4167,20 @@ Auto-save: enabled</pre>
           if (activeThreadId === threadId) renderActiveThread();
         }
 
-        if (activeThreadId === threadId) {
+        if (activeThreadId === threadId && !turnCtx.aborted) {
           openAgentCodeWorkspace(collabBots[collabBots.length - 1].id);
         }
       } catch (e) {
+        if (e?.name === "AbortError" || turnCtx.aborted) return;
         thread.messages.push({
           senderType: "bot",
           botId: collabBots[0].id,
           text: `Collab error: ${e.message}`
         });
       } finally {
-        delete activeWorkingThreads[threadId];
+        if (activeTurnContextByThread[threadId]?.turnId === turnCtx.turnId) {
+          delete activeWorkingThreads[threadId];
+        }
         saveState();
         renderThreadList();
         if (activeThreadId === threadId) renderActiveThread();
@@ -4193,12 +4245,28 @@ Auto-save: enabled</pre>
         if (name && content) files.push({ name, content });
       }
       if (files.length === 0 && parseSurgicalPatches(rawText).length === 0) {
+        const runnableLangMap = {
+          html: "index.html",
+          python: "solution.py",
+          py: "solution.py",
+          javascript: "app.mjs",
+          js: "app.mjs",
+          mjs: "app.mjs",
+          rust: "src/main.rs",
+          rs: "src/main.rs",
+          glsl: "shader.glsl",
+          css: "styles.css"
+        };
         const codeRegex = /```([a-zA-Z0-9_.-]+)\n([\s\S]*?)```/g;
         let cIdx = 1;
         while ((m = codeRegex.exec(rawText)) !== null) {
           const lang = m[1].toLowerCase();
-          const ext = lang === "rust" ? "src/main.rs" : lang === "html" ? "index.html" : lang === "python" ? "solution.py" : `deliverable-${cIdx}.${lang}`;
-          files.push({ name: ext, content: m[2].trim() });
+          const body = m[2].trim();
+          const lineCount = body.split("\n").length;
+          // Only treat unassigned code fences as deliverable source files when they are runnable languages with >= 5 lines
+          if (!runnableLangMap[lang] || lineCount < 5) continue;
+          const fileName = cIdx === 1 ? runnableLangMap[lang] : `module-${cIdx}.${lang === "python" ? "py" : lang === "javascript" ? "mjs" : lang}`;
+          files.push({ name: fileName, content: body });
           cIdx++;
         }
       }
@@ -5013,7 +5081,7 @@ Auto-save: enabled</pre>
           })
         });
         const data = await res.json();
-        if (res.ok && data.output) {
+        if (res.ok && data.ok !== false && data.output) {
           const input = document.getElementById("chatComposerInput");
           const snippet = data.output.slice(0, 1500);
           input.value = (input.value ? input.value + "\n\n" : "") + `[Attached File: ${relPath.trim()}]\n\`\`\`\n${snippet}\n\`\`\`\n`;
@@ -5092,6 +5160,22 @@ Auto-save: enabled</pre>
         if (data && data.ok) {
           document.getElementById("workspaceBranchBadge").textContent = data.branch || `vanara/${bot.name.toLowerCase()}`;
           document.getElementById("workspaceDiskPathLabel").textContent = data.codeDir || data.worktreeDir || "";
+          const serveBtn = document.getElementById("btnAgentServe");
+          if (data.devServer && data.devServer.running) {
+            activeDevServersByBot[bot.id] = data.devServer.url;
+            if (serveBtn) {
+              serveBtn.textContent = `⏹ :${data.devServer.port}`;
+              serveBtn.style.color = "#f87171";
+              serveBtn.style.borderColor = "rgba(248,113,113,0.45)";
+            }
+          } else {
+            delete activeDevServersByBot[bot.id];
+            if (serveBtn) {
+              serveBtn.textContent = "⚡ Serve";
+              serveBtn.style.color = "#7dd3fc";
+              serveBtn.style.borderColor = "rgba(56,189,248,0.4)";
+            }
+          }
           if (Array.isArray(data.files) && data.files.length > 0) {
             deliverables = data.files;
             if (activeDeliverableIdx >= deliverables.length) activeDeliverableIdx = 0;
@@ -5220,11 +5304,17 @@ Auto-save: enabled</pre>
         title: `Create File in ${bot.name}'s Workspace`,
         subtitle: "Creates a new source file inside the agent's isolated Git worktree and commits it.",
         defaultValue: "main.py",
-        placeholder: "e.g. solution.py, server.mjs, index.html, main.rs",
+        placeholder: "e.g. solution.py, server.mjs, index.html, src/main.rs",
         confirmLabel: "Create File"
       });
       if (!fileName || !fileName.trim()) return;
-      const cleanName = fileName.trim().replace(/[^a-zA-Z0-9_.-]/g, "_");
+      const cleanName = fileName
+        .trim()
+        .replace(/\\/g, "/")
+        .replace(/^\/+/, "")
+        .replace(/\.\./g, "")
+        .replace(/[^a-zA-Z0-9_./-]/g, "_");
+      if (!cleanName) return;
       const starterContent = cleanName.endsWith(".py")
         ? `# ${bot.name} (${bot.role}) — ${cleanName}\n\nif __name__ == "__main__":\n    print("Hello from ${bot.name}'s isolated code workspace!")\n`
         : `// ${bot.name} (${bot.role}) — ${cleanName}\n`;
@@ -5524,6 +5614,10 @@ Auto-save: enabled</pre>
       const codeView = document.getElementById("deliverableCodeView");
       const gutter = document.getElementById("editorLineGutter");
       if (!codeView || !gutter) return;
+      const active = deliverables[activeDeliverableIdx];
+      if (active && (drawerMode === "source" || drawerMode === "code")) {
+        active.content = codeView.value;
+      }
       const lines = Math.max(6, (codeView.value || "").split("\n").length);
       const nums = [];
       for (let i = 1; i <= lines; i++) nums.push(i);

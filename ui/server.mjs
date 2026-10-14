@@ -206,6 +206,7 @@ function ensureAgentWorktree(botId, botName, customWorkspacePath = "") {
   } catch {}
 
   return {
+    ok: true,
     botId,
     botName,
     branch: branchName,

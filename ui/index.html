@@ -8,23 +8,25 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg-sidebar: #0b0b0d;
-      --bg-main: #101012;
-      --bg-card: #1b1b1e;
-      --bg-card-hover: #232327;
-      --bg-pill: #1c1c20;
-      --bg-input: #18181b;
-      --border-subtle: #1e1e22;
-      --border-card: #27272c;
-      --border-focus: #3a3a42;
-      --text-primary: #ededf0;
-      --text-secondary: #94949e;
-      --text-muted: #686873;
-      --accent-red: #d93538;
-      --accent-red-bright: #f0283c;
-      --accent-blue: #1877f2;
+      --bg-sidebar: #09090b;
+      --bg-main: #0c0c0f;
+      --bg-workbench: #0a0a0d;
+      --bg-card: #141418;
+      --bg-card-hover: #1b1b21;
+      --bg-pill: #18181d;
+      --bg-input: #141418;
+      --border-subtle: #1e1e24;
+      --border-card: #26262f;
+      --border-focus: #3f3f4e;
+      --text-primary: #f2f2f7;
+      --text-secondary: #9d9da8;
+      --text-muted: #696975;
+      --accent-red: #e13639;
+      --accent-red-bright: #f42c40;
+      --accent-blue: #3b82f6;
       --accent-amber: #f59e0b;
       --accent-emerald: #10b981;
+      --accent-indigo: #6366f1;
     }
 
     * {
@@ -40,7 +42,7 @@
       background: var(--bg-main);
       color: var(--text-primary);
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", system-ui, sans-serif;
-      font-size: 13.5px;
+      font-size: 13px;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
       user-select: none;
@@ -79,24 +81,27 @@
       background: transparent;
     }
     ::-webkit-scrollbar-thumb {
-      background: #27272c;
+      background: #272730;
       border-radius: 999px;
     }
     ::-webkit-scrollbar-thumb:hover {
-      background: #3a3a42;
+      background: #3b3b48;
     }
 
-    /* APP SHELL LAYOUT */
+    /* 3-PANE WORKBENCH SHELL */
     .app-shell {
       display: flex;
       width: 100vw;
       height: 100vh;
       overflow: hidden;
+      background: var(--bg-main);
     }
 
-    /* LEFT SIDEBAR */
+    /* =================================================================== */
+    /* PANE 1: LEFT NAVIGATION & AGENT FLEET SIDEBAR                       */
+    /* =================================================================== */
     .sidebar {
-      width: 286px;
+      width: 268px;
       height: 100%;
       background: var(--bg-sidebar);
       border-right: 1px solid var(--border-subtle);
@@ -106,8 +111,9 @@
     }
 
     .sidebar-header {
-      height: 54px;
+      height: 52px;
       padding: 0 14px;
+      border-bottom: 1px solid var(--border-subtle);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -117,12 +123,12 @@
     .traffic-lights {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding-left: 4px;
+      gap: 7px;
+      padding-left: 2px;
     }
     .tl-dot {
-      width: 12px;
-      height: 12px;
+      width: 11px;
+      height: 11px;
       border-radius: 50%;
       display: inline-block;
     }
@@ -134,52 +140,102 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      font-weight: 700;
+      font-size: 13.5px;
+      color: #f4f4f8;
+      letter-spacing: -0.02em;
+    }
+    .brand-version-tag {
+      font-size: 9.5px;
       font-weight: 600;
-      font-size: 13px;
-      color: #e4e4e8;
-      letter-spacing: -0.01em;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: rgba(225, 54, 57, 0.16);
+      border: 1px solid rgba(225, 54, 57, 0.35);
+      color: #fda4af;
+      letter-spacing: 0.02em;
     }
 
     .sidebar-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       position: relative;
     }
 
     .circle-icon-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: #1c1c20;
-      border: 1px solid #28282e;
-      color: #c8c8d0;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: #15151a;
+      border: 1px solid #25252e;
+      color: #b8b8c4;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      transition: all 0.14s ease;
     }
     .circle-icon-btn:hover {
-      background: #27272d;
+      background: #22222b;
       color: #ffffff;
-      border-color: #36363e;
+      border-color: #363644;
+    }
+
+    /* Repo & Memory Context Card in Sidebar */
+    .sidebar-repo-card {
+      margin: 10px 10px 6px 10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: #121217;
+      border: 1px solid #22222b;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    .sidebar-repo-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #e4e4ec;
+      padding: 3px 6px;
+      border-radius: 6px;
+      transition: background 0.12s ease;
+    }
+    .sidebar-repo-btn:hover {
+      background: #1d1d25;
     }
 
     .search-box-wrap {
-      padding: 0 12px 10px 12px;
+      padding: 4px 10px 6px 10px;
     }
     .search-input {
       width: 100%;
-      height: 32px;
-      background: #161619;
-      border: 1px solid #27272c;
-      border-radius: 10px;
-      padding: 0 11px;
-      font-size: 12.5px;
+      height: 30px;
+      background: #131318;
+      border: 1px solid #25252e;
+      border-radius: 8px;
+      padding: 0 10px;
+      font-size: 12px;
       color: var(--text-primary);
     }
     .search-input:focus {
-      border-color: #3e3e47;
+      border-color: #3e3e4d;
+    }
+
+    .sidebar-section-label {
+      padding: 10px 12px 4px 12px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #686875;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
 
     /* THREAD LIST */
@@ -194,25 +250,45 @@
 
     .thread-row {
       width: 100%;
-      padding: 9px 10px;
-      border-radius: 14px;
+      padding: 7px 9px;
+      border-radius: 10px;
       display: flex;
       align-items: center;
-      gap: 11px;
+      gap: 10px;
       text-align: left;
-      transition: background 0.12s ease;
+      transition: background 0.12s ease, border-color 0.12s ease;
+      border: 1px solid transparent;
       position: relative;
     }
     .thread-row:hover {
-      background: #17171b;
+      background: #15151b;
     }
     .thread-row.active {
-      background: #232327;
+      background: #1c1c24;
+      border-color: #2c2c38;
+    }
+    .thread-delete-btn {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #787886;
+      opacity: 0;
+      transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+    }
+    .thread-row:hover .thread-delete-btn {
+      opacity: 0.85;
+    }
+    .thread-delete-btn:hover {
+      background: rgba(248, 113, 113, 0.16);
+      color: #f87171;
     }
 
     .thread-avatar-wrap {
-      width: 38px;
-      height: 38px;
+      width: 34px;
+      height: 34px;
       position: relative;
       flex-shrink: 0;
       display: flex;
@@ -220,10 +296,10 @@
       justify-content: center;
     }
 
-    /* Group 2x2 Cluster Avatar (matches Project Maaya in reference) */
+    /* Group 2x2 Cluster Avatar */
     .group-cluster {
-      width: 38px;
-      height: 38px;
+      width: 34px;
+      height: 34px;
       position: relative;
     }
     .cluster-item {
@@ -236,34 +312,19 @@
       justify-content: center;
     }
     .cluster-tl {
-      width: 18px;
-      height: 18px;
+      width: 16px;
+      height: 16px;
       top: 0;
       left: 0;
-      background: #1d1d22;
-      color: #a0a0ab;
-      font-size: 8px;
+      background: #1d1d24;
+      color: #b0b0bc;
+      font-size: 7.5px;
       font-weight: 700;
-      border: 1px solid #2e2e36;
+      border: 1px solid #2e2e38;
     }
-    .cluster-tr {
-      width: 19px;
-      height: 19px;
-      top: 0;
-      right: 0;
-    }
-    .cluster-bl {
-      width: 18px;
-      height: 18px;
-      bottom: 0;
-      left: 0;
-    }
-    .cluster-br {
-      width: 20px;
-      height: 20px;
-      bottom: 0;
-      right: 0;
-    }
+    .cluster-tr { width: 17px; height: 17px; top: 0; right: 0; }
+    .cluster-bl { width: 16px; height: 16px; bottom: 0; left: 0; }
+    .cluster-br { width: 18px; height: 18px; bottom: 0; right: 0; }
 
     .thread-meta {
       flex: 1;
@@ -276,29 +337,40 @@
       gap: 6px;
     }
     .thread-title {
-      font-size: 13.5px;
+      font-size: 12.5px;
       font-weight: 600;
-      color: #f2f2f5;
+      color: #f0f0f6;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .thread-branch-tag {
+      font-size: 9.5px;
+      font-weight: 500;
+      padding: 0 5px;
+      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.24);
+      color: #7dd3fc;
     }
     .thread-preview {
-      font-size: 12.5px;
-      color: #868690;
+      font-size: 11.5px;
+      color: #7d7d89;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       margin-top: 1px;
     }
     .thread-row.active .thread-preview {
-      color: #a2a2ad;
+      color: #a4a4b2;
     }
 
     .unread-badge {
-      min-width: 18px;
-      height: 18px;
+      min-width: 17px;
+      height: 17px;
       padding: 0 5px;
       border-radius: 999px;
       background: var(--accent-red-bright);
@@ -313,72 +385,59 @@
 
     /* SIDEBAR FOOTER */
     .sidebar-footer {
-      padding: 12px 12px 14px 12px;
+      padding: 10px;
+      border-top: 1px solid var(--border-subtle);
+      background: #070709;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       flex-shrink: 0;
     }
     .vp-avatar-btn {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: #17171b;
-      border: 1px solid #2b2b32;
-      color: #d8d8e0;
-      font-size: 12px;
-      font-weight: 600;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #23232c, #17171d);
+      border: 1px solid #2e2e3a;
+      color: #f0f0f6;
+      font-size: 11px;
+      font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transition: background 0.15s ease, border-color 0.15s ease;
+      transition: border-color 0.15s ease;
     }
     .vp-avatar-btn:hover {
-      background: #222228;
-      border-color: #3c3c45;
+      border-color: #4a4a5a;
     }
 
     .connect-apps-pill {
       flex: 1;
-      height: 36px;
-      border-radius: 999px;
-      background: #151518;
-      border: 1px solid #292930;
-      padding: 0 14px;
+      height: 32px;
+      border-radius: 8px;
+      background: #121217;
+      border: 1px solid #24242e;
+      padding: 0 10px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-size: 12.5px;
+      font-size: 11.5px;
       font-weight: 500;
       color: #dedee6;
-      transition: background 0.15s ease, border-color 0.15s ease;
+      transition: all 0.15s ease;
     }
     .connect-apps-pill:hover {
-      background: #1e1e23;
-      border-color: #383842;
-    }
-    .app-icon-stack {
-      display: flex;
-      align-items: center;
-    }
-    .app-mini-tile {
-      width: 16px;
-      height: 16px;
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-left: -3px;
-      box-shadow: 0 0 0 1.5px #151518;
-    }
-    .app-mini-tile:first-child {
-      margin-left: 0;
+      background: #1a1a22;
+      border-color: #363644;
     }
 
-    /* MAIN CONVERSATION PANE */
+    /* =================================================================== */
+    /* PANE 2: CENTER MULTI-AGENT MISSION CONTROL & STREAM                 */
+    /* =================================================================== */
     .main-pane {
       flex: 1;
+      min-width: 420px;
       height: 100%;
       background: var(--bg-main);
       display: flex;
@@ -387,105 +446,151 @@
       overflow: hidden;
     }
 
-    /* FLOATING TOP HEADER */
+    /* DOCKED STRUCTURED TOP TOOLBAR (NO MORE FLOATING SOUP) */
     .chat-header {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 58px;
-      padding: 0 22px;
+      height: 52px;
+      padding: 0 18px;
+      background: rgba(12, 12, 15, 0.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border-subtle);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 12px;
       z-index: 20;
-      pointer-events: none;
+      flex-shrink: 0;
     }
     .chat-header-slot {
       display: flex;
       align-items: center;
-      gap: 8px;
-      pointer-events: auto;
+      gap: 7px;
+      min-width: 0;
     }
 
-    /* Center Floating Identity Pill (exact match to [ 🐵 R1 ] in reference) */
     .identity-pill {
-      pointer-events: auto;
-      height: 36px;
-      padding: 0 14px 0 8px;
-      border-radius: 999px;
-      background: rgba(28, 28, 32, 0.92);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      border: 1px solid #2c2c33;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+      height: 32px;
+      padding: 0 11px 0 7px;
+      border-radius: 8px;
+      background: #15151b;
+      border: 1px solid #262630;
       display: flex;
       align-items: center;
       gap: 8px;
-      transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+      transition: all 0.14s ease;
+      min-width: 0;
     }
     .identity-pill:hover {
-      background: rgba(38, 38, 44, 0.96);
-      border-color: #3d3d47;
+      background: #1d1d25;
+      border-color: #383846;
     }
     .identity-pill-name {
       font-size: 13px;
       font-weight: 600;
-      color: #f5f5f7;
-      letter-spacing: -0.01em;
+      color: #f5f5fa;
+      white-space: nowrap;
     }
     .identity-pill-sub {
       font-size: 11px;
-      color: #8b8b96;
+      color: #888896;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 220px;
     }
 
     .header-tool-pill {
       height: 30px;
-      padding: 0 11px;
-      border-radius: 999px;
-      background: rgba(26, 26, 30, 0.88);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid #292930;
-      color: #b8b8c2;
+      padding: 0 10px;
+      border-radius: 7px;
+      background: #15151b;
+      border: 1px solid #262630;
+      color: #c2c2ce;
       font-size: 11.5px;
       font-weight: 500;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 6px;
-      transition: all 0.15s ease;
+      white-space: nowrap;
+      transition: all 0.14s ease;
     }
     .header-tool-pill:hover {
-      background: #25252b;
+      background: #1f1f28;
       color: #ffffff;
-      border-color: #3a3a44;
+      border-color: #383846;
     }
     .header-tool-pill.collab-cta {
-      background: rgba(217, 53, 56, 0.16);
-      border-color: rgba(217, 53, 56, 0.42);
-      color: #ff8a8c;
+      background: linear-gradient(135deg, rgba(225, 54, 57, 0.2), rgba(245, 158, 11, 0.14));
+      border-color: rgba(225, 54, 57, 0.45);
+      color: #fda4af;
+      font-weight: 600;
     }
     .header-tool-pill.collab-cta:hover {
-      background: rgba(217, 53, 56, 0.28);
+      background: linear-gradient(135deg, rgba(225, 54, 57, 0.32), rgba(245, 158, 11, 0.22));
       color: #ffffff;
+    }
+
+    /* MISSION CONTROL QUICK-START BAR */
+    .mission-quickstart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .mission-card {
+      padding: 10px 12px;
+      border-radius: 11px;
+      background: linear-gradient(180deg, #15151b 0%, #111116 100%);
+      border: 1px solid #23232c;
+      text-align: left;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      transition: all 0.14s ease;
+    }
+    .mission-card:hover {
+      background: #191922;
+      border-color: #383848;
+      transform: translateY(-1px);
+    }
+    .mission-card-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 13px;
+    }
+    .mission-card-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #f0f0f6;
+      margin-bottom: 2px;
+    }
+    .mission-card-sub {
+      font-size: 11px;
+      color: #828290;
+      line-height: 1.35;
     }
 
     /* MESSAGES STREAM */
     .messages-scroll {
       flex: 1;
       overflow-y: auto;
-      padding: 66px 28px 18px 28px;
+      padding: 18px 22px 14px 22px;
       user-select: text;
     }
     .messages-inner {
-      max-width: 780px;
+      max-width: 820px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
     }
 
-    /* User Bubble (Right-aligned crimson pill) */
+    /* User Bubble */
     .msg-user-row {
       display: flex;
       flex-direction: column;
@@ -498,380 +603,375 @@
     }
     .msg-user-bubble {
       position: relative;
-      max-width: 460px;
-      background: var(--accent-red);
+      max-width: 520px;
+      background: linear-gradient(135deg, #d93538, #b82528);
       color: #ffffff;
-      padding: 9px 16px;
-      border-radius: 20px;
-      font-size: 13.5px;
-      line-height: 1.42;
+      padding: 9px 15px;
+      border-radius: 14px 14px 4px 14px;
+      font-size: 13px;
+      line-height: 1.45;
       font-weight: 450;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
     }
     .reaction-badge {
       position: absolute;
-      top: -12px;
+      top: -10px;
       left: -10px;
-      width: 24px;
-      height: 24px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
-      background: #232328;
-      border: 1px solid #35353d;
+      background: #23232a;
+      border: 1px solid #383844;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      font-size: 11px;
     }
 
-    /* Bot Card (Left-aligned dark card with side hover icons) */
+    /* Bot Card */
     .msg-bot-row {
       display: flex;
-      align-items: center;
-      gap: 12px;
+      align-items: flex-start;
+      gap: 10px;
     }
     .msg-bot-card {
-      max-width: 590px;
-      width: 100%;
+      flex: 1;
+      min-width: 0;
       background: var(--bg-card);
-      border: 1px solid #242429;
-      border-radius: 18px;
-      padding: 15px 18px;
-      color: #e6e6eb;
-      font-size: 13.5px;
+      border: 1px solid var(--border-card);
+      border-radius: 14px;
+      padding: 14px 16px;
+      color: #e6e6ee;
+      font-size: 13px;
       line-height: 1.56;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
     }
     .msg-bot-header {
       display: flex;
       align-items: center;
       gap: 8px;
       margin-bottom: 8px;
+      padding-bottom: 7px;
+      border-bottom: 1px solid #1e1e26;
     }
     .msg-bot-name {
       font-size: 12.5px;
-      font-weight: 600;
-      color: #f0f0f4;
+      font-weight: 700;
+      color: #f4f4fa;
     }
     .msg-bot-role {
       font-size: 11px;
-      color: #7c7c87;
+      color: #828290;
     }
 
-    .msg-bot-body p {
-      margin-bottom: 11px;
-    }
-    .msg-bot-body p:last-child {
-      margin-bottom: 0;
-    }
+    .msg-bot-body p { margin-bottom: 9px; }
+    .msg-bot-body p:last-child { margin-bottom: 0; }
     .msg-bot-body ul {
-      margin: 8px 0 4px 18px;
+      margin: 6px 0 4px 18px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
-    .msg-bot-body li {
-      color: #dedee6;
-    }
-    .msg-bot-body strong {
-      color: #ffffff;
-      font-weight: 600;
-    }
+    .msg-bot-body li { color: #dedee8; }
+    .msg-bot-body strong { color: #ffffff; font-weight: 600; }
     .inline-code {
-      background: #26262c;
-      border: 1px solid #32323a;
-      padding: 1.5px 6px;
-      border-radius: 6px;
-      font-size: 12px;
-      color: #ececf2;
+      background: #1f1f27;
+      border: 1px solid #2e2e3a;
+      padding: 1px 5px;
+      border-radius: 5px;
+      font-size: 11.5px;
+      color: #93c5fd;
     }
     .code-block {
-      margin: 10px 0;
-      background: #121215;
-      border: 1px solid #282830;
-      border-radius: 12px;
-      padding: 12px 14px;
+      margin: 9px 0;
+      background: #0d0d11;
+      border: 1px solid #24242e;
+      border-radius: 10px;
+      padding: 11px 13px;
       overflow-x: auto;
-      font-size: 12px;
+      font-size: 11.5px;
       line-height: 1.48;
-      color: #7ee787;
+      color: #86efac;
     }
 
-    /* Side Action Icons next to Bot Bubble (Smile, Reply Curve, More Dots) */
     .msg-side-actions {
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 4px;
-      color: #6c6c76;
-      opacity: 0.75;
-      transition: opacity 0.15s ease;
+      gap: 3px;
+      color: #6c6c78;
+      opacity: 0;
+      transition: opacity 0.14s ease;
       flex-shrink: 0;
+      padding-top: 4px;
     }
     .msg-bot-row:hover .msg-side-actions {
       opacity: 1;
     }
     .side-icon-btn {
-      width: 26px;
-      height: 26px;
-      border-radius: 8px;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #787884;
+      color: #7d7d8a;
       transition: background 0.12s ease, color 0.12s ease;
     }
     .side-icon-btn:hover {
-      background: #1f1f24;
-      color: #d8d8e2;
+      background: #1f1f27;
+      color: #ededf5;
     }
 
-    /* Hand-off & Grounded Command Chips inside Bot Message */
     .msg-action-bar {
-      margin-top: 12px;
-      padding-top: 10px;
-      border-top: 1px solid #26262c;
+      margin-top: 11px;
+      padding-top: 9px;
+      border-top: 1px solid #21212a;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 7px;
+      gap: 6px;
     }
     .handoff-chip {
-      height: 26px;
-      padding: 0 10px 0 6px;
-      border-radius: 999px;
-      background: #232329;
-      border: 1px solid #32323b;
-      color: #e4e4ec;
-      font-size: 11.5px;
+      height: 25px;
+      padding: 0 9px 0 6px;
+      border-radius: 7px;
+      background: #1d1d25;
+      border: 1px solid #2d2d39;
+      color: #e2e2ec;
+      font-size: 11px;
       font-weight: 500;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       transition: all 0.12s ease;
     }
     .handoff-chip:hover {
-      background: #2d2d35;
-      border-color: #454552;
+      background: #282834;
+      border-color: #434354;
       color: #ffffff;
     }
     .run-cmd-chip {
-      height: 26px;
-      padding: 0 10px;
-      border-radius: 999px;
+      height: 25px;
+      padding: 0 9px;
+      border-radius: 7px;
       background: rgba(16, 185, 129, 0.1);
       border: 1px solid rgba(16, 185, 129, 0.28);
       color: #6ee7b7;
-      font-size: 11.5px;
+      font-size: 11px;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      transition: all 0.12s ease;
+      gap: 5px;
     }
     .run-cmd-chip:hover {
       background: rgba(16, 185, 129, 0.2);
-      border-color: rgba(16, 185, 129, 0.45);
     }
 
-    /* Terminal Output Card */
     .terminal-card {
-      max-width: 560px;
-      background: #121417;
-      border: 1px solid #233831;
-      border-radius: 14px;
-      padding: 11px 14px;
-      font-size: 12px;
+      background: #0e1116;
+      border: 1px solid #1f332c;
+      border-radius: 11px;
+      padding: 10px 13px;
+      font-size: 11.5px;
     }
     .terminal-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-size: 11px;
+      font-size: 10.5px;
       color: #789088;
-      margin-bottom: 6px;
+      margin-bottom: 5px;
     }
 
-    /* BOTTOM COMPOSER BAR */
+    /* =================================================================== */
+    /* PRO MULTI-ROW COMPOSER DOCK (ZERO CLIPPING AVATARS)                 */
+    /* =================================================================== */
     .composer-outer {
-      padding: 8px 28px 18px 28px;
+      padding: 8px 22px 14px 22px;
       flex-shrink: 0;
+      border-top: 1px solid rgba(255,255,255,0.04);
+      background: linear-gradient(180deg, rgba(12,12,15,0) 0%, #0c0c0f 100%);
     }
     .composer-inner {
-      max-width: 780px;
+      max-width: 820px;
       margin: 0 auto;
       position: relative;
     }
-    .composer-pill {
-      height: 46px;
-      background: #18181c;
-      border: 1px solid #28282f;
-      border-radius: 999px;
-      padding: 0 8px;
+    .composer-card {
+      background: #141419;
+      border: 1px solid #282833;
+      border-radius: 14px;
+      padding: 8px 10px;
       display: flex;
-      align-items: center;
-      gap: 10px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
       transition: border-color 0.15s ease;
     }
-    .composer-pill:focus-within {
-      border-color: #3c3c46;
+    .composer-card:focus-within {
+      border-color: #434356;
     }
-
-    .composer-plus-wrap {
-      position: relative;
+    .composer-context-strip {
       display: flex;
       align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid #1e1e27;
+      overflow-x: auto;
     }
-    .composer-plus-btn {
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      background: #25252b;
-      color: #c8c8d2;
-      display: flex;
+    .composer-agent-chip {
+      height: 22px;
+      padding: 0 8px 0 4px;
+      border-radius: 6px;
+      background: #1d1d26;
+      border: 1px solid #2f2f3d;
+      font-size: 11px;
+      font-weight: 600;
+      color: #f0f0f7;
+      display: inline-flex;
       align-items: center;
-      justify-content: center;
-      transition: background 0.15s ease, color 0.15s ease;
+      gap: 5px;
+      flex-shrink: 0;
     }
-    .composer-plus-btn:hover {
-      background: #32323a;
+    .composer-mention-pill {
+      height: 20px;
+      padding: 0 7px;
+      border-radius: 5px;
+      background: #191921;
+      border: 1px solid #262632;
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #9d9da9;
+      transition: all 0.12s ease;
+      flex-shrink: 0;
+    }
+    .composer-mention-pill:hover {
+      background: #252532;
       color: #ffffff;
+      border-color: #3d3d50;
     }
-
-    /* Overlapping Blue Monkey Pill Badge under (+) just like reference screenshot */
-    .composer-bot-badge {
-      position: absolute;
-      bottom: -9px;
-      left: 11px;
-      height: 17px;
-      padding: 0 6px;
-      border-radius: 999px;
-      background: var(--accent-blue);
-      color: #ffffff;
+    .composer-input-row {
       display: flex;
       align-items: center;
-      justify-content: center;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-      border: 1.5px solid #101012;
-      cursor: pointer;
+      gap: 8px;
+      min-height: 34px;
     }
-
     .composer-input {
       flex: 1;
-      height: 100%;
+      height: 32px;
       background: transparent;
       border: none;
-      font-size: 13.5px;
-      color: #f0f0f5;
+      font-size: 13px;
+      color: #f2f2f8;
       padding: 0 4px;
     }
     .composer-input::placeholder {
-      color: #6c6c76;
+      color: #6a6a78;
     }
-
-    .composer-right-btns {
+    .composer-bottom-bar {
       display: flex;
       align-items: center;
-      gap: 6px;
+      justify-content: space-between;
+      gap: 8px;
+      padding-top: 2px;
     }
-    .composer-mic-btn {
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      color: #8e8e99;
-      display: flex;
+    .composer-tool-btn {
+      height: 25px;
+      padding: 0 8px;
+      border-radius: 6px;
+      background: #1b1b23;
+      border: 1px solid #292935;
+      color: #b4b4c2;
+      font-size: 11px;
+      font-weight: 500;
+      display: inline-flex;
       align-items: center;
-      justify-content: center;
-      transition: background 0.15s ease, color 0.15s ease;
+      gap: 5px;
+      transition: all 0.12s ease;
     }
-    .composer-mic-btn:hover {
-      background: #25252b;
-      color: #e4e4ec;
+    .composer-tool-btn:hover {
+      background: #262632;
+      color: #ffffff;
+      border-color: #3b3b4c;
     }
     .composer-send-btn {
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
+      height: 27px;
+      padding: 0 12px;
+      border-radius: 7px;
       background: var(--accent-red-bright);
       color: #ffffff;
-      display: flex;
+      font-size: 11.5px;
+      font-weight: 600;
+      display: inline-flex;
       align-items: center;
-      justify-content: center;
-      transition: transform 0.1s ease, opacity 0.15s ease;
+      gap: 5px;
+      transition: opacity 0.14s ease;
     }
     .composer-send-btn:hover {
       opacity: 0.92;
-      transform: scale(1.03);
     }
 
     /* POPOVERS & MENUS */
     .popover-menu {
       position: absolute;
-      background: #1b1b20;
-      border: 1px solid #2e2e36;
-      border-radius: 16px;
-      padding: 6px;
+      background: #18181f;
+      border: 1px solid #2d2d38;
+      border-radius: 13px;
+      padding: 5px;
       width: 248px;
-      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.65);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
       z-index: 60;
     }
     .popover-item {
       width: 100%;
-      padding: 8px 10px;
-      border-radius: 10px;
+      padding: 7px 9px;
+      border-radius: 9px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 9px;
       text-align: left;
       transition: background 0.12s ease;
     }
-    .popover-item:hover {
-      background: #26262d;
-    }
+    .popover-item:hover { background: #23232d; }
     .popover-item-icon {
-      width: 28px;
-      height: 28px;
-      border-radius: 8px;
-      background: #23232a;
-      border: 1px solid #303038;
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: #202029;
+      border: 1px solid #2e2e3a;
       display: flex;
       align-items: center;
       justify-content: center;
       color: #d4d4de;
       flex-shrink: 0;
     }
-    .popover-title {
-      font-size: 12.5px;
-      font-weight: 600;
-      color: #ededf2;
-    }
-    .popover-sub {
-      font-size: 10.5px;
-      color: #858590;
-    }
-    .popover-divider {
-      height: 1px;
-      background: #282830;
-      margin: 5px 4px;
-    }
+    .popover-title { font-size: 12px; font-weight: 600; color: #ededf4; }
+    .popover-sub { font-size: 10.5px; color: #828290; }
+    .popover-divider { height: 1px; background: #262630; margin: 4px 4px; }
 
-    /* DELIVERABLE STUDIO DRAWER */
+    /* =================================================================== */
+    /* PANE 3: DOCKED LIVE ENGINEERING WORKBENCH (IDE + GIT + TERMINAL)    */
+    /* =================================================================== */
     .studio-drawer {
-      width: 460px;
+      width: 470px;
       height: 100%;
-      background: #0e0e11;
+      background: var(--bg-workbench);
       border-left: 1px solid var(--border-subtle);
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
-      z-index: 30;
+      z-index: 25;
     }
     .studio-header {
-      height: 54px;
-      padding: 0 16px;
+      height: 52px;
+      padding: 0 12px;
       border-bottom: 1px solid var(--border-subtle);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 8px;
+      background: #0d0d11;
     }
 
     /* MODALS */
@@ -890,31 +990,31 @@
     .modal-card {
       width: 100%;
       max-width: 520px;
-      background: #17171b;
-      border: 1px solid #2c2c34;
-      border-radius: 20px;
+      background: #16161c;
+      border: 1px solid #2b2b36;
+      border-radius: 16px;
       overflow: hidden;
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.78);
     }
     .modal-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid #24242b;
+      padding: 15px 18px;
+      border-bottom: 1px solid #23232c;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
     .modal-body {
-      padding: 18px 20px;
+      padding: 16px 18px;
       max-height: 74vh;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 13px;
     }
     .modal-footer {
-      padding: 14px 20px;
-      background: #131317;
-      border-top: 1px solid #24242b;
+      padding: 12px 18px;
+      background: #111116;
+      border-top: 1px solid #23232c;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -922,69 +1022,67 @@
 
     .field-label {
       display: block;
-      font-size: 11px;
-      font-weight: 600;
+      font-size: 10.5px;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #888894;
-      margin-bottom: 6px;
+      letter-spacing: 0.05em;
+      color: #888896;
+      margin-bottom: 5px;
     }
     .field-input {
       width: 100%;
-      background: #111114;
-      border: 1px solid #292932;
-      border-radius: 10px;
-      padding: 8px 12px;
-      font-size: 13px;
-      color: #f0f0f5;
+      background: #101014;
+      border: 1px solid #282833;
+      border-radius: 8px;
+      padding: 7px 11px;
+      font-size: 12.5px;
+      color: #f0f0f6;
     }
     .field-input:focus {
-      border-color: #454554;
+      border-color: #464658;
     }
 
     .btn-primary {
-      height: 34px;
-      padding: 0 16px;
-      border-radius: 999px;
+      height: 31px;
+      padding: 0 13px;
+      border-radius: 8px;
       background: var(--accent-red);
       color: #ffffff;
-      font-size: 12.5px;
+      font-size: 12px;
       font-weight: 600;
       display: inline-flex;
       align-items: center;
       gap: 6px;
     }
-    .btn-primary:hover {
-      background: #e53e41;
-    }
+    .btn-primary:hover { background: #ec3f42; }
     .btn-secondary {
-      height: 34px;
-      padding: 0 14px;
-      border-radius: 999px;
-      background: #232329;
-      border: 1px solid #32323b;
-      color: #d4d4de;
-      font-size: 12.5px;
+      height: 31px;
+      padding: 0 11px;
+      border-radius: 8px;
+      background: #1e1e26;
+      border: 1px solid #2e2e3a;
+      color: #d4d4e0;
+      font-size: 12px;
       font-weight: 500;
       display: inline-flex;
       align-items: center;
       gap: 6px;
     }
     .btn-secondary:hover {
-      background: #2c2c34;
+      background: #282833;
       color: #ffffff;
     }
 
     .monkey-picker-grid {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
-      gap: 8px;
+      gap: 7px;
     }
     .monkey-pick-btn {
       padding: 6px;
-      border-radius: 12px;
-      background: #111114;
-      border: 1.5px solid #26262e;
+      border-radius: 10px;
+      background: #111115;
+      border: 1.5px solid #25252f;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -998,23 +1096,23 @@
 
     .toast {
       position: fixed;
-      bottom: 24px;
-      right: 24px;
-      background: #1d1d22;
-      border: 1px solid #32323b;
-      border-radius: 999px;
-      padding: 9px 16px;
-      font-size: 12.5px;
-      color: #f0f0f5;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+      bottom: 20px;
+      right: 20px;
+      background: #1b1b22;
+      border: 1px solid #323240;
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 12px;
+      color: #f0f0f6;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65);
       display: flex;
       align-items: center;
       gap: 8px;
       z-index: 200;
-      transition: transform 0.22s ease, opacity 0.22s ease;
+      transition: transform 0.2s ease, opacity 0.2s ease;
     }
     .toast.hidden-toast {
-      transform: translateY(40px);
+      transform: translateY(36px);
       opacity: 0;
       pointer-events: none;
     }
@@ -1036,7 +1134,7 @@
   <div class="app-shell">
 
     <!-- =================================================================== -->
-    <!-- LEFT SIDEBAR                                                        -->
+    <!-- PANE 1: LEFT NAVIGATION & AGENT FLEET SIDEBAR                       -->
     <!-- =================================================================== -->
     <aside class="sidebar">
       <div class="sidebar-header">
@@ -1044,42 +1142,46 @@
           <span class="tl-dot tl-red"></span>
           <span class="tl-dot tl-yellow"></span>
           <span class="tl-dot tl-green"></span>
+          <span class="brand-lockup" style="margin-left:6px;">
+            <span>Vanaras</span>
+            <span class="brand-version-tag">PRO</span>
+          </span>
         </div>
 
         <div class="sidebar-actions">
-          <button onclick="toggleSearchInput()" class="circle-icon-btn" title="Search conversations & Vanaras">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button onclick="toggleSearchInput()" class="circle-icon-btn" title="Filter Squads & Agents (⌘K)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="7"></circle>
               <line x1="20" y1="20" x2="16.2" y2="16.2"></line>
             </svg>
           </button>
 
-          <button onclick="togglePlusMenu(event)" class="circle-icon-btn" title="Create Vanara Bot or Group Room">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button onclick="togglePlusMenu(event)" class="circle-icon-btn" title="New Agent, Squad Room or Setup">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"></line>
               <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
           </button>
 
-          <!-- (+) Popover Menu: Non-duplicated Creation & Setup Actions -->
-          <div id="plusMenuDropdown" class="popover-menu hidden" style="top: 40px; right: 0; width: 256px;">
+          <!-- (+) Popover Menu -->
+          <div id="plusMenuDropdown" class="popover-menu hidden" style="top: 36px; right: 0; width: 252px;">
             <button onclick="openBotModal(null); hidePlusMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:#f87171;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1.2" fill="currentColor"/><circle cx="15" cy="10" r="1.2" fill="currentColor"/><path d="M9 15c1.5 1.2 4.5 1.2 6 0" stroke-linecap="round"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1.2" fill="currentColor"/><circle cx="15" cy="10" r="1.2" fill="currentColor"/><path d="M9 15c1.5 1.2 4.5 1.2 6 0" stroke-linecap="round"/></svg>
               </div>
               <div>
                 <div class="popover-title">New Vanara Agent (1:1)</div>
-                <div class="popover-sub">Custom model, role, tools & branch</div>
+                <div class="popover-sub">Dedicated model, tools & git worktree</div>
               </div>
             </button>
 
             <button onclick="openGroupModal(null); hidePlusMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:#60a5fa;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               </div>
               <div>
-                <div class="popover-title">New Squad / Group Room</div>
-                <div class="popover-sub">Multi-agent collaboration room</div>
+                <div class="popover-title">New Squad Channel</div>
+                <div class="popover-sub">Multi-agent autonomous build room</div>
               </div>
             </button>
 
@@ -1087,7 +1189,7 @@
 
             <button onclick="openConnectAppsModal(); hidePlusMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:#f59e0b;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
               </div>
               <div>
                 <div class="popover-title">Add Specialist Template</div>
@@ -1097,7 +1199,7 @@
 
             <button onclick="openOnboardingModal(); hidePlusMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:#10b981;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </div>
               <div>
                 <div class="popover-title">Onboarding & Model Setup</div>
@@ -1108,97 +1210,91 @@
         </div>
       </div>
 
+      <!-- Mounted Repository & Shared Memory Bar -->
+      <div class="sidebar-repo-card">
+        <button onclick="openMountModal()" class="sidebar-repo-btn" title="Mounted Local Repository (Click to switch repo or inspect Symbol Map)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span id="mountFolderLabel" class="mono" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">vanaras</span>
+        </button>
+        <div style="display:flex; align-items:center; gap:4px;">
+          <button onclick="openMemoryModal()" class="sidebar-repo-btn" style="font-size:10.5px; color:#a7f3d0; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.22);" title="Shared Workspace Memory Ledger">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+            <span id="sharedFactsCountPill" class="mono">3</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Search Input -->
       <div id="searchBarWrap" class="search-box-wrap hidden">
         <input
           id="threadSearchInput"
           type="text"
           oninput="renderThreadList()"
-          placeholder="Filter conversations (⌘K)..."
+          placeholder="Filter squads & agents..."
           class="search-input"
         >
       </div>
 
-      <!-- Thread List -->
+      <!-- Segmented Thread & Agent Fleet List -->
       <div id="threadListContainer" class="thread-list"></div>
 
-      <!-- Bottom Bar: Profile & Live LLM Engine Status + Setup -->
+      <!-- Bottom Status Dock: Profile & Live LLM Engine Status -->
       <div class="sidebar-footer">
         <button onclick="openOnboardingModal()" id="userInitialsBtn" class="vp-avatar-btn" title="Open Workspace Onboarding & Profile Settings">
           ME
         </button>
 
-        <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:0; justify-content:flex-end;">
-          <button onclick="openOnboardingModal()" id="llmEngineStatusPill" class="connect-apps-pill" style="flex:1; min-width:0; justify-content:space-between;" title="Click to configure AI Model Backend, Project Folder & Onboarding">
-            <span style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
-              <span id="llmStatusDot" style="width:7px; height:7px; border-radius:50%; background:#f59e0b; flex-shrink:0;"></span>
-              <span id="llmStatusText" class="mono" style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Setup Model</span>
-            </span>
-            <span style="font-size:10px; color:#94949e; flex-shrink:0;">Setup ⚙</span>
-          </button>
-        </div>
+        <button onclick="openOnboardingModal()" id="llmEngineStatusPill" class="connect-apps-pill" title="Click to configure AI Model Backend, Project Folder & Onboarding">
+          <span style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+            <span id="llmStatusDot" style="width:7px; height:7px; border-radius:50%; background:#f59e0b; flex-shrink:0;"></span>
+            <span id="llmStatusText" class="mono" style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Setup Model</span>
+          </span>
+          <span style="font-size:10px; color:#94949e; flex-shrink:0;">Configure</span>
+        </button>
       </div>
     </aside>
 
     <!-- =================================================================== -->
-    <!-- MAIN CONVERSATION VIEW                                              -->
+    <!-- PANE 2: CENTER MULTI-AGENT MISSION CONTROL & STREAM                 -->
     <!-- =================================================================== -->
     <main class="main-pane">
 
-      <!-- Floating Top Header -->
+      <!-- Docked Top Toolbar -->
       <header class="chat-header">
-        <!-- Left Context Pills (Mounted Folder, Agent Worktree & Shared Memory) -->
+        <!-- Left: Active Thread Identity + Isolated Git Worktree Pill -->
         <div class="chat-header-slot">
-          <button onclick="openMountModal()" class="header-tool-pill" title="Mounted Local Folder (Click to switch repo or inspect files)">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            </svg>
-            <span id="mountFolderLabel" class="mono" style="font-size:11px;">vanaras</span>
-          </button>
+          <button onclick="openActiveThreadSettings()" id="activeThreadPill" class="identity-pill" title="Configure Agent / Squad Settings"></button>
 
-          <button onclick="openWorktreeModal()" class="header-tool-pill" title="Per-Agent Isolated Git Worktree (.worktrees/<botId>)">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <button onclick="openWorktreeModal()" class="header-tool-pill" title="Inspect Per-Agent Isolated Git Worktree (.worktrees/<botId>)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="6" y1="3" x2="6" y2="15"></line>
               <circle cx="18" cy="6" r="3"></circle>
               <circle cx="6" cy="18" r="3"></circle>
               <path d="M18 9a9 9 0 0 1-9 9"></path>
             </svg>
-            <span id="worktreeBranchLabel" class="mono" style="font-size:11px; color:#bae6fd;">vanara/r1</span>
-          </button>
-
-          <button onclick="openMemoryModal()" class="header-tool-pill" title="Shared Workspace Memory Ledger">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-              <polyline points="2 17 12 22 22 17"></polyline>
-              <polyline points="2 12 12 17 22 12"></polyline>
-            </svg>
-            <span id="sharedFactsCountPill" class="mono" style="font-size:11px;">3</span>
+            <span id="worktreeBranchLabel" class="mono" style="font-size:11px; color:#7dd3fc;">vanara/r1</span>
           </button>
         </div>
 
-        <!-- Center Floating Identity Pill -->
-        <button onclick="openActiveThreadSettings()" id="activeThreadPill" class="identity-pill" title="Configure Vanara Bot, Private Memory, Tools/MCP & Worktree"></button>
-
-        <!-- Right Autonomous Loop, Collab & Studio Actions -->
+        <!-- Right: Autonomous Chaining, Squad Collab & Docked Workbench Toggle -->
         <div class="chat-header-slot">
-          <button onclick="toggleAutoTriggerMode()" id="autoTriggerPill" class="header-tool-pill" style="border-color:rgba(16,185,129,0.38); color:#6ee7b7;" title="Vanaras Self-Triggered Autonomous Chaining & Background Execution">
-            <span id="autoTriggerDot" style="width:7px; height:7px; border-radius:50%; background:#10b981; display:inline-block;"></span>
+          <button onclick="toggleAutoTriggerMode()" id="autoTriggerPill" class="header-tool-pill" style="border-color:rgba(16,185,129,0.35); color:#6ee7b7;" title="Toggle Self-Triggered Autonomous Handoffs & Self-Healing">
+            <span id="autoTriggerDot" style="width:6.5px; height:6.5px; border-radius:50%; background:#10b981; display:inline-block;"></span>
             <span id="autoTriggerLabel" class="mono" style="font-size:11px;">Auto: ON</span>
           </button>
 
-          <button onclick="triggerGroupCollabRun()" class="header-tool-pill collab-cta" title="Run Autonomous Multi-Monkey Collab">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button onclick="triggerGroupCollabRun()" class="header-tool-pill collab-cta" title="Run Multi-Agent Squad Collaboration Pass">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
             </svg>
-            <span>Collab</span>
+            <span>Run Collab</span>
           </button>
 
-          <button onclick="openAgentCodeWorkspace()" id="headerCodeWorkspaceBtn" class="header-tool-pill" title="Open Per-Agent Code Workspace IDE">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="16 18 22 12 16 6"></polyline>
-              <polyline points="8 6 2 12 8 18"></polyline>
+          <button onclick="toggleDeliverableDrawer()" id="headerCodeWorkspaceBtn" class="header-tool-pill" style="border-color:rgba(56,189,248,0.35); color:#bae6fd;" title="Toggle Docked Code & Git Workbench">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/>
             </svg>
-            <span id="artifactCountPill" class="mono" style="font-size:11px;">Code Workspace</span>
+            <span id="artifactCountPill" class="mono" style="font-size:11px;">Workbench</span>
           </button>
         </div>
       </header>
@@ -1208,18 +1304,18 @@
         <div id="messagesInner" class="messages-inner"></div>
       </div>
 
-      <!-- Bottom Pill Composer -->
+      <!-- Pro Multi-Row Engineering Composer Dock -->
       <div class="composer-outer">
         <div class="composer-inner">
 
           <!-- @Mention Auto-Complete Popover -->
-          <div id="mentionAutocompletePopup" class="popover-menu hidden" style="bottom: 58px; left: 12px; width: 280px; max-height: 220px; overflow-y: auto;"></div>
+          <div id="mentionAutocompletePopup" class="popover-menu hidden" style="bottom: 108px; left: 10px; width: 280px; max-height: 220px; overflow-y: auto;"></div>
 
-          <!-- Composer Quick Action Menu (Context Attachment, Autonomous Goal & Chat Reset) -->
-          <div id="composerMenu" class="popover-menu hidden" style="bottom: 58px; left: 0; width: 278px;">
+          <!-- Composer Quick Action Menu -->
+          <div id="composerMenu" class="popover-menu hidden" style="bottom: 108px; left: 0; width: 272px;">
             <button onclick="attachRepoFileToComposer(); hideComposerMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:#60a5fa;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               </div>
               <div>
                 <div class="popover-title">Attach File from Workspace</div>
@@ -1228,7 +1324,7 @@
             </button>
             <button onclick="startAutonomousBackgroundGoal(); hideComposerMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:#10b981;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
               </div>
               <div>
                 <div class="popover-title">Run Autonomous Background Goal</div>
@@ -1237,7 +1333,7 @@
             </button>
             <button onclick="promptBackgroundCommand(); hideComposerMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:#a7f3d0;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
               </div>
               <div>
                 <div class="popover-title">Execute Command in Worktree</div>
@@ -1247,7 +1343,7 @@
             <div class="popover-divider"></div>
             <button onclick="clearActiveThreadMessages(); hideComposerMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:#f87171;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
               </div>
               <div>
                 <div class="popover-title">Clear This Conversation</div>
@@ -1256,42 +1352,60 @@
             </button>
           </div>
 
-          <div class="composer-pill">
-            <div class="composer-plus-wrap">
-              <button onclick="toggleComposerMenu(event)" class="composer-plus-btn" title="Attach File, Run Autonomous Goal or Clear Chat">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </button>
-              <!-- Dynamic Active Vanara Avatar Badge -->
-              <div onclick="openActiveThreadSettings()" id="composerBotAvatarBadge" class="composer-bot-badge" title="Active Vanara Agent (Click to configure)" style="overflow:hidden; padding:0;">
+          <div class="composer-card">
+            <!-- Row 1: Active Agent Badge & Quick @Mention Chips (No Overlapping!) -->
+            <div class="composer-context-strip">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button onclick="openActiveThreadSettings()" class="composer-agent-chip" title="Active Lead Agent & Worktree">
+                  <span id="composerBotAvatarBadge" style="display:inline-flex; align-items:center;"></span>
+                  <span id="composerLeadBotLabel" class="mono">R1 • vanara/r1</span>
+                </button>
+                <span style="font-size:10.5px; color:#686875;">Tag agent:</span>
+                <button onclick="quickInsertMention('@R1')" class="composer-mention-pill mono">@R1 Architect</button>
+                <button onclick="quickInsertMention('@R2')" class="composer-mention-pill mono">@R2 Systems</button>
+                <button onclick="quickInsertMention('@R3')" class="composer-mention-pill mono">@R3 QA/Eval</button>
+                <button onclick="quickInsertMention('@R4')" class="composer-mention-pill mono">@R4 Frontend</button>
               </div>
             </div>
 
-            <input
-              id="chatComposerInput"
-              type="text"
-              oninput="onComposerInput(this.value)"
-              placeholder="Message R1 (@mention any agent or type /run <cmd>)"
-              class="composer-input"
-            >
+            <!-- Row 2: Text Input -->
+            <div class="composer-input-row">
+              <input
+                id="chatComposerInput"
+                type="text"
+                oninput="onComposerInput(this.value)"
+                placeholder="Ask the squad to architect, build, patch, or verify code (@mention any agent or /run <cmd>)..."
+                class="composer-input"
+              >
+            </div>
 
-            <div class="composer-right-btns">
-              <button onclick="promptBackgroundCommand()" class="composer-mic-btn" title="Execute Shell Command in Agent's Git Worktree (/run)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="4 17 10 11 4 5"></polyline>
-                  <line x1="12" y1="19" x2="20" y2="19"></line>
-                </svg>
-              </button>
+            <!-- Row 3: Action Toolbar -->
+            <div class="composer-bottom-bar">
+              <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+                <button onclick="toggleComposerMenu(event)" class="composer-tool-btn" title="More Actions">+ Actions</button>
+                <button onclick="attachRepoFileToComposer()" class="composer-tool-btn" title="Attach file from mounted repository">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  <span>Attach File</span>
+                </button>
+                <button onclick="promptBackgroundCommand()" class="composer-tool-btn mono" title="Run command in agent worktree">
+                  <span style="color:#6ee7b7;">&gt;_</span>
+                  <span>Run Cmd</span>
+                </button>
+                <button onclick="startAutonomousBackgroundGoal()" class="composer-tool-btn" title="Launch autonomous multi-turn background goal">
+                  <span style="color:#f59e0b;">◎</span>
+                  <span>Auto Goal</span>
+                </button>
+              </div>
 
-              <!-- Crisp Send Arrow Button -->
-              <button onclick="handleSendMessage()" id="composerSendBtn" class="composer-send-btn" title="Send Message (Enter)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="12" y1="19" x2="12" y2="5"></line>
-                  <polyline points="5 12 12 5 19 12"></polyline>
-                </svg>
-              </button>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button onclick="handleSendMessage()" id="composerSendBtn" class="composer-send-btn" title="Dispatch Turn (Enter)">
+                  <span>Send</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1301,72 +1415,85 @@
     </main>
 
     <!-- =================================================================== -->
-    <!-- RIGHT PER-AGENT CODE WORKSPACE & DELIVERABLE STUDIO DRAWER          -->
+    <!-- PANE 3: DOCKED LIVE ENGINEERING WORKBENCH (OPEN BY DEFAULT)         -->
     <!-- =================================================================== -->
-    <aside id="deliverableDrawer" class="studio-drawer hidden" style="width:520px;">
+    <aside id="deliverableDrawer" class="studio-drawer">
       <div class="studio-header">
-        <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          <select id="workspaceAgentSelect" onchange="onSwitchWorkspaceAgent(this.value)" class="field-input" style="height:28px; padding:0 8px; font-size:12px; font-weight:600; background:#151519; border-color:#2c2c35; width:155px;"></select>
+        <div style="display:flex; align-items:center; gap:7px; min-width:0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <select id="workspaceAgentSelect" onchange="onSwitchWorkspaceAgent(this.value)" class="field-input" style="height:28px; padding:0 8px; font-size:11.5px; font-weight:600; background:#14141a; border-color:#2a2a35; width:175px;"></select>
         </div>
         <div style="display:flex; align-items:center; gap:5px;">
-          <button onclick="createNewFileInAgentWorkspace()" class="btn-secondary" style="height:26px; padding:0 7px; font-size:11px;" title="Create new file in this agent's workspace">+ File</button>
-          <button onclick="setDrawerMode('source')" id="btnModeSource" class="btn-secondary" style="height:26px; padding:0 7px; font-size:11px;">Code</button>
-          <button onclick="setDrawerMode('preview')" id="btnModePreview" class="btn-secondary" style="height:26px; padding:0 7px; font-size:11px;">Preview</button>
-          <button onclick="setDrawerMode('vnc')" id="btnModeVnc" class="btn-secondary" style="height:26px; padding:0 7px; font-size:11px;" title="Vanaras Browser & Remote Desktop Mount">VNC/Web</button>
-          <button onclick="toggleAgentDevServer()" id="btnAgentServe" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px; border-color:rgba(56,189,248,0.4); color:#7dd3fc;" title="Start/Stop persistent Dev Server on dedicated port for this agent">⚡ Serve</button>
-          <button onclick="runActiveFileInAgentWorkspace()" class="btn-primary" style="height:26px; padding:0 9px; font-size:11px; background:#10b981;" title="Execute active file inside this agent's isolated workspace">▶ Run</button>
-          <button onclick="saveActiveEditorToAgentWorkspace()" class="btn-primary" style="height:26px; padding:0 9px; font-size:11px; background:#2563eb;" title="Save edits to disk">Save</button>
-          <button onclick="toggleDeliverableDrawer(false)" class="side-icon-btn">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <button onclick="createNewFileInAgentWorkspace()" class="btn-secondary" style="height:25px; padding:0 7px; font-size:10.5px;" title="Create new file in this agent's workspace">+ File</button>
+          <button onclick="saveActiveEditorToAgentWorkspace()" class="btn-secondary" style="height:25px; padding:0 8px; font-size:10.5px;" title="Save edits & commit to agent branch">Save</button>
+          <button onclick="toggleAgentDevServer()" id="btnAgentServe" class="btn-secondary" style="height:25px; padding:0 8px; font-size:10.5px; border-color:rgba(56,189,248,0.38); color:#7dd3fc;" title="Start/Stop persistent Dev Server on dedicated port">⚡ Serve</button>
+          <button onclick="runActiveFileInAgentWorkspace()" class="btn-primary" style="height:25px; padding:0 9px; font-size:10.5px; background:#10b981;" title="Execute active file inside this agent's isolated workspace">▶ Run</button>
+          <button onclick="toggleDeliverableDrawer(false)" class="side-icon-btn" title="Collapse Workbench">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
       </div>
 
-      <!-- Agent Workspace Branch, Disk Path, File Watcher & Sandbox Bar -->
-      <div style="padding:6px 12px; background:#121216; border-bottom:1px solid #1e1e24; display:flex; align-items:center; justify-content:space-between; gap:8px;" class="mono">
-        <div style="display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden;">
-          <span id="workspaceBranchBadge" style="font-size:10.5px; color:#38bdf8; flex-shrink:0;">vanara/r1</span>
-          <span id="workspaceDiskPathLabel" style="font-size:10px; color:#787884; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">.worktrees/bot_r1/agent_workspace/r1</span>
+      <!-- Workbench Mode Switcher + Branch & Sandbox Controls -->
+      <div style="padding:6px 12px; background:#0f0f14; border-bottom:1px solid #1e1e26; display:flex; align-items:center; justify-content:space-between; gap:6px;" class="mono">
+        <div style="display:flex; align-items:center; gap:4px;">
+          <button onclick="setDrawerMode('source')" id="btnModeSource" class="btn-secondary" style="height:23px; padding:0 8px; font-size:10.5px;">Code</button>
+          <button onclick="setDrawerMode('preview')" id="btnModePreview" class="btn-secondary" style="height:23px; padding:0 8px; font-size:10.5px;">Preview</button>
+          <button onclick="setDrawerMode('vnc')" id="btnModeVnc" class="btn-secondary" style="height:23px; padding:0 8px; font-size:10.5px;">Web/VNC</button>
         </div>
-        <div style="display:flex; align-items:center; gap:5px; flex-shrink:0;">
-          <button onclick="toggleAgentWorkspaceWatcher()" id="btnAgentWatch" style="font-size:10px; color:#a7f3d0; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); border-radius:6px; padding:2px 6px;" title="Start fs.watch + scheduled heartbeat daemon for this agent">👁 Watch</button>
-          <button onclick="manageActiveAgentSandbox('HibernateSandBox')" style="font-size:10px; color:#c4b5fd; background:rgba(139,92,246,0.1); border:1px solid rgba(139,92,246,0.3); border-radius:6px; padding:2px 6px;" title="Snapshot & hibernate this agent's sandbox">Hibernate</button>
-          <button onclick="manageActiveAgentSandbox('RecreateSandBox')" style="font-size:10px; color:#fda4af; background:rgba(244,63,94,0.1); border:1px solid rgba(244,63,94,0.3); border-radius:6px; padding:2px 6px;" title="Recreate clean sandbox for this agent">Reset Box</button>
+        <div style="display:flex; align-items:center; gap:5px; min-width:0; overflow:hidden;">
+          <span id="workspaceBranchBadge" style="font-size:10px; color:#38bdf8; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.25); padding:1px 6px; border-radius:4px; flex-shrink:0;">vanara/r1</span>
+          <span id="workspaceDiskPathLabel" style="display:none;"></span>
+          <button onclick="toggleAgentWorkspaceWatcher()" id="btnAgentWatch" style="font-size:10px; color:#a7f3d0; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.28); border-radius:5px; padding:2px 6px;" title="Start fs.watch + 60s heartbeat daemon">👁 Watch</button>
+          <button onclick="manageActiveAgentSandbox('HibernateSandBox')" style="font-size:10px; color:#c4b5fd; background:rgba(139,92,246,0.1); border:1px solid rgba(139,92,246,0.28); border-radius:5px; padding:2px 6px;" title="Snapshot & hibernate sandbox">Snap</button>
+          <button onclick="manageActiveAgentSandbox('RecreateSandBox')" style="font-size:10px; color:#fda4af; background:rgba(244,63,94,0.1); border:1px solid rgba(244,63,94,0.28); border-radius:5px; padding:2px 6px;" title="Reset sandbox">Reset</button>
         </div>
       </div>
 
       <!-- Per-Agent Workspace File Tabs -->
-      <div id="deliverableTabs" style="display:flex; gap:6px; padding:8px 14px; border-bottom:1px solid #1e1e22; overflow-x:auto; flex-shrink:0;"></div>
+      <div id="deliverableTabs" style="display:flex; gap:5px; padding:6px 12px; background:#0b0b0e; border-bottom:1px solid #1b1b22; overflow-x:auto; flex-shrink:0;"></div>
 
       <!-- Code Editor + Live HTML Preview + VNC/Browser Mount -->
       <div style="flex:1; position:relative; overflow:hidden; display:flex; flex-direction:column;">
-        <textarea id="deliverableCodeView" spellcheck="false" class="mono" style="flex:1; width:100%; background:#0e0e11; border:none; padding:14px 16px; overflow:auto; font-size:12px; line-height:1.55; color:#e4e4ef; resize:none;"></textarea>
+        <textarea id="deliverableCodeView" spellcheck="false" class="mono" style="flex:1; width:100%; background:#0a0a0d; border:none; padding:14px 16px; overflow:auto; font-size:12px; line-height:1.58; color:#e4e4f0; resize:none;"></textarea>
         <iframe id="deliverablePreviewFrame" class="hidden" style="flex:1; width:100%; border:none; background:#ffffff;"></iframe>
         <div id="deliverableVncWrap" class="hidden" style="flex:1; display:flex; flex-direction:column; background:#0b0b0e;">
-          <div style="padding:6px 10px; background:#15151b; border-bottom:1px solid #262630; display:flex; align-items:center; gap:6px;">
-            <span class="mono" style="font-size:10.5px; color:#a7f3d0;">VNC / Web Mount:</span>
-            <input id="vncMountUrlInput" type="text" value="http://localhost:4101" class="field-input mono" style="height:24px; font-size:11px; padding:0 8px; flex:1;" placeholder="http://localhost:4101 or VNC URL">
+          <div style="padding:6px 10px; background:#14141a; border-bottom:1px solid #24242e; display:flex; align-items:center; gap:6px;">
+            <span class="mono" style="font-size:10.5px; color:#a7f3d0;">URL:</span>
+            <input id="vncMountUrlInput" type="text" value="http://localhost:4101" class="field-input mono" style="height:24px; font-size:11px; padding:0 8px; flex:1;" placeholder="http://localhost:4101">
             <button onclick="mountVncBrowserUrl()" class="btn-secondary" style="height:24px; padding:0 8px; font-size:10.5px;">Mount</button>
-            <button onclick="verifyActiveAgentWebUrl()" class="btn-secondary" style="height:24px; padding:0 8px; font-size:10.5px; border-color:rgba(16,185,129,0.4); color:#6ee7b7;" title="Headless HTTP/DOM smoke probe of the mounted web app">Verify Web</button>
+            <button onclick="verifyActiveAgentWebUrl()" class="btn-secondary" style="height:24px; padding:0 8px; font-size:10.5px; border-color:rgba(16,185,129,0.4); color:#6ee7b7;" title="Headless HTTP/DOM smoke probe">✓ Verify</button>
           </div>
           <iframe id="deliverableVncFrame" style="flex:1; width:100%; border:none; background:#111115;"></iframe>
         </div>
       </div>
 
-      <!-- Per-Agent Workspace Live Execution, Peer Review & Git Commit Console -->
-      <div style="height:155px; background:#090a0d; border-top:1px solid #22222a; display:flex; flex-direction:column; flex-shrink:0;" class="mono">
-        <div style="padding:5px 12px; background:#121318; border-bottom:1px solid #1e1e26; display:flex; align-items:center; justify-content:space-between; font-size:10.5px; color:#888894;">
-          <span id="workspaceConsoleTitle">Workspace Console & Git</span>
-          <div style="display:flex; align-items:center; gap:6px;">
-            <button onclick="triggerPeerReviewForActiveWorkspace()" style="font-size:10px; color:#93c5fd; background:rgba(59,130,246,0.12); border:1px solid rgba(59,130,246,0.35); border-radius:6px; padding:2px 6px;" title="Ask @R3 (Verification & Eval) to review this branch diff against main">Peer Review (@R3)</button>
-            <button onclick="commitActiveAgentWorkspace()" style="font-size:10px; color:#6ee7b7; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.35); border-radius:6px; padding:2px 6px;">Commit</button>
-            <button onclick="mergeActiveAgentWorkspaceToMain()" style="font-size:10px; color:#fcd34d; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); border-radius:6px; padding:2px 6px;" title="Merge this agent's workspace into the main repository branch">Merge → main</button>
-            <button onclick="createPrForActiveWorkspace()" style="font-size:10px; color:#f9a8d4; background:rgba(236,72,153,0.12); border:1px solid rgba(236,72,153,0.35); border-radius:6px; padding:2px 6px;" title="Push branch & open GitHub PR from this agent's worktree">Open PR</button>
-            <button onclick="openWorktreeModal(activeWorkspaceBotId)" style="font-size:10px; color:#38bdf8;">Diff →</button>
+      <!-- Docked Terminal, Peer Review & Git Pipeline Console -->
+      <div style="height:190px; background:#08080b; border-top:1px solid #22222b; display:flex; flex-direction:column; flex-shrink:0;" class="mono">
+        <div style="padding:5px 10px; background:#101116; border-bottom:1px solid #1d1d26; display:flex; align-items:center; justify-content:space-between; font-size:10px; color:#888896;">
+          <span id="workspaceConsoleTitle" style="font-weight:600; color:#b4b4c2;">WORKTREE TERMINAL &amp; GIT PIPELINE</span>
+          <div style="display:flex; align-items:center; gap:5px;">
+            <button onclick="triggerPeerReviewForActiveWorkspace()" style="font-size:10px; color:#93c5fd; background:rgba(59,130,246,0.12); border:1px solid rgba(59,130,246,0.35); border-radius:5px; padding:2px 6px;" title="Send git diff to @R3 for code review">Peer Review</button>
+            <button onclick="commitActiveAgentWorkspace()" style="font-size:10px; color:#6ee7b7; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.35); border-radius:5px; padding:2px 6px;">Commit</button>
+            <button onclick="mergeActiveAgentWorkspaceToMain()" style="font-size:10px; color:#fcd34d; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); border-radius:5px; padding:2px 6px;" title="Syntax-check & merge into main">Merge → main</button>
+            <button onclick="createPrForActiveWorkspace()" style="font-size:10px; color:#f9a8d4; background:rgba(236,72,153,0.12); border:1px solid rgba(236,72,153,0.35); border-radius:5px; padding:2px 6px;">PR</button>
+            <button onclick="openWorktreeModal(activeWorkspaceBotId)" style="font-size:10px; color:#38bdf8;">Diff</button>
           </div>
         </div>
-        <pre id="workspaceConsoleOutput" style="flex:1; padding:8px 12px; overflow:auto; font-size:11px; line-height:1.45; color:#a7f3d0; white-space:pre-wrap; user-select:text;">Every file generated by an agent is auto-committed to its branch (vanara/&lt;bot&gt;). Click "▶ Run", "⚡ Serve", "Peer Review (@R3)", or "Merge → main".</pre>
+        <pre id="workspaceConsoleOutput" style="flex:1; padding:8px 11px; overflow:auto; font-size:11px; line-height:1.45; color:#a7f3d0; white-space:pre-wrap; user-select:text;">Ready in isolated worktree. Every generated ===FILE:=== or ===PATCH:=== is auto-committed and verified.</pre>
+        <!-- Inline Worktree Shell Command Bar -->
+        <div style="display:flex; align-items:center; gap:6px; padding:4px 10px; background:#0d0e13; border-top:1px solid #1b1b24;">
+          <span style="color:#10b981; font-size:11px; font-weight:700;">$</span>
+          <input
+            id="workbenchQuickCmdInput"
+            type="text"
+            placeholder="Run command in agent worktree (e.g. git status -sb, node calc.js)..."
+            style="flex:1; height:22px; background:transparent; border:none; font-size:11px; color:#e4e4f0;"
+            class="mono"
+            onkeydown="if(event.key==='Enter'){runQuickCommandFromWorkbench();}"
+          >
+          <button onclick="runQuickCommandFromWorkbench()" style="font-size:10px; color:#6ee7b7; padding:2px 6px; border-radius:4px; background:rgba(16,185,129,0.12);">Run ↵</button>
+        </div>
       </div>
     </aside>
 
@@ -2194,7 +2321,12 @@
         syncAgentMemoryOnServer(bot, "get");
       }
       const lead = getActiveLeadBot();
-      if (lead) ensureAgentWorktreeOnServer(lead);
+      if (lead) {
+        activeWorkspaceBotId = lead.id;
+        ensureAgentWorktreeOnServer(lead);
+      }
+      populateWorkspaceAgentSelector();
+      loadAgentCodeWorkspaceFromServer(activeWorkspaceBotId);
       if (!state.onboarded) {
         openOnboardingModal();
       }
@@ -2234,7 +2366,7 @@
 
       const artPill = document.getElementById("artifactCountPill");
       if (artPill) {
-        artPill.innerText = deliverables.length > 0 ? `Code Workspace (${deliverables.length})` : "Code Workspace";
+        artPill.innerText = deliverables.length > 0 ? `Workbench (${deliverables.length})` : "Workbench";
       }
 
       const autoPill = document.getElementById("autoTriggerPill");
@@ -2294,72 +2426,129 @@
       showToast("Removed conversation");
     }
 
+    function stripMarkdownPreview(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/```[\s\S]*?```/g, "[code]")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/`([^`]+)`/g, "$1")
+        .replace(/^[•*-]\s+/gm, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function renderThreadRowElement(thread) {
+      let title = thread.name || "";
+      let branchTagHtml = "";
+      let avatarHtml = "";
+
+      if (thread.type === "dm") {
+        const bot = getBot(thread.botId);
+        if (!bot) return null;
+        title = bot.name;
+        const br = bot.worktreeBranch || `vanara/${bot.name.toLowerCase()}`;
+        branchTagHtml = `<span class="thread-branch-tag mono">${escapeHtml(br)}</span>`;
+        avatarHtml = `<div class="thread-avatar-wrap">${renderMonkeyAvatar(bot.avatarStyle, 32)}</div>`;
+      } else {
+        const memberCount = (thread.botIds?.length || 0) + (thread.humanIds?.length || 0);
+        branchTagHtml = `<span class="thread-branch-tag mono" style="color:#a7f3d0; border-color:rgba(16,185,129,0.25); background:rgba(16,185,129,0.08);">${memberCount}m</span>`;
+        avatarHtml = `<div class="thread-avatar-wrap">${renderGroupClusterAvatar(thread)}</div>`;
+      }
+
+      const lastMsg = thread.messages[thread.messages.length - 1];
+      const rawPreview = activeWorkingThreads[thread.id]
+        ? activeWorkingThreads[thread.id]
+        : (lastMsg ? lastMsg.text : (thread.type === "dm" ? getBot(thread.botId)?.role : "Multi-agent squad"));
+      const preview = stripMarkdownPreview(rawPreview) || "Ready";
+
+      const isSelected = thread.id === activeThreadId;
+      const unread = unreadCounts[thread.id] || 0;
+      const isWorking = Boolean(activeWorkingThreads[thread.id]);
+
+      const btn = document.createElement("div");
+      btn.className = `thread-row ${isSelected ? "active" : ""}`;
+      btn.style.cursor = "pointer";
+      btn.onclick = () => {
+        activeThreadId = thread.id;
+        unreadCounts[thread.id] = 0;
+        const lead = getActiveLeadBot();
+        if (lead && activeWorkspaceBotId !== lead.id) {
+          activeWorkspaceBotId = lead.id;
+          loadAgentCodeWorkspaceFromServer(lead.id);
+        }
+        renderThreadList();
+        renderActiveThread();
+      };
+
+      let rightStatusHtml = "";
+      if (isWorking) {
+        rightStatusHtml = `<span style="width:11px; height:11px; border:2px solid #f59e0b; border-top-color:transparent; border-radius:50%; display:inline-block;" class="spin"></span>`;
+      } else if (unread > 0) {
+        rightStatusHtml = `<span class="unread-badge">${unread}</span>`;
+      } else {
+        rightStatusHtml = `<button onclick="deleteThreadById('${thread.id}', event)" class="thread-delete-btn" title="Remove or reset thread">×</button>`;
+      }
+
+      btn.innerHTML = `
+        ${avatarHtml}
+        <div class="thread-meta">
+          <div class="thread-title-row">
+            <span class="thread-title">
+              <span>${escapeHtml(title)}</span>
+              ${branchTagHtml}
+            </span>
+            ${rightStatusHtml}
+          </div>
+          <div class="thread-preview">${escapeHtml(preview)}</div>
+        </div>
+      `;
+      return btn;
+    }
+
     function renderThreadList() {
       const container = document.getElementById("threadListContainer");
       const query = (document.getElementById("threadSearchInput")?.value || "").trim().toLowerCase();
       container.innerHTML = "";
 
-      state.threads.forEach(thread => {
-        let title = thread.name || "";
-        let avatarHtml = "";
-
-        if (thread.type === "dm") {
-          const bot = getBot(thread.botId);
-          if (!bot) return;
-          title = bot.name;
-          avatarHtml = `<div class="thread-avatar-wrap">${renderMonkeyAvatar(bot.avatarStyle, 38)}</div>`;
-        } else {
-          avatarHtml = `<div class="thread-avatar-wrap">${renderGroupClusterAvatar(thread)}</div>`;
-        }
-
+      const filtered = state.threads.filter(thread => {
+        const bot = thread.type === "dm" ? getBot(thread.botId) : null;
+        const title = (thread.type === "dm" ? bot?.name : thread.name) || "";
+        const role = bot?.role || "";
         const lastMsg = thread.messages[thread.messages.length - 1];
-        const preview = activeWorkingThreads[thread.id]
-          ? activeWorkingThreads[thread.id]
-          : (lastMsg ? lastMsg.text.replace(/\s+/g, " ") : "No messages yet");
-
-        if (query && !title.toLowerCase().includes(query) && !preview.toLowerCase().includes(query)) {
-          return;
-        }
-
-        const isSelected = thread.id === activeThreadId;
-        const unread = unreadCounts[thread.id] || 0;
-        const isWorking = Boolean(activeWorkingThreads[thread.id]);
-
-        const btn = document.createElement("div");
-        btn.className = `thread-row ${isSelected ? "active" : ""}`;
-        btn.style.cursor = "pointer";
-        btn.onclick = () => {
-          activeThreadId = thread.id;
-          unreadCounts[thread.id] = 0;
-          renderThreadList();
-          renderActiveThread();
-        };
-
-        let rightStatusHtml = "";
-        if (isWorking) {
-          rightStatusHtml = `<span style="width:12px; height:12px; border:2px solid #f59e0b; border-top-color:transparent; border-radius:50%; display:inline-block;" class="spin"></span>`;
-        } else if (unread > 0) {
-          rightStatusHtml = `<span class="unread-badge">${unread}</span>`;
-        } else {
-          rightStatusHtml = `<button onclick="deleteThreadById('${thread.id}', event)" class="side-icon-btn" style="width:20px; height:20px; opacity:0.55;" title="Delete or clear thread">×</button>`;
-        }
-
-        btn.innerHTML = `
-          ${avatarHtml}
-          <div class="thread-meta">
-            <div class="thread-title-row">
-              <span class="thread-title">${escapeHtml(title)}</span>
-              ${rightStatusHtml}
-            </div>
-            <div class="thread-preview">${escapeHtml(preview)}</div>
-          </div>
-        `;
-        container.appendChild(btn);
+        const preview = stripMarkdownPreview(lastMsg?.text || "");
+        if (!query) return true;
+        return title.toLowerCase().includes(query) || role.toLowerCase().includes(query) || preview.toLowerCase().includes(query);
       });
+
+      const squadThreads = filtered.filter(t => t.type === "group");
+      const agentThreads = filtered.filter(t => t.type === "dm");
+
+      if (squadThreads.length > 0) {
+        const hdr = document.createElement("div");
+        hdr.className = "sidebar-section-label";
+        hdr.innerHTML = `<span>Squad Channels</span><span class="mono">${squadThreads.length}</span>`;
+        container.appendChild(hdr);
+        squadThreads.forEach(t => {
+          const el = renderThreadRowElement(t);
+          if (el) container.appendChild(el);
+        });
+      }
+
+      if (agentThreads.length > 0) {
+        const hdr = document.createElement("div");
+        hdr.className = "sidebar-section-label";
+        hdr.style.marginTop = "6px";
+        hdr.innerHTML = `<span>Autonomous Agents (Worktrees)</span><span class="mono">${agentThreads.length}</span>`;
+        container.appendChild(hdr);
+        agentThreads.forEach(t => {
+          const el = renderThreadRowElement(t);
+          if (el) container.appendChild(el);
+        });
+      }
     }
 
     // =========================================================================
-    // 4. RENDER ACTIVE CONVERSATION
+    // 4. RENDER ACTIVE CONVERSATION & MISSION CONTROL QUICK-START
     // =========================================================================
     function findMentionedBotsInText(text, excludeBotId) {
       if (!text) return [];
@@ -2382,6 +2571,58 @@
       return cmds.slice(0, 2);
     }
 
+    function quickInsertMention(handle) {
+      const input = document.getElementById("chatComposerInput");
+      if (!input) return;
+      const cur = input.value.trim();
+      input.value = cur ? `${cur} ${handle} ` : `${handle} `;
+      input.focus();
+    }
+
+    async function runQuickCommandFromWorkbench() {
+      const inp = document.getElementById("workbenchQuickCmdInput");
+      if (!inp) return;
+      const cmd = inp.value.trim();
+      if (!cmd) return;
+      inp.value = "";
+      const bot = getBot(activeWorkspaceBotId) || getActiveLeadBot();
+      const consoleOut = document.getElementById("workspaceConsoleOutput");
+      if (consoleOut) {
+        consoleOut.textContent = `$ ${cmd} (running in ${bot?.worktreeBranch || "worktree"}...)`;
+      }
+      await executeBackgroundCommand(cmd, bot);
+      try {
+        const res = await fetch("/api/agent/tool", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "git_status",
+            botId: bot?.id || "bot_r1",
+            botName: bot?.name || "R1"
+          })
+        });
+        const data = await res.json();
+        if (consoleOut && data.output) {
+          consoleOut.textContent = `$ ${cmd}\nExecuted in ${data.branch || bot?.worktreeBranch}\n${data.output}`;
+        }
+      } catch {}
+    }
+
+    async function runMissionQuickStart(missionType) {
+      const input = document.getElementById("chatComposerInput");
+      if (!input) return;
+      if (missionType === "architect") {
+        input.value = "@R1 Design a clean modular health-check & telemetry utility in JavaScript (`health_probe.js`) with automated self-tests, and hand off to @R2 and @R3.";
+      } else if (missionType === "audit") {
+        input.value = "@R3 Inspect our repository status and symbol map using [TOOL: git_status], review recent commits, and summarize key architectural risks.";
+      } else if (missionType === "patch") {
+        input.value = "@R2 Read `calc.js` in our workspace and apply a surgical ===PATCH: calc.js=== SEARCH/REPLACE upgrade to add multiply(a, b) with verification output.";
+      } else if (missionType === "webapp") {
+        input.value = "@R4 Create a sleek dark-mode real-time system metrics dashboard in `index.html` using ===FILE: index.html=== so we can preview and serve it live in the Workbench.";
+      }
+      await handleSendMessage();
+    }
+
     function renderActiveThread() {
       const thread = getActiveThread();
       if (!thread) return;
@@ -2391,30 +2632,70 @@
       const pill = document.getElementById("activeThreadPill");
       const input = document.getElementById("chatComposerInput");
       const composerBadge = document.getElementById("composerBotAvatarBadge");
+      const composerLeadLbl = document.getElementById("composerLeadBotLabel");
 
       if (thread.type === "dm") {
         const bot = getBot(thread.botId);
         pill.innerHTML = `
-          ${renderMonkeyAvatar(bot.avatarStyle, 22)}
+          ${renderMonkeyAvatar(bot.avatarStyle, 20)}
           <span class="identity-pill-name">${escapeHtml(bot.name)}</span>
           <span class="identity-pill-sub">${escapeHtml(bot.role || "")}</span>
         `;
-        if (composerBadge) composerBadge.innerHTML = renderMonkeyAvatar(bot.avatarStyle, 18);
-        input.placeholder = `Message ${bot.name} (@mention any agent or type /run <cmd>)`;
+        if (composerBadge) composerBadge.innerHTML = renderMonkeyAvatar(bot.avatarStyle, 15);
+        if (composerLeadLbl) composerLeadLbl.innerText = `${bot.name} • ${bot.worktreeBranch || "vanara/" + bot.name.toLowerCase()}`;
+        input.placeholder = `Message @${bot.name} (${bot.role}) — or type /run <cmd>...`;
       } else {
         const memberCount = (thread.botIds?.length || 0) + (thread.humanIds?.length || 0);
         const leadBot = getBot(thread.botIds?.[0] || "bot_r1");
         pill.innerHTML = `
-          ${renderMonkeyAvatar(leadBot.avatarStyle, 22)}
+          ${renderMonkeyAvatar(leadBot.avatarStyle, 20)}
           <span class="identity-pill-name">${escapeHtml(thread.name)}</span>
-          <span class="identity-pill-sub">${memberCount} members</span>
+          <span class="identity-pill-sub">${memberCount} members • Multi-Agent Squad</span>
         `;
-        if (composerBadge) composerBadge.innerHTML = renderMonkeyAvatar(leadBot.avatarStyle, 18);
-        input.placeholder = `Message ${thread.name} (@mention any Vanara or click Collab)`;
+        if (composerBadge) composerBadge.innerHTML = renderMonkeyAvatar(leadBot.avatarStyle, 15);
+        if (composerLeadLbl) composerLeadLbl.innerText = `Squad Lead: ${leadBot.name} • ${leadBot.worktreeBranch || "vanara/r1"}`;
+        input.placeholder = `Message ${thread.name} (@mention R1, R2, R3, R4 or click Run Collab)...`;
       }
 
       const msgInner = document.getElementById("messagesInner");
       msgInner.innerHTML = "";
+
+      // Render Mission Control Quick-Start Cards at top of stream when thread has <= 2 messages
+      if (thread.messages.length <= 2) {
+        const missionWrap = document.createElement("div");
+        missionWrap.className = "mission-quickstart-grid";
+        missionWrap.innerHTML = `
+          <button onclick="runMissionQuickStart('architect')" class="mission-card">
+            <div class="mission-card-icon" style="background:rgba(225,54,57,0.14); color:#f87171; border:1px solid rgba(225,54,57,0.3);">⚡</div>
+            <div>
+              <div class="mission-card-title">Architect &amp; Build Runnable Module</div>
+              <div class="mission-card-sub">@R1 designs &amp; writes verified code into isolated worktree</div>
+            </div>
+          </button>
+          <button onclick="runMissionQuickStart('audit')" class="mission-card">
+            <div class="mission-card-icon" style="background:rgba(56,189,248,0.14); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">🔍</div>
+            <div>
+              <div class="mission-card-title">Audit Repo Symbol Map &amp; Git State</div>
+              <div class="mission-card-sub">@R3 runs multi-step ReAct inspection across mounted repo</div>
+            </div>
+          </button>
+          <button onclick="runMissionQuickStart('patch')" class="mission-card">
+            <div class="mission-card-icon" style="background:rgba(16,185,129,0.14); color:#34d399; border:1px solid rgba(16,185,129,0.3);">🩹</div>
+            <div>
+              <div class="mission-card-title">Apply Surgical SEARCH/REPLACE Patch</div>
+              <div class="mission-card-sub">@R2 patches existing code, runs syntax check &amp; commits</div>
+            </div>
+          </button>
+          <button onclick="runMissionQuickStart('webapp')" class="mission-card">
+            <div class="mission-card-icon" style="background:rgba(245,158,11,0.14); color:#fbbf24; border:1px solid rgba(245,158,11,0.3);">🚀</div>
+            <div>
+              <div class="mission-card-title">Build &amp; Serve Live Web Dashboard</div>
+              <div class="mission-card-sub">@R4 generates HTML/JS app for live Workbench preview</div>
+            </div>
+          </button>
+        `;
+        msgInner.appendChild(missionWrap);
+      }
 
       thread.messages.forEach((m, idx) => {
         if (m.senderType === "user") {
@@ -2445,25 +2726,22 @@
           const row = document.createElement("div");
           row.className = "msg-bot-row";
 
-          const showHeader = thread.type === "group" || m.collabRound || (thread.type === "dm" && m.botId !== thread.botId);
-          const headerHtml = showHeader
-            ? `<div class="msg-bot-header">
-                 ${renderMonkeyAvatar(bot?.avatarStyle || "vanara-crimson", 18)}
-                 <span class="msg-bot-name">${escapeHtml(bot?.name || "Vanara")}</span>
-                 <span class="msg-bot-role">${escapeHtml(bot?.role || "")} ${m.collabRound ? "• " + escapeHtml(m.collabRound) : ""}</span>
-               </div>`
-            : "";
+          const headerHtml = `<div class="msg-bot-header">
+            ${renderMonkeyAvatar(bot?.avatarStyle || "vanara-crimson", 18)}
+            <span class="msg-bot-name">${escapeHtml(bot?.name || "Vanara")}</span>
+            <span class="msg-bot-role">${escapeHtml(bot?.role || "")} ${m.collabRound ? "• " + escapeHtml(m.collabRound) : ""}</span>
+          </div>`;
 
           const thoughtHtml = m.reasoning
-            ? `<details style="margin-bottom:10px; background:#141418; border:1px solid #26262e; border-radius:10px; padding:7px 10px; font-size:11.5px; color:#8e8e9a;" class="mono">
+            ? `<details style="margin-bottom:10px; background:#101015; border:1px solid #24242e; border-radius:9px; padding:6px 10px; font-size:11px; color:#8e8e9a;" class="mono">
                  <summary style="cursor:pointer; user-select:none;">AfterAgentThought • Internal Reasoning</summary>
-                 <div style="margin-top:6px; padding-top:6px; border-top:1px solid #222229; white-space:pre-wrap; color:#c4c4d0;">${escapeHtml(m.reasoning)}</div>
+                 <div style="margin-top:6px; padding-top:6px; border-top:1px solid #202029; white-space:pre-wrap; color:#c4c4d0;">${escapeHtml(m.reasoning)}</div>
                </details>`
             : "";
 
           const hooksBadgeHtml = Array.isArray(m.hooksTrace) && m.hooksTrace.length > 0
-            ? `<div class="mono" style="margin-top:8px; font-size:10px; color:#6ee7b7; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.22); border-radius:8px; padding:4px 8px; display:inline-block;">
-                 vanara hooks: ${escapeHtml(m.hooksTrace.join(" → "))}
+            ? `<div class="mono" style="margin-top:8px; font-size:10px; color:#6ee7b7; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.22); border-radius:6px; padding:3px 7px; display:inline-block;">
+                 hooks: ${escapeHtml(m.hooksTrace.join(" → "))}
                </div>`
             : "";
 
@@ -2474,8 +2752,8 @@
           mentionedBots.forEach(mb => {
             actionBarHtml += `
               <button onclick="handOffToBot('${mb.id}', ${idx})" class="handoff-chip">
-                ${renderMonkeyAvatar(mb.avatarStyle, 16)}
-                <span>Let ${escapeHtml(mb.name)} reply</span>
+                ${renderMonkeyAvatar(mb.avatarStyle, 14)}
+                <span>Hand off to @${escapeHtml(mb.name)}</span>
               </button>
             `;
           });
@@ -2483,15 +2761,15 @@
             const encodedCmd = encodeURIComponent(cmd);
             actionBarHtml += `
               <button onclick="executeBackgroundCommand(decodeURIComponent('${encodedCmd}'), getBot('${bot?.id || "bot_r1"}'))" class="run-cmd-chip mono">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                <span>${escapeHtml(cmd.length > 30 ? cmd.slice(0, 30) + "…" : cmd)}</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <span>${escapeHtml(cmd.length > 28 ? cmd.slice(0, 28) + "…" : cmd)}</span>
               </button>
             `;
           });
           actionBarHtml += `
-            <button onclick="openAgentCodeWorkspace('${bot?.id || "bot_r1"}')" class="handoff-chip" style="${m.hasDeliverables ? 'border-color:rgba(56,189,248,0.55); color:#bae6fd; background:rgba(56,189,248,0.12);' : 'border-color:#2d2d36; color:#a2a2b0;'}">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-              <span>${m.hasDeliverables ? `Saved to ${escapeHtml(bot?.name || "Bot")}'s Code Workspace` : `${escapeHtml(bot?.name || "Bot")}'s Code Workspace`}</span>
+            <button onclick="openAgentCodeWorkspace('${bot?.id || "bot_r1"}')" class="handoff-chip" style="${m.hasDeliverables ? 'border-color:rgba(56,189,248,0.55); color:#bae6fd; background:rgba(56,189,248,0.12);' : 'border-color:#2b2b36; color:#9d9da9;'}">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>${m.hasDeliverables ? `Open in ${escapeHtml(bot?.name || "Bot")} Workbench` : `Inspect ${escapeHtml(bot?.name || "Bot")} Files`}</span>
             </button>
           `;
           actionBarHtml += `</div>`;
@@ -2504,24 +2782,23 @@
               ${hooksBadgeHtml}
               ${actionBarHtml}
             </div>
-            <!-- Exact 3 Side Icons from Reference Screenshot: Smile, Reply Curve, More/Pin -->
             <div class="msg-side-actions">
               <button onclick="reactToMessage(${idx}, '👍')" class="side-icon-btn" title="React">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
                   <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
                   <line x1="9" y1="9" x2="9.01" y2="9"></line>
                   <line x1="15" y1="9" x2="15.01" y2="9"></line>
                 </svg>
               </button>
-              <button onclick="quoteReply(${idx})" class="side-icon-btn" title="Reply">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <button onclick="quoteReply(${idx})" class="side-icon-btn" title="Quote Reply">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="9 17 4 12 9 7"></polyline>
                   <path d="M20 18v-2a4 4 0 0 0-4-4H4"></path>
                 </svg>
               </button>
               <button onclick="pinMessageAsSharedFact(${idx})" class="side-icon-btn" title="Pin to Shared Workspace Memory">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                   <circle cx="12" cy="12" r="1"></circle>
                   <circle cx="19" cy="12" r="1"></circle>
                   <circle cx="5" cy="12" r="1"></circle>
@@ -5017,6 +5294,7 @@
         <div class="brand-lockup">
           ${renderMonkeyAvatar("vanara-crimson", 22)}
           <span>Vanaras</span>
+          <span class="brand-version-tag">PRO</span>
         </div>
       `;
     }
@@ -5024,6 +5302,7 @@
     document.getElementById("userInitialsBtn").innerText = state.currentUser.initials;
     renderThreadList();
     renderActiveThread();
+    populateWorkspaceAgentSelector();
     loadDiskWorkspaceOnBoot();
     probeLocalModel();
     initMultiplayerStream();

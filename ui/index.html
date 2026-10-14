@@ -3493,8 +3493,11 @@ ${handoffRule}`;
       return `You are ${bot.name} (${bot.role}) in the Vanaras software engineering workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${teamContext}\nBe concise, high-signal, and only write code or invoke tools when the user's task calls for it.`;
     }
 
-    function extractInlineThinkBlocks(rawText) {
+    function extractInlineThinkBlocks(rawText, rawReasoning = "") {
       const thoughts = [];
+      if (rawReasoning && String(rawReasoning).trim()) {
+        thoughts.push(String(rawReasoning).trim());
+      }
       let visible = String(rawText || "");
       visible = visible.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
         if (t && t.trim()) thoughts.push(t.trim());
@@ -3510,9 +3513,24 @@ ${handoffRule}`;
         if (t && t.trim()) thoughts.push(t.trim());
         return "";
       });
+
+      let visibleText = visible.trim();
+      let thoughtText = thoughts.join("\n\n").trim();
+
+      // If visibleText is empty because an unclosed <think> or delta.reasoning_content swallowed
+      // the final reply / ===FILE:=== / [TOOL:...] blocks at the tail, split at the response boundary:
+      if (!visibleText && thoughtText) {
+        const transitionRx = /\n((?:@R[1-4]\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n)[\s\S]*)$/i;
+        const m = thoughtText.match(transitionRx);
+        if (m && m.index !== undefined && m.index > 0) {
+          visibleText = m[1].replace(/^(?:Final\s+)?Response:\s*\n/i, "").trim();
+          thoughtText = thoughtText.slice(0, m.index).trim();
+        }
+      }
+
       return {
-        visibleText: visible.trim(),
-        thoughtText: thoughts.join("\n\n").trim()
+        visibleText,
+        thoughtText
       };
     }
 
@@ -3570,10 +3588,14 @@ ${handoffRule}`;
       const executedTools = [];
       if (!replyText) return executedTools;
 
+      // Never scan inside <think> reasoning blocks so mental-sandbox mentions of [TOOL: ...] are ignored
+      const { visibleText: scanSource } = extractInlineThinkBlocks(replyText);
+      if (!scanSource) return executedTools;
+
       // 1. Extract [REMEMBER: ...] into Per-Agent Private Memory on disk
       const rememberRx = /\[REMEMBER:\s*([^\]]+)\]/gi;
       let rmMatch;
-      while ((rmMatch = rememberRx.exec(replyText)) !== null) {
+      while ((rmMatch = rememberRx.exec(scanSource)) !== null) {
         const fact = rmMatch[1].trim();
         if (fact && !bot.memories.includes(fact)) {
           bot.memories.unshift(fact);
@@ -3582,10 +3604,10 @@ ${handoffRule}`;
         }
       }
 
-      // 2. Extract [TOOL: type | arg1 | arg2] and run PreToolUseRequest -> Tool -> PostToolUseRequest
-      const toolRx = /\[TOOL:\s*([a-z_]+)(?:\s*\|\s*([^\]|]+))?(?:\s*\|\s*([^\]]+))?\]/gi;
+      // 2. Extract [TOOL: type | arg1 | arg2] OR loose [TOOL: type] arg1 (plus optional following code fence for fs_write)
+      const toolRx = /\[TOOL:\s*([a-z_]+)(?:\s*\|\s*([^\]|\n]+))?(?:\s*\|\s*([^\]\n]+))?\](?:[ \t]*:?[ \t]*([^\n\[`]+))?(?:\s*\n```[a-zA-Z0-9_.-]*\n([\s\S]*?)```)?/gi;
       let tMatch;
-      while ((tMatch = toolRx.exec(replyText)) !== null) {
+      while ((tMatch = toolRx.exec(scanSource)) !== null) {
         const rawTool = tMatch[1].trim().toLowerCase();
         const normalizedTool = rawTool === "shell"
           ? "shell_exec"
@@ -3594,8 +3616,13 @@ ${handoffRule}`;
             : rawTool === "read_file"
               ? "fs_read"
               : rawTool;
-        const arg1 = (tMatch[2] || "").trim();
-        const arg2 = (tMatch[3] || "").trim();
+        const arg1 = (tMatch[2] || tMatch[4] || "").trim();
+        const arg2 = (tMatch[3] || tMatch[5] || "").trim();
+
+        // Skip empty planned fs_write placeholders (e.g. "[TOOL: fs_write] config.py" without content)
+        if (normalizedTool === "fs_write" && (!arg1 || !arg2)) {
+          continue;
+        }
 
         // Vanaras PreToolUseRequest permission & mcpDisabledTools check
         const preCheck = await invokeAgentLifecycleHook("PreToolUseRequest", {
@@ -3625,31 +3652,32 @@ ${handoffRule}`;
             });
             executedTools.push(`shell: ${arg1}`);
             hooksTrace.push(`PostToolUse(shell_exec)`);
-          } else if (normalizedTool === "fs_read" && arg1) {
+          } else if (normalizedTool === "fs_read") {
+            const targetReadPath = arg1 || ".";
             const res = await fetch("/api/agent/tool", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "fs_read", botId: bot.id, botName: bot.name, filePath: arg1 })
+              body: JSON.stringify({ action: "fs_read", botId: bot.id, botName: bot.name, filePath: targetReadPath })
             });
             const data = await res.json();
             const readOut = data.output || data.error || "(empty file)";
             insertTerminalBeforeStreaming(thread, {
               senderType: "terminal",
-              command: `[${bot.name} worktree] read ${arg1}`,
+              command: `[${bot.name} worktree] read ${targetReadPath}`,
               exitCode: res.ok && data.ok !== false ? 0 : 1,
               text: readOut.slice(0, 1200)
             });
-            observationsOut.push({ tool: `fs_read(${arg1})`, output: readOut.slice(0, 1800) });
-            executedTools.push(`fs_read: ${arg1}`);
+            observationsOut.push({ tool: `fs_read(${targetReadPath})`, output: readOut.slice(0, 1800) });
+            executedTools.push(`fs_read: ${targetReadPath}`);
             hooksTrace.push(`PostToolUse(fs_read)`);
-          } else if (normalizedTool === "fs_write" && arg1) {
+          } else if (normalizedTool === "fs_write" && arg1 && arg2) {
             const res = await fetch("/api/agent/tool", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ action: "fs_write", botId: bot.id, botName: bot.name, filePath: arg1, content: arg2 })
             });
             const data = await res.json();
-            if (res.ok) {
+            if (res.ok && data.ok !== false) {
               insertTerminalBeforeStreaming(thread, {
                 senderType: "terminal",
                 command: `[${bot.name} worktree] write ${arg1}`,
@@ -3740,14 +3768,20 @@ ${handoffRule}`;
     function stopActiveThreadGeneration(threadId = activeThreadId) {
       const targetThread = state.threads.find(t => t.id === threadId) || getActiveThread();
       if (!targetThread) return;
+      const leadBot = targetThread.type === "dm" ? getBot(targetThread.botId) : getActiveLeadBot();
       cancelActiveTurnForThread(targetThread, true);
+      fetch("/api/workspace/kill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: targetThread.id, botId: leadBot?.id })
+      }).catch(() => {});
       saveState();
       renderThreadList();
       if (activeThreadId === targetThread.id) {
         renderActiveThread();
       }
       updateComposerStopButton();
-      showToast("Stopped generation");
+      showToast("Stopped generation & background processes");
     }
 
     async function handleSendMessage() {
@@ -3939,8 +3973,8 @@ ${handoffRule}`;
 
         const onStreamProgress = (partialContent, partialReasoning) => {
           if (turnCtx.aborted) return;
-          const split = extractInlineThinkBlocks(partialContent || "");
-          const currentStepReasoning = [partialReasoning || "", split.thoughtText || ""].filter(Boolean).join("\n\n").trim();
+          const split = extractInlineThinkBlocks(partialContent || "", partialReasoning || "");
+          const currentStepReasoning = split.thoughtText || "";
           const fullReasoningNow = [priorStepsReasoning, currentStepReasoning].filter(Boolean).join("\n\n---\n\n").trim();
           const fullVisibleNow = [priorStepsVisibleText, split.visibleText].filter(Boolean).join("\n\n").trim();
 
@@ -3995,7 +4029,7 @@ ${handoffRule}`;
 
           // Preserve step 1's reasoning and visible text before starting step 2 so they are NEVER lost!
           priorStepsReasoning = liveMsg.reasoning || accumulatedReasoning;
-          priorStepsVisibleText = stepCleaned.replace(/\[TOOL:[^\]]+\]/gi, "").trim();
+          priorStepsVisibleText = stepCleaned.replace(/\[TOOL:[^\]]+\](?:[ \t]*:?[ \t]*[^\n\[`]*)?/gi, "").trim();
           hooksTrace.push(`ReActObsStep(${reactStep + 1})`);
           const obsDigest = stepObservations.map(o => `[Tool Output: ${o.tool}]\n${o.output}`).join("\n\n");
           currentPrompt += `\n\nYour previous step invoked inspection tool(s). Real output from your worktree:\n${obsDigest}\n\nNow synthesize your final answer and/or ===FILE: ...=== deliverables based on this evidence:`;
@@ -4035,9 +4069,12 @@ ${handoffRule}`;
           if (extracted.length > 0) {
             await saveFilesToAgentWorkspace(targetBot, extracted);
           }
-          // Automatically verify/run the first executable file (.py, .js, .mjs, .sh, .rs) in the agent's workspace
+          // Automatically verify/run the primary entrypoint or test file (.py, .js, .mjs, .sh, .rs) in the agent's workspace
           const candidateList = extracted.length > 0 ? extracted : extractedPatches;
-          const runnableFile = candidateList.find(f => /\.(py|js|mjs|sh|rs)$/i.test(f.name));
+          const runnableCandidates = candidateList.filter(f => /\.(py|js|mjs|sh|rs)$/i.test(f.name));
+          const runnableFile =
+            runnableCandidates.find(f => /(?:^|\/)(?:test_[^/]+|[^/]+_test|main|app|index|server|solution)\.(?:py|js|mjs|sh|rs)$/i.test(f.name)) ||
+            runnableCandidates[0];
           if (runnableFile && (targetBot.tools || []).includes("shell_exec")) {
             try {
               const runRes = await fetch("/api/agent/workspace", {
@@ -4472,6 +4509,15 @@ ${handoffRule}`;
         const fence = content.match(/^```[a-zA-Z0-9_-]*\n([\s\S]*?)```$/);
         if (fence) content = fence[1].trim();
         if (name && content) files.push({ name, content });
+      }
+      // Also support local models that emit [TOOL: fs_write] <filename> or [TOOL: fs_write | <filename>] followed by a code fence
+      const toolWriteFenceRx = /\[TOOL:\s*(?:fs_write|write_file)(?:\s*\|\s*([^\]|\n]+))?\](?:[ \t]*:?[ \t]*([^\n\[`]+))?\s*\n```[a-zA-Z0-9_.-]*\n([\s\S]*?)```/gi;
+      while ((m = toolWriteFenceRx.exec(rawText)) !== null) {
+        const name = (m[1] || m[2] || "").trim();
+        const content = (m[3] || "").trim();
+        if (name && content && !files.some(f => f.name === name)) {
+          files.push({ name, content });
+        }
       }
       if (files.length === 0 && parseSurgicalPatches(rawText).length === 0) {
         const runnableLangMap = {

@@ -1,7 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { exec, execFileSync, execSync, spawn } from "node:child_process";
+import { exec, execFile, execFileSync, execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,8 +18,9 @@ fs.mkdirSync(WORKTREES_DIR, { recursive: true });
 // Connected real-time multiplayer clients (SSE)
 const sseClients = new Set();
 
-// Background tasks, per-agent dev servers, file watchers & heartbeat timers
+// Background tasks, per-agent dev servers, active script runs, file watchers & heartbeat timers
 const backgroundJobs = new Map();
+const activeRunProcs = new Map();
 const agentDevServers = new Map();
 const agentWatchers = new Map();
 const agentHeartbeats = new Map();
@@ -58,6 +59,19 @@ function isPathInside(childPath, parentDir) {
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
+function execFileAsync(bin, args = [], options = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(bin, args, { encoding: "utf8", timeout: 5000, maxBuffer: 1024 * 1024, ...options }, (err, stdout, stderr) => {
+      if (err) {
+        err.stdout = stdout;
+        err.stderr = stderr;
+        return reject(err);
+      }
+      resolve({ stdout: String(stdout || ""), stderr: String(stderr || "") });
+    });
+  });
+}
+
 function safeGitCommit(cwd, message, timeout = 5000) {
   try {
     execFileSync("git", ["add", "-A"], { cwd, stdio: "pipe", timeout });
@@ -71,6 +85,16 @@ function safeGitCommit(cwd, message, timeout = 5000) {
   }
 }
 
+async function safeGitCommitAsync(cwd, message, timeout = 5000) {
+  try {
+    await execFileAsync("git", ["add", "-A"], { cwd, timeout });
+    const { stdout } = await execFileAsync("git", ["commit", "-m", String(message || "checkpoint")], { cwd, timeout });
+    return stdout.trim();
+  } catch (e) {
+    return String(e.stdout || "").trim();
+  }
+}
+
 function getHeadSha(cwd) {
   try {
     return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
@@ -81,6 +105,93 @@ function getHeadSha(cwd) {
   } catch {
     return "HEAD";
   }
+}
+
+function spawnCommandAsync(command, { cwd, timeout = 15000, trackKey = null } = {}) {
+  return new Promise((resolve) => {
+    const proc = spawn("sh", ["-c", command], {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (trackKey) {
+      activeRunProcs.set(trackKey, proc);
+    }
+    let stdout = "";
+    let stderr = "";
+    let finished = false;
+    const timer = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        try { proc.kill("SIGTERM"); } catch {}
+        if (trackKey) activeRunProcs.delete(trackKey);
+        resolve({ exitCode: 124, output: `${stdout}\n${stderr}\n[Timed out after ${timeout}ms]`.trim(), timedOut: true });
+      }
+    }, timeout);
+    proc.stdout.on("data", chunk => {
+      if (stdout.length < 64000) stdout += chunk.toString("utf8");
+    });
+    proc.stderr.on("data", chunk => {
+      if (stderr.length < 64000) stderr += chunk.toString("utf8");
+    });
+    proc.on("error", err => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      if (trackKey) activeRunProcs.delete(trackKey);
+      resolve({ exitCode: 1, output: err.message });
+    });
+    proc.on("close", (code, signal) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      if (trackKey) activeRunProcs.delete(trackKey);
+      const out = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n").slice(0, 4000);
+      const exitCode = signal === "SIGTERM" || signal === "SIGKILL" ? 130 : (code ?? 0);
+      resolve({ exitCode, output: out, killedBySignal: signal });
+    });
+  });
+}
+
+function splitReasoningAndVisibleOutput(rawOutput = "", priorReasoning = "") {
+  const thoughts = [];
+  if (priorReasoning && String(priorReasoning).trim()) {
+    thoughts.push(String(priorReasoning).trim());
+  }
+  let cleanedOutput = String(rawOutput || "");
+  cleanedOutput = cleanedOutput.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
+    if (t && t.trim()) thoughts.push(t.trim());
+    return "";
+  });
+  const openIdx = cleanedOutput.search(/<think>/i);
+  if (openIdx !== -1 && !/<\/think>/i.test(cleanedOutput.slice(openIdx))) {
+    const rawThink = cleanedOutput.slice(openIdx).replace(/^<think>/i, "").trim();
+    if (rawThink) thoughts.push(rawThink);
+    cleanedOutput = cleanedOutput.slice(0, openIdx);
+  }
+  cleanedOutput = cleanedOutput.replace(/\[THOUGHT:\s*([^\]]+)\]/gi, (_, t) => {
+    if (t && t.trim()) thoughts.push(t.trim());
+    return "";
+  });
+
+  let finalCleaned = cleanedOutput.trim();
+  let combinedReasoning = thoughts.join("\n\n").trim();
+
+  // If visible output is empty because an unclosed <think> or delta.reasoning_content swallowed
+  // the final reply / ===FILE:=== / [TOOL:...] blocks at the tail, split at the response boundary:
+  if (!finalCleaned && combinedReasoning) {
+    const transitionRx = /\n((?:@R[1-4]\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n)[\s\S]*)$/i;
+    const m = combinedReasoning.match(transitionRx);
+    if (m && m.index !== undefined && m.index > 0) {
+      finalCleaned = m[1].replace(/^(?:Final\s+)?Response:\s*\n/i, "").trim();
+      combinedReasoning = combinedReasoning.slice(0, m.index).trim();
+    }
+  }
+
+  return {
+    thoughts: combinedReasoning ? (thoughts.length > 0 ? thoughts : [combinedReasoning]) : [],
+    reasoning: combinedReasoning,
+    cleanedOutput: finalCleaned
+  };
 }
 
 // ============================================================================
@@ -890,36 +1001,87 @@ const server = http.createServer(async (req, res) => {
       if (action === "run_file") {
         let runCmd = command;
         const cleanFile = String(fileName || "").replace(/\.\./g, "").replace(/^\/+/, "");
+        const syntaxNotes = [];
+
+        // Multi-file pre-flight syntax verification across all .py and .js/.mjs files in wt.codeDir
+        const allCodeFiles = listAgentCodeFiles(wt.codeDir);
+        for (const cf of allCodeFiles) {
+          const absCf = path.join(wt.codeDir, cf.name);
+          if (/\.py$/i.test(cf.name)) {
+            try {
+              await execFileAsync("python3", ["-m", "py_compile", absCf], { cwd: wt.codeDir, timeout: 4000 });
+              syntaxNotes.push(`${cf.name}: py_compile OK`);
+            } catch (syntaxErr) {
+              const errMsg = String(syntaxErr.stderr || syntaxErr.stdout || syntaxErr.message).trim();
+              return sendJson(res, 200, {
+                ok: false,
+                exitCode: 1,
+                command: `python3 -m py_compile "${cf.name}"`,
+                cwd: wt.codeDir,
+                branch: wt.branch,
+                output: `[Syntax Error in ${cf.name}]\n${errMsg}`
+              });
+            }
+          } else if (/\.(js|mjs)$/i.test(cf.name)) {
+            try {
+              await execFileAsync("node", ["--check", absCf], { cwd: wt.codeDir, timeout: 4000 });
+              syntaxNotes.push(`${cf.name}: node --check OK`);
+            } catch (syntaxErr) {
+              const errMsg = String(syntaxErr.stderr || syntaxErr.stdout || syntaxErr.message).trim();
+              return sendJson(res, 200, {
+                ok: false,
+                exitCode: 1,
+                command: `node --check "${cf.name}"`,
+                cwd: wt.codeDir,
+                branch: wt.branch,
+                output: `[Syntax Error in ${cf.name}]\n${errMsg}`
+              });
+            }
+          }
+        }
+
         if (!runCmd && cleanFile) {
           const ext = path.extname(cleanFile).toLowerCase();
-          if (ext === ".py") runCmd = `python3 "${cleanFile}"`;
-          else if (ext === ".js" || ext === ".mjs") runCmd = `node "${cleanFile}"`;
-          else if (ext === ".sh") runCmd = `sh "${cleanFile}"`;
-          else if (ext === ".rs") runCmd = `rustc "${cleanFile}" -o /tmp/vanara_bin && /tmp/vanara_bin`;
-          else runCmd = `cat "${cleanFile}"`;
+          if (ext === ".py") {
+            const absTarget = path.join(wt.codeDir, cleanFile);
+            const src = fs.existsSync(absTarget) ? fs.readFileSync(absTarget, "utf8") : "";
+            // Avoid hanging 15s if a script starts a blocking server loop (uvicorn.run / app.run / serve_forever)
+            if (/\b(?:uvicorn\.run|app\.run|serve_forever)\s*\(/.test(src)) {
+              runCmd = `python3 -m py_compile "${cleanFile}" && echo "[Verified server entrypoint ${cleanFile} syntax & imports ready]"`;
+            } else {
+              runCmd = `python3 "${cleanFile}"`;
+            }
+          } else if (ext === ".js" || ext === ".mjs") {
+            runCmd = `node "${cleanFile}"`;
+          } else if (ext === ".sh") {
+            runCmd = `sh "${cleanFile}"`;
+          } else if (ext === ".rs") {
+            runCmd = `rustc "${cleanFile}" -o /tmp/vanara_bin && /tmp/vanara_bin`;
+          } else {
+            runCmd = `cat "${cleanFile}"`;
+          }
         }
         if (!runCmd) runCmd = "ls -la";
 
-        let output = "";
-        let exitCode = 0;
-        try {
-          output = execSync(runCmd, {
-            cwd: wt.codeDir,
-            stdio: "pipe",
-            timeout: 15000
-          }).toString("utf8").trim();
-        } catch (err) {
-          exitCode = err.status || 1;
-          output = ((err.stdout ? err.stdout.toString("utf8") : "") + "\n" + (err.stderr ? err.stderr.toString("utf8") : "")).trim() || err.message;
-        }
+        const execRes = await spawnCommandAsync(runCmd, {
+          cwd: wt.codeDir,
+          timeout: 15000,
+          trackKey: botId
+        });
+
+        const combinedOut = [
+          execRes.output,
+          !execRes.output && syntaxNotes.length > 0 ? `[Verified: ${syntaxNotes.join(", ")}]` : ""
+        ].filter(Boolean).join("\n").trim();
 
         return sendJson(res, 200, {
-          ok: exitCode === 0,
-          exitCode,
+          ok: execRes.exitCode === 0,
+          exitCode: execRes.exitCode,
           command: runCmd,
           cwd: wt.codeDir,
           branch: wt.branch,
-          output: output || "(Completed with exit code 0)"
+          syntaxVerified: syntaxNotes,
+          output: combinedOut || "(Completed with exit code 0)"
         });
       }
 
@@ -954,14 +1116,15 @@ const server = http.createServer(async (req, res) => {
 
       if (action === "commit") {
         const msg = String(commitMessage || message || `feat(${wt.botName}): autonomous worktree update`);
-        safeGitCommit(wt.worktreePath, msg, 5000);
+        await safeGitCommitAsync(wt.worktreePath, msg, 5000);
         return sendJson(res, 200, ensureAgentWorktree(botId, botName, customWorkspacePath));
       }
 
       if (action === "diff") {
         let fullDiff = "";
         try {
-          fullDiff = execSync("git diff HEAD", { cwd: wt.worktreePath, stdio: "pipe", timeout: 4000 }).toString("utf8").trim();
+          const { stdout } = await execFileAsync("git", ["diff", "HEAD"], { cwd: wt.worktreePath, timeout: 4000 });
+          fullDiff = stdout.trim();
         } catch {}
         return sendJson(res, 200, { ...wt, fullDiff: fullDiff || "(No unstaged/staged changes against HEAD)" });
       }
@@ -1018,38 +1181,90 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (toolName === "fs_read") {
-        const rel = String(filePath || args.path || "README.md").replace(/^\/+/, "").replace(/\.\./g, "");
-        const candidates = [
-          { path: path.resolve(wt.codeDir, rel), root: wt.codeDir },
-          { path: path.resolve(wt.worktreePath, rel), root: wt.worktreePath },
-          { path: path.resolve(ROOT_DIR, rel), root: ROOT_DIR }
-        ];
-        const found = candidates.find(c => isPathInside(c.path, c.root) && fs.existsSync(c.path) && fs.statSync(c.path).isFile());
-        if (!found) {
-          return sendJson(res, 200, { ok: false, error: `File not found in ${wt.branch} or mounted repository: ${rel}` });
+        const rawInput = String(filePath || args.path || ".").trim();
+        if (rawInput.includes("..")) {
+          const probe = path.resolve(wt.codeDir, rawInput);
+          if (!isPathInside(probe, wt.codeDir) && !isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
+            return sendJson(res, 200, { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` });
+          }
         }
-        const text = fs.readFileSync(found.path, "utf8").slice(0, 4000);
+
+        const candidatePaths = [];
+        if (path.isAbsolute(rawInput)) {
+          if (isPathInside(rawInput, wt.codeDir) || isPathInside(rawInput, wt.worktreePath) || isPathInside(rawInput, ROOT_DIR)) {
+            candidatePaths.push(path.resolve(rawInput));
+          } else {
+            return sendJson(res, 200, { ok: false, error: `Path outside workspace blocked: ${rawInput}` });
+          }
+        } else {
+          const cleanRel = rawInput.replace(/^\/+/, "");
+          for (const base of [wt.codeDir, wt.worktreePath, ROOT_DIR, REPO_ROOT]) {
+            const p = path.resolve(base, cleanRel);
+            if (isPathInside(p, base)) candidatePaths.push(p);
+          }
+        }
+
+        const existingTarget = candidatePaths.find(p => fs.existsSync(p));
+        if (!existingTarget) {
+          return sendJson(res, 200, { ok: false, error: `File not found in ${wt.branch} or mounted repository: ${rawInput}` });
+        }
+
+        const stat = fs.statSync(existingTarget);
+        if (stat.isDirectory()) {
+          const codeFiles = listAgentCodeFiles(wt.codeDir).map(f => f.name);
+          const dirEntries = fs.readdirSync(existingTarget, { withFileTypes: true })
+            .filter(e => !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "target")
+            .slice(0, 50)
+            .map(e => (e.isDirectory() ? `${e.name}/` : e.name));
+          const listing = [
+            `Directory: ${existingTarget} (branch ${wt.branch})`,
+            codeFiles.length > 0 ? `Agent Workspace Files (${wt.codeDir}): ${codeFiles.join(", ")}` : "",
+            `Entries: ${dirEntries.join(", ") || "(empty)"}`
+          ].filter(Boolean).join("\n");
+          return sendJson(res, 200, {
+            ok: true,
+            isDirectory: true,
+            worktreePath: wt.worktreePath,
+            codeDir: wt.codeDir,
+            branch: wt.branch,
+            output: listing
+          });
+        }
+
+        const text = fs.readFileSync(existingTarget, "utf8").slice(0, 4000);
         return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, codeDir: wt.codeDir, branch: wt.branch, output: text });
       }
 
       if (toolName === "fs_write") {
-        const rel = String(filePath || args.path || "notes.md").replace(/^\/+/, "").replace(/\.\./g, "");
-        const bodyContent = String(content ?? args.content ?? "");
-        const target = path.resolve(wt.codeDir, rel);
-        if (isPathInside(target, wt.codeDir)) {
-          fs.mkdirSync(path.dirname(target), { recursive: true });
-          fs.writeFileSync(target, bodyContent, "utf8");
-          const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-          safeGitCommit(wt.worktreePath, `feat(${slug}): write ${rel} in agent workspace`, 5000);
-          return sendJson(res, 200, {
-            ok: true,
-            bytesWritten: bodyContent.length,
-            worktreePath: wt.worktreePath,
-            codeDir: wt.codeDir,
-            branch: wt.branch,
-            output: `Wrote ${bodyContent.length} bytes to ${rel} & committed to ${wt.branch}`
-          });
+        const rawInput = String(filePath || args.path || "notes.md").trim();
+        let rel = rawInput;
+        if (path.isAbsolute(rawInput)) {
+          if (isPathInside(rawInput, wt.codeDir)) {
+            rel = path.relative(wt.codeDir, rawInput);
+          } else if (isPathInside(rawInput, wt.worktreePath)) {
+            rel = path.relative(wt.worktreePath, rawInput);
+          } else {
+            return sendJson(res, 400, { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` });
+          }
         }
+        const target = path.resolve(wt.codeDir, rel.replace(/^\/+/, ""));
+        if (rawInput.includes("..") || !isPathInside(target, wt.codeDir)) {
+          return sendJson(res, 400, { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` });
+        }
+        const bodyContent = String(content ?? args.content ?? "");
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, bodyContent, "utf8");
+        const cleanRel = path.relative(wt.codeDir, target);
+        const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+        await safeGitCommitAsync(wt.worktreePath, `feat(${slug}): write ${cleanRel} in agent workspace`, 5000);
+        return sendJson(res, 200, {
+          ok: true,
+          bytesWritten: bodyContent.length,
+          worktreePath: wt.worktreePath,
+          codeDir: wt.codeDir,
+          branch: wt.branch,
+          output: `Wrote ${bodyContent.length} bytes to ${cleanRel} & committed to ${wt.branch}`
+        });
       }
 
       if (toolName === "git_commit") {
@@ -1057,12 +1272,12 @@ const server = http.createServer(async (req, res) => {
         const msg = String(content || filePath || args.message || `feat(${slug}): autonomous agent commit`);
         let out = "";
         try {
-          safeGitCommit(wt.worktreePath, msg, 5000);
-          out = execFileSync("git", ["log", "--oneline", "-n", "3"], {
+          await safeGitCommitAsync(wt.worktreePath, msg, 5000);
+          const { stdout } = await execFileAsync("git", ["log", "--oneline", "-n", "3"], {
             cwd: wt.worktreePath,
-            stdio: "pipe",
             timeout: 5000
-          }).toString("utf8").trim();
+          });
+          out = stdout.trim();
         } catch (err) {
           out = err.message;
         }
@@ -1070,8 +1285,19 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (toolName === "git_status" || toolName === "git_diff") {
-        const cmd = toolName === "git_diff" ? "git diff HEAD" : "git status --short && git branch --show-current";
-        const out = execSync(cmd, { cwd: wt.worktreePath, stdio: "pipe", timeout: 5000 }).toString("utf8").trim();
+        let out = "";
+        try {
+          if (toolName === "git_diff") {
+            const { stdout } = await execFileAsync("git", ["diff", "HEAD"], { cwd: wt.worktreePath, timeout: 5000 });
+            out = stdout.trim();
+          } else {
+            const st = await execFileAsync("git", ["status", "--short"], { cwd: wt.worktreePath, timeout: 5000 });
+            const br = await execFileAsync("git", ["branch", "--show-current"], { cwd: wt.worktreePath, timeout: 5000 });
+            out = [st.stdout.trim(), br.stdout.trim()].filter(Boolean).join("\n");
+          }
+        } catch (err) {
+          out = err.message;
+        }
         return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, output: out || "(Clean worktree)" });
       }
 
@@ -1130,28 +1356,7 @@ const server = http.createServer(async (req, res) => {
 
       // 2. AfterAgentThoughtRequest: extracts <think>...</think> or trailing unclosed <think>... or [THOUGHT: ...] internal reasoning
       if (hook === "AfterAgentThoughtRequest") {
-        const thoughts = [];
-        if (priorReasoning && String(priorReasoning).trim()) {
-          thoughts.push(String(priorReasoning).trim());
-        }
-        let cleanedOutput = String(rawOutput || "");
-        cleanedOutput = cleanedOutput.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
-          if (t.trim()) thoughts.push(t.trim());
-          return "";
-        });
-        // If an unclosed <think> tag exists anywhere in the remaining output, extract from <think> to end
-        const openIdx = cleanedOutput.search(/<think>/i);
-        if (openIdx !== -1 && !/<\/think>/i.test(cleanedOutput.slice(openIdx))) {
-          const rawThink = cleanedOutput.slice(openIdx).replace(/^<think>/i, "").trim();
-          if (rawThink) thoughts.push(rawThink);
-          cleanedOutput = cleanedOutput.slice(0, openIdx);
-        }
-        cleanedOutput = cleanedOutput.replace(/\[THOUGHT:\s*([^\]]+)\]/gi, (_, t) => {
-          if (t.trim()) thoughts.push(t.trim());
-          return "";
-        });
-        const finalCleaned = cleanedOutput.trim();
-        const combinedReasoning = thoughts.join("\n\n").trim();
+        const { thoughts, reasoning: combinedReasoning, cleanedOutput: finalCleaned } = splitReasoningAndVisibleOutput(rawOutput, priorReasoning);
         broadcastEvent("agent_hook", { hook, botId, botName, thoughtCount: thoughts.length, timestamp });
         return sendJson(res, 200, {
           ok: true,
@@ -1485,7 +1690,29 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 4. Asynchronous Background Command / Tool Runner (POST /api/workspace/exec)
+  // 4. Asynchronous Background Command / Tool Runner (POST /api/workspace/exec & /api/workspace/kill)
+  if (req.method === "POST" && req.url === "/api/workspace/kill") {
+    try {
+      const { threadId, botId } = await readJsonBody(req);
+      const killedJobs = [];
+      for (const [jobId, job] of backgroundJobs.entries()) {
+        if (job.status === "running" && job.proc && (!threadId || job.threadId === threadId || !botId || job.botId === botId)) {
+          try { job.proc.kill("SIGTERM"); } catch {}
+          job.status = "killed";
+          killedJobs.push(jobId);
+        }
+      }
+      if (botId && activeRunProcs.has(botId)) {
+        try { activeRunProcs.get(botId).kill("SIGTERM"); } catch {}
+        activeRunProcs.delete(botId);
+        killedJobs.push(`run_${botId}`);
+      }
+      return sendJson(res, 200, { ok: true, killedCount: killedJobs.length, killedJobs });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
   if (req.method === "POST" && req.url === "/api/workspace/exec") {
     try {
       const { command, cwd, threadId, botId, botName } = await readJsonBody(req);
@@ -1500,7 +1727,6 @@ const server = http.createServer(async (req, res) => {
       }
 
       const jobId = "job_" + Date.now();
-      backgroundJobs.set(jobId, { id: jobId, command, status: "running", startedAt: Date.now() });
 
       broadcastEvent("job_started", { jobId, command, threadId, botId, botName, cwd: targetCwd, branch });
 
@@ -1511,22 +1737,24 @@ const server = http.createServer(async (req, res) => {
         ...(process.platform === "win32" ? { shell: "powershell.exe" } : {})
       };
 
-      exec(command, execOptions, (error, stdout, stderr) => {
+      const proc = exec(command, execOptions, (error, stdout, stderr) => {
         const output = ((stdout || "") + (stderr ? `\n${stderr}` : "")).trim().slice(0, 4000);
-        const exitCode = error ? (error.code || 1) : 0;
-        backgroundJobs.set(jobId, { id: jobId, command, status: "done", exitCode, output });
+        const exitCode = error ? (error.killed ? 130 : (error.code || 1)) : 0;
+        backgroundJobs.set(jobId, { id: jobId, command, threadId, botId, botName, status: "done", exitCode, output });
         broadcastEvent("job_finished", {
           jobId,
           command,
           cwd: targetCwd,
           branch,
           exitCode,
-          output: output || "(Command completed with no output)",
+          output: output || (exitCode === 130 ? "(Command stopped by user)" : "(Command completed with no output)"),
           threadId,
           botId,
           botName
         });
       });
+
+      backgroundJobs.set(jobId, { id: jobId, command, threadId, botId, botName, status: "running", startedAt: Date.now(), proc });
 
       return sendJson(res, 200, { jobId, status: "started", cwd: targetCwd, branch });
     } catch (e) {

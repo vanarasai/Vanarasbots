@@ -512,7 +512,9 @@ const server = http.createServer(async (req, res) => {
         files = [],
         patches = [],
         fileName = "",
-        command = ""
+        command = "",
+        title = "",
+        body = ""
       } = await readJsonBody(req);
 
       const wt = ensureAgentWorktree(botId, botName, customWorkspacePath);
@@ -732,8 +734,8 @@ const server = http.createServer(async (req, res) => {
         };
         agentDevServers.set(botId, serverRecord);
 
-        const onChunk = chunk => {
-          const line = chunk.toString("utf8").trim();
+        const onChunk = rawChunk => {
+          const line = rawChunk.toString("utf8").trim();
           if (!line) return;
           serverRecord.logs.push(line);
           if (serverRecord.logs.length > 80) serverRecord.logs.shift();
@@ -743,19 +745,23 @@ const server = http.createServer(async (req, res) => {
             port,
             url: serverRecord.url,
             line,
+            chunk: line,
             logs: serverRecord.logs.join("\n")
           });
         };
         proc.stdout.on("data", onChunk);
         proc.stderr.on("data", onChunk);
         proc.on("exit", code => {
-          serverRecord.logs.push(`[Server exited with code ${code ?? 0}]`);
+          const exitMsg = `[Server exited with code ${code ?? 0}]`;
+          serverRecord.logs.push(exitMsg);
           broadcastEvent("agent_server_log", {
             botId,
             botName,
             port,
             url: serverRecord.url,
             stopped: true,
+            line: exitMsg,
+            chunk: exitMsg,
             logs: serverRecord.logs.join("\n")
           });
         });
@@ -763,6 +769,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, {
           ok: true,
           running: true,
+          pid: proc.pid,
           botId,
           botName,
           port,
@@ -787,6 +794,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, {
           ok: true,
           running,
+          pid: existing?.proc?.pid || null,
           port: existing?.port || getAgentAssignedPort(botId),
           url: existing?.url || `http://localhost:${getAgentAssignedPort(botId)}`,
           command: existing?.command || "",
@@ -797,17 +805,23 @@ const server = http.createServer(async (req, res) => {
       if (action === "peer_review_diff") {
         let diffText = "";
         let statusText = "";
+        let commitsText = "";
         try {
           statusText = execSync("git status --short", { cwd: wt.worktreePath, stdio: "pipe", timeout: 4000 }).toString("utf8").trim();
+          commitsText = execSync("git log --oneline -n 5", { cwd: wt.worktreePath, stdio: "pipe", timeout: 4000 }).toString("utf8").trim();
           diffText = execSync("git diff main...HEAD || git diff HEAD~1 || true", { cwd: wt.worktreePath, stdio: "pipe", timeout: 5000 }).toString("utf8").trim();
         } catch {}
         const files = listAgentCodeFiles(wt.codeDir);
+        const statOut = statusText || wt.diffStat || "(clean worktree)";
         return sendJson(res, 200, {
           ok: true,
           botId,
           botName,
           branch: wt.branch,
-          status: statusText || "(clean)",
+          baseRef: "main",
+          status: statOut,
+          stat: statOut,
+          commits: commitsText || wt.commits || "(no commits)",
           diff: diffText.slice(0, 3500) || "(all changes committed on branch)",
           files
         });
@@ -815,7 +829,7 @@ const server = http.createServer(async (req, res) => {
 
       if (action === "create_pr") {
         const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-        const prTitle = (command || `feat(${slug}): ${wt.botName} autonomous workspace changes`).replace(/"/g, "'");
+        const prTitle = (command || title || `feat(${slug}): ${wt.botName} autonomous workspace changes`).replace(/"/g, "'");
         let output = "";
         try {
           execSync(`git add -A && (git commit -m "${prTitle}" || true)`, { cwd: wt.worktreePath, stdio: "pipe", timeout: 5000 });
@@ -1054,20 +1068,20 @@ const server = http.createServer(async (req, res) => {
       const wt = ensureAgentWorktree(botId, botName);
       const timestamp = new Date().toISOString();
 
-      // 1. BeforeSubmitPromptRequest: enriches prompt with worktree, AgentStore manifest & MCP custom instructions
+      // 1. BeforeSubmitPromptRequest: records worktree & AgentStore manifest metadata and applies optional MCP custom instructions
       if (hook === "BeforeSubmitPromptRequest") {
         const files = listAgentCodeFiles(wt.codeDir).map(f => f.name);
-        const enrichedBlock = [
-          `[Vanara Sandbox Manifest: branch=${wt.branch}, codeDir=${wt.codeDir}, files=${files.join(", ") || "none"}]`,
-          mcpCustomInstructions ? `[MCP Custom Instructions: ${mcpCustomInstructions}]` : ""
-        ].filter(Boolean).join("\n");
+        const enrichedPrompt = mcpCustomInstructions
+          ? `${prompt}\n\n[Additional Instructions: ${mcpCustomInstructions}]`
+          : prompt;
         broadcastEvent("agent_hook", { hook, botId, botName, branch: wt.branch, timestamp });
         return sendJson(res, 200, {
           ok: true,
           hook,
           botId,
           branch: wt.branch,
-          enrichedPrompt: enrichedBlock ? `${enrichedBlock}\n${prompt}` : prompt,
+          sandboxManifest: { branch: wt.branch, codeDir: wt.codeDir, files },
+          enrichedPrompt,
           timestamp
         });
       }
@@ -1080,6 +1094,12 @@ const server = http.createServer(async (req, res) => {
           if (t.trim()) thoughts.push(t.trim());
           return "";
         });
+        // If an unclosed <think> tag exists at the start of the output, extract it
+        if (/^[\s]*<think>/i.test(cleanedOutput) && !/<\/think>/i.test(cleanedOutput)) {
+          const rawThink = cleanedOutput.replace(/^[\s]*<think>/i, "").trim();
+          if (rawThink) thoughts.push(rawThink);
+          cleanedOutput = "";
+        }
         cleanedOutput = cleanedOutput.replace(/\[THOUGHT:\s*([^\]]+)\]/gi, (_, t) => {
           if (t.trim()) thoughts.push(t.trim());
           return "";
@@ -1233,11 +1253,13 @@ const server = http.createServer(async (req, res) => {
           debounceTimer = setTimeout(() => {
             broadcastEvent("agent_heartbeat", {
               type: "file_change",
+              trigger: "fs_watch",
               botId,
               botName,
               threadId,
               branch: wt.branch,
               filename,
+              fileName: filename,
               eventType,
               timestamp: new Date().toISOString()
             });
@@ -1253,6 +1275,7 @@ const server = http.createServer(async (req, res) => {
           const timer = setInterval(() => {
             broadcastEvent("agent_heartbeat", {
               type: "scheduled_heartbeat",
+              trigger: "heartbeat",
               botId,
               botName,
               threadId,
@@ -1269,7 +1292,8 @@ const server = http.createServer(async (req, res) => {
           watching: true,
           botId,
           codeDir: wt.codeDir,
-          heartbeatSec: Number(intervalSec) || 0
+          intervalSec: Number(intervalSec) || 60,
+          heartbeatSec: Number(intervalSec) || 60
         });
       }
 
@@ -1314,6 +1338,7 @@ const server = http.createServer(async (req, res) => {
           action,
           sandboxId: `vanara-box-${sanitizeSlug(botId)}`,
           status: "ACTIVE",
+          state: "ACTIVE",
           branch: wt.branch,
           codeDir: wt.codeDir,
           assignedPort: getAgentAssignedPort(botId),
@@ -1336,6 +1361,7 @@ const server = http.createServer(async (req, res) => {
           action,
           sandboxId: `vanara-box-${sanitizeSlug(botId)}`,
           status: "HIBERNATED",
+          state: "HIBERNATED",
           branch: wt.branch
         });
       }
@@ -1353,6 +1379,7 @@ const server = http.createServer(async (req, res) => {
           action,
           sandboxId: `vanara-box-${sanitizeSlug(botId)}`,
           status: "RECREATED",
+          state: "RECREATED",
           branch: freshWt.branch,
           codeDir: freshWt.codeDir,
           files: listAgentCodeFiles(freshWt.codeDir)
@@ -1373,6 +1400,7 @@ const server = http.createServer(async (req, res) => {
           status: upstream.status,
           title: titleMatch ? titleMatch[1].trim() : "(no <title>)",
           bytes: html.length,
+          bodyBytes: html.length,
           scriptCount,
           buttonCount,
           snippet: html.replace(/\s+/g, " ").slice(0, 360)

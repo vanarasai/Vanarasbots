@@ -2287,7 +2287,7 @@ Auto-save: enabled</pre>
           provider: "local",
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
-          model: "bonsai-27b-mlx",
+          model: "qwen/qwen3.5-9b",
           instructions: "You are R1, Principal Systems & AI Architect in Vanaras. Design clean architectures, write production-ready code in ===FILE: ...=== blocks, and coordinate with @R2, @R3, and @R4.",
           memories: [
             "Prefer modular, dependency-light code that can be verified immediately in the agent workspace."
@@ -2304,7 +2304,7 @@ Auto-save: enabled</pre>
           provider: "local",
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
-          model: "google/gemma-4-12b",
+          model: "qwen/qwen3.5-9b",
           instructions: "You are R2, Backend & Systems Engineer. Implement fast, reliable backend services, CLI tools, and data pipelines in Python, Node.js, or Rust.",
           memories: [
             "Always include runnable entrypoints and self-tests in generated backend scripts."
@@ -2321,7 +2321,7 @@ Auto-save: enabled</pre>
           provider: "local",
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
-          model: "bonsai-27b-mlx",
+          model: "qwen/qwen3.5-9b",
           instructions: "You are R3, QA, Verification & Code Reviewer. Audit diffs for bugs, security issues, and edge cases, and write automated verification tests.",
           memories: [
             "Verify exit codes, edge-case inputs, and error handling before approving a branch merge."
@@ -2338,7 +2338,7 @@ Auto-save: enabled</pre>
           provider: "local",
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
-          model: "bonsai-27b-mlx",
+          model: "qwen/qwen3.5-9b",
           instructions: "You are R4, Frontend & Runtime Engineer. Build responsive web apps, interactive dashboards, and clean UI components.",
           memories: [
             "Generated web apps can be served on the agent's dedicated port and inspected in VNC/Web."
@@ -2355,7 +2355,7 @@ Auto-save: enabled</pre>
           provider: "local",
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
-          model: "bonsai-27b-mlx",
+          model: "qwen/qwen3.5-9b",
           instructions: "You are Waffle, Product & Release Strategist in Vanaras. Write clear specs, changelogs, documentation, and release notes.",
           memories: [
             "Keep product specs actionable with concrete acceptance criteria."
@@ -2386,12 +2386,41 @@ Auto-save: enabled</pre>
         if (!Array.isArray(b.tools)) b.tools = def?.tools ? [...def.tools] : ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "handoff"];
         if (typeof b.mcpCommand !== "string") b.mcpCommand = "";
         if (!b.worktreeBranch) b.worktreeBranch = `vanara/${(b.name || b.id).toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`;
+        if (b.provider === "local" && (b.model === "bonsai-27b-mlx" || b.model === "google/gemma-4-12b")) {
+          b.model = "qwen/qwen3.5-9b";
+        }
+      });
+      // Sanitize any legacy duplicate SSE echo messages or stuck streaming placeholders in threads
+      (state.threads || []).forEach(t => {
+        if (!Array.isArray(t.messages)) return;
+        const cleaned = [];
+        for (let i = 0; i < t.messages.length; i++) {
+          const m = t.messages[i];
+          if (!m) continue;
+          m.isStreaming = false;
+          const txt = String(m.text || "").trim();
+          if (m.senderType === "bot" && (!txt || txt === "▍" || txt.startsWith("⏳ Thinking") || txt.includes("fetch failed") || txt.startsWith("$f = fs_read") || txt.startsWith("$l = read("))) {
+            continue;
+          }
+          // Skip legacy duplicate self-echoes (where senderName was set by old room_message echo)
+          if (m.senderType === "user" && m.senderName) {
+            const recentSameUser = cleaned.slice(-3).some(prev => prev.senderType === "user" && String(prev.text || "").trim() === txt);
+            if (recentSameUser) continue;
+          }
+          // Skip back-to-back identical user messages
+          const prev = cleaned[cleaned.length - 1];
+          if (m.senderType === "user" && prev && prev.senderType === "user" && String(prev.text || "").trim() === txt) {
+            continue;
+          }
+          cleaned.push(m);
+        }
+        t.messages = cleaned;
       });
     }
     hydrateBotAgentFields();
 
     let activeThreadId = state.threads?.[0]?.id || "thread_r1";
-    let detectedLocalModel = "bonsai-27b-mlx";
+    let detectedLocalModel = "qwen/qwen3.5-9b";
     let llmOnlineStatus = false;
     let unreadCounts = {};
     let activeWorkingThreads = {};
@@ -3059,8 +3088,8 @@ Auto-save: enabled</pre>
           }
 
           const thoughtHtml = m.reasoning
-            ? `<details style="margin-bottom:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:9px; padding:6px 10px; font-size:11px; color:var(--text-secondary);" class="mono">
-                 <summary style="cursor:pointer; user-select:none;">Internal Reasoning</summary>
+            ? `<details ${m.isStreaming ? "open" : ""} style="margin-bottom:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:9px; padding:6px 10px; font-size:11px; color:var(--text-secondary);" class="mono">
+                 <summary style="cursor:pointer; user-select:none;">Internal Reasoning${m.isStreaming ? " (streaming…)" : ""}</summary>
                  <div style="margin-top:6px; padding-top:6px; border-top:1px solid var(--border-subtle); white-space:pre-wrap;">${escapeHtml(m.reasoning)}</div>
                </details>`
             : "";
@@ -3295,41 +3324,34 @@ Auto-save: enabled</pre>
     // =========================================================================
     function buildGroundedSystemPrompt(bot, thread, folderSummary) {
       const privateMemories = Array.isArray(bot.memories) && bot.memories.length > 0
-        ? `\n\nYOUR PRIVATE AGENT MEMORY (${bot.name} ONLY — PERSISTED ON DISK):\n` + bot.memories.map((m, i) => `${i + 1}. ${m}`).join("\n")
+        ? `\n\nPRIVATE MEMORY (${bot.name}):\n` + bot.memories.map((m, i) => `${i + 1}. ${m}`).join("\n")
         : "";
       const factsBlock = (state.sharedFacts && state.sharedFacts.length > 0)
-        ? `\n\nSHARED WORKSPACE MEMORY:\n` + state.sharedFacts.map((f, i) => `${i + 1}. ${f}`).join("\n")
+        ? `\n\nWORKSPACE RULES:\n` + state.sharedFacts.map((f, i) => `${i + 1}. ${f}`).join("\n")
         : "";
       const wtBranch = bot.worktreeBranch || `vanara/${bot.name.toLowerCase()}`;
       const wtPath = agentWorktrees[bot.id]?.worktreeDir || `.worktrees/${bot.id}`;
-      const worktreeBlock = `\n\nYOUR ISOLATED GIT WORKTREE & CODE WORKSPACE:\n- Branch: ${wtBranch}\n- Path: ${wtPath}\nAll your file writes and shell commands run in your isolated worktree and are automatically Git-committed onto ${wtBranch}.`;
+      const worktreeBlock = `\n\nISOLATED GIT WORKTREE:\n- Branch: ${wtBranch} (${wtPath})`;
       const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"]).join(", ");
       const mcpLine = bot.mcpCommand ? `\n- Connected MCP Server: ${bot.mcpCommand}` : "";
-      const toolsProtocolBlock = `\n\nYOUR ENABLED AGENT TOOLS & MULTI-STEP ReAct SOFTWARE CREATION PROTOCOL (${enabledTools})${mcpLine}:
-- Multi-Step ReAct Inspection: You can inspect files or git state first using [TOOL: fs_read | <relative_path>], [TOOL: git_status], or [TOOL: git_diff]; the runtime executes them and feeds the real output back to you inside the same turn before your final reply.
-- When creating new files or replacing a file completely, output:
+      const toolsProtocolBlock = `\n\nCODE & TOOL PROTOCOL (${enabledTools})${mcpLine}:
+1. Answer the user's message directly and naturally. If the user greets you or asks a question, respond conversationally without invoking tools.
+2. When asked to build or create software, web apps, shaders, or scripts, output complete runnable files using:
 ===FILE: <relative_filename>===
-<full file source code>
+<full source code>
 ===END_FILE===
-- When surgically modifying an existing file, output a SEARCH/REPLACE patch block:
+3. When surgically editing an existing file, output:
 ===PATCH: <relative_filename>===
 <<<<<<< SEARCH
-<exact existing lines>
+<existing lines>
 =======
 <replacement lines>
 >>>>>>> REPLACE
 ===END_PATCH===
-  Every ===FILE: ...=== and ===PATCH: ...=== block is automatically applied to your disk workspace, Git-committed to ${wtBranch}, and executed/verified!
-- To save a new fact to your private agent memory, include: [REMEMBER: concise technical fact]
-- To read a file in your isolated worktree, include: [TOOL: fs_read | <relative_path>]
-- To run a command in your isolated worktree, include: [TOOL: shell | <command>]
-- To write a file in your isolated worktree, include: [TOOL: write_file | <relative_path> | <content>]
-- To hand off & self-trigger another Vanara autonomously, mention them by @handle (e.g. @R2, @R3, @R4, @R1) with a clear next action.`;
-      const mountBlock = folderSummary
-        ? `\n\nWORKSPACE & SYMBOL MAP SNAPSHOT:\n${folderSummary.slice(0, 1500)}`
-        : "";
+4. Only when you explicitly need to inspect or run something in your worktree, include an exact tag such as [TOOL: fs_read | <path>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
+5. To remember a key fact, include [REMEMBER: fact]. To hand off to a teammate, mention @R1, @R2, @R3, or @R4.`;
       const teamNames = state.bots.map(b => `@${b.name} (${b.role})`).join(", ");
-      return `You are ${bot.name} (${bot.role}) in the Vanaras autonomous multi-agent software engineering workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${mountBlock}\n\nFellow Vanara agents: ${teamNames}.\nBe concise, high-signal, and write real runnable code.`;
+      return `You are ${bot.name} (${bot.role}) in the Vanaras autonomous multi-agent software engineering workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}\n\nFellow Vanara agents: ${teamNames}.\nBe concise, high-signal, and write real runnable code when asked to build.`;
     }
 
     async function invokeAgentLifecycleHook(hook, payload = {}) {
@@ -3369,6 +3391,16 @@ Auto-save: enabled</pre>
         showToast(`PreCompact: summarized ${res.compactedCount} turns`);
       } else {
         showToast("PreCompact: context window is already compact (<= 6 turns)");
+      }
+    }
+
+    function insertTerminalBeforeStreaming(thread, msgObj) {
+      if (!thread || !Array.isArray(thread.messages)) return;
+      const streamIdx = thread.messages.findIndex(m => m && m.isStreaming);
+      if (streamIdx >= 0) {
+        thread.messages.splice(streamIdx, 0, msgObj);
+      } else {
+        thread.messages.push(msgObj);
       }
     }
 
@@ -3413,7 +3445,7 @@ Auto-save: enabled</pre>
         });
         hooksTrace.push(`PreToolUse(${normalizedTool}:${preCheck.permitted !== false ? "ALLOW" : "DENY"})`);
         if (preCheck.permitted === false) {
-          thread.messages.push({
+          insertTerminalBeforeStreaming(thread, {
             senderType: "terminal",
             command: `[PreToolUse Blocked] ${normalizedTool}`,
             exitCode: 1,
@@ -3439,7 +3471,7 @@ Auto-save: enabled</pre>
             });
             const data = await res.json();
             const readOut = data.output || data.error || "(empty file)";
-            thread.messages.push({
+            insertTerminalBeforeStreaming(thread, {
               senderType: "terminal",
               command: `[${bot.name} worktree] read ${arg1}`,
               exitCode: res.ok ? 0 : 1,
@@ -3456,7 +3488,7 @@ Auto-save: enabled</pre>
             });
             const data = await res.json();
             if (res.ok) {
-              thread.messages.push({
+              insertTerminalBeforeStreaming(thread, {
                 senderType: "terminal",
                 command: `[${bot.name} worktree] write ${arg1}`,
                 exitCode: 0,
@@ -3474,7 +3506,7 @@ Auto-save: enabled</pre>
             const data = await res.json();
             if (res.ok) {
               const gitOut = data.output || "(clean worktree)";
-              thread.messages.push({
+              insertTerminalBeforeStreaming(thread, {
                 senderType: "terminal",
                 command: `[${bot.name} ${data.branch}] ${normalizedTool}`,
                 exitCode: 0,
@@ -3495,6 +3527,32 @@ Auto-save: enabled</pre>
     }
 
     const CLIENT_SESSION_ID = "client_" + Math.random().toString(36).slice(2, 10);
+    const activeTurnState = {};
+
+    function cancelActiveTurnForThread(thread) {
+      if (!thread) return;
+      if (activeAutonomousTimers[thread.id]) {
+        clearTimeout(activeAutonomousTimers[thread.id]);
+        delete activeAutonomousTimers[thread.id];
+      }
+      const prevTurn = activeTurnState[thread.id];
+      if (prevTurn) {
+        prevTurn.aborted = true;
+        try { prevTurn.controller.abort(); } catch {}
+        delete activeTurnState[thread.id];
+      }
+      // Remove any unfinished streaming placeholder ("▍" or "⏳ Thinking...") so a stale turn never sits above a newer user message
+      thread.messages = thread.messages.filter(m => {
+        if (m && m.isStreaming) {
+          m.isStreaming = false;
+          const t = (m.text || "").trim();
+          if (!t || t === "▍" || t.startsWith("⏳ Thinking")) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
 
     async function handleSendMessage() {
       const input = document.getElementById("chatComposerInput");
@@ -3504,6 +3562,8 @@ Auto-save: enabled</pre>
       document.getElementById("mentionAutocompletePopup").classList.add("hidden");
       const thread = getActiveThread();
       input.value = "";
+
+      cancelActiveTurnForThread(thread);
 
       if (text.startsWith("/run ")) {
         const cmd = text.slice(5).trim();
@@ -3564,6 +3624,7 @@ Auto-save: enabled</pre>
       });
       if (!goal || !goal.trim()) return;
 
+      cancelActiveTurnForThread(thread);
       state.autoTriggerEnabled = true;
       updateHeaderPills();
       thread.messages.push({
@@ -3582,6 +3643,10 @@ Auto-save: enabled</pre>
       const targetThread = state.threads.find(t => t.id === threadId);
       if (!targetThread || !targetBot) return;
 
+      const turnController = new AbortController();
+      const turnCtx = { controller: turnController, aborted: false };
+      activeTurnState[threadId] = turnCtx;
+
       const depthLabel = chainDepth > 0 ? ` (Auto-Turn ${chainDepth + 1})` : "";
       activeWorkingThreads[threadId] = `${targetBot.name} working in ${targetBot.worktreeBranch || "worktree"}${depthLabel}...`;
       renderThreadList();
@@ -3590,12 +3655,13 @@ Auto-save: enabled</pre>
       let nextAutoPrompt = "";
       const hooksTrace = [];
 
-      // Insert live streaming message placeholder so Capability #3 streams tokens directly into the UI
+      // Insert live streaming message placeholder at the end of the thread (always below the latest user message)
       const liveMsg = {
         senderType: "bot",
         botId: targetBot.id,
         text: "▍",
         reasoning: "",
+        isStreaming: true,
         hooksTrace,
         collabRound: chainDepth > 0 ? `Auto-Triggered • ${targetBot.worktreeBranch}` : targetBot.worktreeBranch,
         hasDeliverables: false
@@ -3605,6 +3671,7 @@ Auto-save: enabled</pre>
 
       try {
         await ensureAgentWorktreeOnServer(targetBot);
+        if (turnCtx.aborted) return;
 
         // Vanaras Hook 0: Automatic PreCompactRequest when conversation history grows > 18 messages
         if (targetThread.messages.length > 19) {
@@ -3613,7 +3680,7 @@ Auto-save: enabled</pre>
             botName: targetBot.name,
             messages: targetThread.messages.slice(0, -1)
           });
-          if (compactRes && compactRes.compactedCount > 0 && Array.isArray(compactRes.keptMessages)) {
+          if (!turnCtx.aborted && compactRes && compactRes.compactedCount > 0 && Array.isArray(compactRes.keptMessages)) {
             targetThread.messages = [
               {
                 senderType: "terminal",
@@ -3635,24 +3702,54 @@ Auto-save: enabled</pre>
           prompt: triggerText,
           mcpCustomInstructions: targetBot.mcpCustomInstructions || ""
         });
+        if (turnCtx.aborted) return;
         hooksTrace.push("BeforeSubmitPrompt");
 
         const folderSummary = await ensureFolderSnapshot(targetThread.mountPath, targetBot);
-        const historyContext = targetThread.messages.slice(0, -1).slice(-8).map(m => {
-          if (m.senderType === "user") return `${state.currentUser.name}: ${m.text}`;
-          if (m.senderType === "terminal") return `[Worktree Terminal ${m.command}]: ${m.text.slice(0, 400)}`;
+        if (turnCtx.aborted) return;
+        const liveIdx = targetThread.messages.indexOf(liveMsg);
+        const allBeforeLive = liveIdx >= 0 ? targetThread.messages.slice(0, liveIdx) : targetThread.messages.slice(0, -1);
+        const lastBeforeLive = allBeforeLive[allBeforeLive.length - 1];
+        const historySlice = (lastBeforeLive && lastBeforeLive.senderType === "user" && lastBeforeLive.text === triggerText)
+          ? allBeforeLive.slice(0, -1)
+          : allBeforeLive;
+        const historyContext = historySlice.slice(-6).map(m => {
+          if (m.senderType === "user") return `User: ${m.text}`;
+          if (m.senderType === "terminal") return `[Terminal ${m.command}]: ${m.text.slice(0, 300)}`;
           const b = getBot(m.botId);
-          return `${b ? b.name : "Vanara"}: ${m.text}`;
+          return `${b ? b.name : "Agent"}: ${m.text}`;
         }).join("\n\n");
 
         const sysPrompt = buildGroundedSystemPrompt(targetBot, targetThread, folderSummary);
         const enrichedTrigger = beforeHook.enrichedPrompt || triggerText;
-        let currentPrompt = `Recent conversation:\n${historyContext}\n\nLatest trigger:\n${enrichedTrigger}\n\nRespond directly as ${targetBot.name}:`;
+        let currentPrompt = historyContext
+          ? `Conversation context:\n${historyContext}\n\nUser request:\n${enrichedTrigger}`
+          : enrichedTrigger;
 
         let lastRenderTs = 0;
         const onStreamProgress = (partialContent, partialReasoning) => {
-          liveMsg.text = (partialContent || "▍");
-          if (partialReasoning) liveMsg.reasoning = partialReasoning;
+          if (turnCtx.aborted) return;
+          let displayContent = partialContent || "";
+          let displayReasoning = partialReasoning || "";
+          // Extract any inline <think>...</think> or open <think>... block during streaming
+          displayContent = displayContent.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
+            if (t.trim()) displayReasoning = [displayReasoning, t.trim()].filter(Boolean).join("\n");
+            return "";
+          });
+          if (/^[\s]*<think>/i.test(displayContent) && !/<\/think>/i.test(displayContent)) {
+            const openThink = displayContent.replace(/^[\s]*<think>/i, "").trim();
+            if (openThink) displayReasoning = [displayReasoning, openThink].filter(Boolean).join("\n");
+            displayContent = "";
+          }
+          displayContent = displayContent.trim();
+          if (displayContent) {
+            liveMsg.text = displayContent;
+          } else if (displayReasoning) {
+            liveMsg.text = "⏳ Thinking...";
+          } else {
+            liveMsg.text = "▍";
+          }
+          if (displayReasoning) liveMsg.reasoning = displayReasoning;
           const now = Date.now();
           if (activeThreadId === threadId && now - lastRenderTs > 95) {
             lastRenderTs = now;
@@ -3661,10 +3758,12 @@ Auto-save: enabled</pre>
         };
 
         // Capability #1: Multi-Step ReAct Tool Loop inside a single turn (up to 2 internal inspect->observe rounds)
-        let reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 2000, onStreamProgress);
+        let reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 3500, onStreamProgress, turnController.signal);
+        if (turnCtx.aborted) return;
         let accumulatedReasoning = reply.reasoning || "";
 
         for (let reactStep = 0; reactStep < 2; reactStep++) {
+          if (turnCtx.aborted) return;
           const stepHook = await invokeAgentLifecycleHook("AfterAgentThoughtRequest", {
             botId: targetBot.id,
             botName: targetBot.name,
@@ -3687,7 +3786,8 @@ Auto-save: enabled</pre>
           hooksTrace.push(`ReActObsStep(${reactStep + 1})`);
           const obsDigest = stepObservations.map(o => `[Tool Output: ${o.tool}]\n${o.output}`).join("\n\n");
           currentPrompt += `\n\nYour previous step invoked inspection tool(s). Real output from your worktree:\n${obsDigest}\n\nNow synthesize your final answer and/or ===FILE: ...=== deliverables based on this evidence:`;
-          reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 2200, onStreamProgress);
+          reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 2200, onStreamProgress, turnController.signal);
+          if (turnCtx.aborted) return;
           if (reply.reasoning) {
             accumulatedReasoning = [accumulatedReasoning, reply.reasoning].filter(Boolean).join("\n\n");
           }
@@ -3699,6 +3799,7 @@ Auto-save: enabled</pre>
           botName: targetBot.name,
           rawOutput: reply.content
         });
+        if (turnCtx.aborted) return;
         hooksTrace.push("AfterAgentThought");
         const combinedReasoning = [
           accumulatedReasoning,
@@ -3770,10 +3871,13 @@ Auto-save: enabled</pre>
         });
         hooksTrace.push("NotifyTurnFinished");
 
+        if (turnCtx.aborted) return;
+
         const cleanDisplay = postThoughtContent
           .replace(/\[REMEMBER:\s*[^\]]+\]/gi, "")
           .trim() || postThoughtContent;
 
+        liveMsg.isStreaming = false;
         liveMsg.text = cleanDisplay;
         liveMsg.reasoning = combinedReasoning;
         liveMsg.hooksTrace = hooksTrace;
@@ -3801,9 +3905,15 @@ Auto-save: enabled</pre>
           }
         }
       } catch (e) {
+        if (turnCtx.aborted || e?.name === "AbortError") return;
+        liveMsg.isStreaming = false;
         liveMsg.text = `Connection error (${targetBot.provider}/${targetBot.model}): ${e.message}`;
       } finally {
-        delete activeWorkingThreads[threadId];
+        liveMsg.isStreaming = false;
+        if (activeTurnState[threadId] === turnCtx) {
+          delete activeTurnState[threadId];
+          delete activeWorkingThreads[threadId];
+        }
         saveState();
         renderThreadList();
         if (activeThreadId === threadId) {
@@ -3811,12 +3921,12 @@ Auto-save: enabled</pre>
         }
       }
 
-      if (nextAutoBot && state.autoTriggerEnabled !== false) {
+      if (!turnCtx.aborted && nextAutoBot && state.autoTriggerEnabled !== false) {
         activeWorkingThreads[threadId] = `Auto-triggering @${nextAutoBot.name}...`;
         renderThreadList();
         activeAutonomousTimers[threadId] = setTimeout(() => {
           delete activeAutonomousTimers[threadId];
-          if (state.autoTriggerEnabled !== false) {
+          if (state.autoTriggerEnabled !== false && !turnCtx.aborted) {
             runBotTurnInThread(threadId, nextAutoBot, nextAutoPrompt, chainDepth + 1);
           } else {
             delete activeWorkingThreads[threadId];
@@ -3826,7 +3936,7 @@ Auto-save: enabled</pre>
       }
     }
 
-    async function queryBotLLM(bot, systemPrompt, userPrompt, maxTokens = 2000, onStreamDelta = null) {
+    async function queryBotLLM(bot, systemPrompt, userPrompt, maxTokens = 2000, onStreamDelta = null, abortSignal = undefined) {
       const modelToUse = (bot.provider === "local" && (!bot.model || bot.model === "auto"))
         ? detectedLocalModel
         : bot.model;
@@ -3850,7 +3960,8 @@ Auto-save: enabled</pre>
           const streamRes = await fetch("/api/llm/stream", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: abortSignal
           });
           if (streamRes.ok && streamRes.body) {
             const reader = streamRes.body.getReader();
@@ -3885,13 +3996,16 @@ Auto-save: enabled</pre>
               };
             }
           }
-        } catch {}
+        } catch (err) {
+          if (err?.name === "AbortError" || abortSignal?.aborted) throw err;
+        }
       }
 
       const res = await fetch("/api/llm/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: abortSignal
       });
 
       const data = await res.json();
@@ -5605,8 +5719,17 @@ Auto-save: enabled</pre>
         });
         const data = await res.json();
         if (res.ok && Array.isArray(data.models) && data.models.length > 0) {
-          detectedLocalModel = data.models[0];
+          const preferred = data.models.find(m => !String(m).toLowerCase().includes("embed")) || data.models[0];
+          detectedLocalModel = preferred;
           llmOnlineStatus = true;
+          let updatedAny = false;
+          (state.bots || []).forEach(b => {
+            if ((b.provider || "local") === "local" && (!b.model || !data.models.includes(b.model))) {
+              b.model = preferred;
+              updatedAny = true;
+            }
+          });
+          if (updatedAny) saveState();
         } else {
           llmOnlineStatus = Boolean(leadBot.apiKey);
         }
@@ -5643,8 +5766,10 @@ Auto-save: enabled</pre>
           const data = JSON.parse(ev.data);
           const targetThread = state.threads.find(t => t.id === data.threadId) || getActiveThread();
           if (targetThread) {
-            delete activeWorkingThreads[targetThread.id];
-            targetThread.messages.push({
+            if (!activeTurnState[targetThread.id]) {
+              delete activeWorkingThreads[targetThread.id];
+            }
+            insertTerminalBeforeStreaming(targetThread, {
               senderType: "terminal",
               command: data.command,
               exitCode: data.exitCode,

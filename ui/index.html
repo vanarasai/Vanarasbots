@@ -2961,8 +2961,9 @@ Auto-save: enabled</pre>
         if (b.id === excludeBotId) return false;
         const escaped = b.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const explicitTagRx = new RegExp(`\\[HANDOFF:\\s*@?${escaped}\\]`, "i");
-        const handoffPhraseRx = new RegExp(`(?:hand(?:ing)?\\s+off\\s+to|over\\s+to|passing\\s+to)\\s+@${escaped}\\b`, "i");
-        return explicitTagRx.test(text) || handoffPhraseRx.test(text);
+        const handoffPhraseRx = new RegExp(`(?:hand(?:ing)?\\s+off\\s+to|over\\s+to|passing\\s+to|assign(?:ed|ing)?\\s+to|next:\\s*)\\s*@?${escaped}\\b`, "i");
+        const roleAssignRx = new RegExp(`(?:^|\\n)\\s*(?:[-*]|\\d+\\.)?\\s*\\*{0,2}@${escaped}\\*{0,2}\\s*(?:\\([^)]*\\))?\\s*:`, "i");
+        return explicitTagRx.test(text) || handoffPhraseRx.test(text) || roleAssignRx.test(text);
       });
     }
 
@@ -3512,9 +3513,32 @@ Auto-save: enabled</pre>
       const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"]).join(", ");
       const mcpLine = bot.mcpCommand ? `\n- Connected MCP Server: ${bot.mcpCommand}` : "";
       const isDm = thread?.type === "dm";
+      let squadRoleDirective = "";
+      if (!isDm) {
+        const botKey = String(bot.id || bot.name || "").toLowerCase();
+        if (botKey.includes("r1")) {
+          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @R1 Architect):
+- NEVER try to build the entire project alone in a single monologue!
+- Step 1: Discuss the architecture, technical trade-offs, and module interfaces concisely (120–180 words).
+- Step 2: Explicitly assign responsibilities to your teammates:
+  • **@R2** (Backend & Systems): core engine, data pipeline, and model integrations.
+  • **@R4** (Frontend & Runtime): CLI or local web UI entrypoint.
+  • **@R3** (QA & Peer Review): code review, edge-case audit, and automated test suite.
+- Step 3: Output at most 1–2 foundational schema/config files (\`===FILE: ...===\`) and end your message with \`[HANDOFF: @R2]\`.`;
+        } else if (botKey.includes("r2")) {
+          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @R2 Backend & Systems):
+- Review @R1's architecture and role assignment, briefly discuss your backend design choices, implement ONLY your assigned backend/pipeline module(s) using \`===FILE: <filename>===\`, and end your message with \`[HANDOFF: @R4]\`.`;
+        } else if (botKey.includes("r4")) {
+          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @R4 Frontend & CLI):
+- Review @R1's architecture and @R2's backend module, build the user-facing CLI or local web UI entrypoint using \`===FILE: <filename>===\`, and end your message with \`[HANDOFF: @R3]\` for peer review.`;
+        } else if (botKey.includes("r3")) {
+          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @R3 QA & Peer Review):
+- Perform a candid **Peer Review** of @R1's architecture, @R2's backend code, and @R4's CLI/UI: highlight strengths, catch edge cases or integration bugs, output a runnable verification test (\`===FILE: test_...===\`), and give your final QA sign-off.`;
+        }
+      }
       const handoffRule = isDm
         ? `5. This is a private 1-on-1 chat with the user. Do NOT mention, tag, or hand off to @R1, @R2, @R3, or @R4 unless the user explicitly asks you to.`
-        : `5. To remember a key fact, include [REMEMBER: fact]. Only when you have completed a concrete engineering task and want a squad teammate to take the next step, include [HANDOFF: @R2] (or @R3/@R4).`;
+        : `5. In this group squad room, collaborate with your teammates, divide responsibilities by role, and end with [HANDOFF: @R2], [HANDOFF: @R4], or [HANDOFF: @R3] so the next specialist continues the discussion and peer review.`;
       const toolsProtocolBlock = `\n\nCODE & TOOL PROTOCOL (${enabledTools})${mcpLine}:
 1. Answer the user's message directly and naturally. If the user greets you (e.g. "Hi", "Hello") or asks a question, respond briefly in 1–3 sentences without invoking [TOOL: ...] tags and NEVER invent an unrequested project.
 2. When asked to build or create software, web apps, shaders, or scripts, output complete runnable files in your visible response using:
@@ -3534,7 +3558,7 @@ ${handoffRule}
 6. Keep any internal thinking (<think>) brief (under 120 words — high-level bullet plan only). NEVER write full source code files inside <think> or internal reasoning; close </think> immediately and output all code and explanations in your visible answer.`;
       const teamContext = isDm
         ? ""
-        : `\n\nSquad teammates in this room: ${state.bots.map(b => `@${b.name} (${b.role})`).join(", ")}.`;
+        : `\n\nSquad teammates in this room: ${state.bots.map(b => `@${b.name} (${b.role})`).join(", ")}.${squadRoleDirective}`;
       return `You are ${bot.name} (${bot.role}) in the Vanaras software engineering workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${teamContext}\nBe concise, high-signal, and only write code or invoke tools when the user's task calls for it.`;
     }
 
@@ -4215,18 +4239,30 @@ ${handoffRule}
           targetThread.type === "group" &&
           !isShortGreeting &&
           state.autoTriggerEnabled !== false &&
-          chainDepth < 2 &&
+          chainDepth < 3 &&
           (targetBot.tools || []).includes("handoff")
         ) {
-          // Strict Group-Only Explicit Handoff: NEVER auto-trigger another agent inside a 1-on-1 DM thread!
+          // Strict Group-Only Squad Discussion & Peer Review Relay: NEVER auto-trigger inside a 1-on-1 DM thread!
           const handoffBots = findExplicitHandoffBots(postThoughtContent, targetBot.id);
           if (handoffBots.length > 0) {
             nextAutoBot = handoffBots[0];
+          } else if (triggerText.trim().length >= 24) {
+            // Deterministic 4-agent Squad Relay (R1 Architect -> R2 Backend -> R4 Frontend/CLI -> R3 Peer Review)
+            const squadRelayOrder = ["bot_r1", "bot_r2", "bot_r4", "bot_r3"];
+            const curIdx = squadRelayOrder.indexOf(targetBot.id);
+            if (curIdx >= 0 && curIdx + 1 < squadRelayOrder.length) {
+              nextAutoBot = getBot(squadRelayOrder[curIdx + 1]);
+            }
+          }
+          if (nextAutoBot) {
             await invokeAgentLifecycleHook("SubagentStart", {
               botId: nextAutoBot.id,
               botName: nextAutoBot.name
             });
-            nextAutoPrompt = `@${nextAutoBot.name}, ${targetBot.name} completed their step on the user's request ("${triggerText.slice(0, 240)}") and handed off to you:\n"${cleanDisplay.slice(0, 500)}"\n\nComplete your part (${nextAutoBot.role}) in your worktree (${nextAutoBot.worktreeBranch}).`;
+            const isPeerReviewStep = nextAutoBot.id === "bot_r3";
+            nextAutoPrompt = isPeerReviewStep
+              ? `@${nextAutoBot.name} (QA & Peer Reviewer), @${targetBot.name} and the squad just designed and implemented their modules for the user's request:\n"${cleanDisplay.slice(0, 600)}"\n\nPerform a candid Peer Review of @R1's architecture, @R2's backend pipeline, and @R4's CLI/UI, call out any bugs or edge cases, and write a runnable verification test in your worktree (${nextAutoBot.worktreeBranch}).`
+              : `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} just completed their part and assigned your responsibilities:\n"${cleanDisplay.slice(0, 600)}"\n\nDiscuss your technical approach, implement ONLY your assigned module(s) in your worktree (${nextAutoBot.worktreeBranch}), and hand off to the next squad specialist.`;
           }
         }
       } catch (e) {

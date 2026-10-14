@@ -14,7 +14,7 @@
     [self setupMainMenu];
     [self ensureBackendServerRunning];
 
-    NSRect frame = NSMakeRect(0, 0, 1220, 800);
+    NSRect frame = NSMakeRect(0, 0, 1440, 880);
     NSWindowStyleMask style = NSWindowStyleMaskTitled |
                               NSWindowStyleMaskClosable |
                               NSWindowStyleMaskMiniaturizable |
@@ -25,7 +25,7 @@
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
     [self.window center];
-    [self.window setTitle:@"Vanaras — Multi-Agent Workspace"];
+    [self.window setTitle:@"Vanaras Pro — Multi-Agent Engineering Workbench"];
     [self.window setTitlebarAppearsTransparent:YES];
     [self.window setBackgroundColor:[NSColor colorWithSRGBRed:0.05 green:0.05 blue:0.05 alpha:1.0]];
 
@@ -174,6 +174,14 @@
     if (self.serverTask && [self.serverTask isRunning]) {
         [self.serverTask terminate];
     }
+}
+
+- (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
+    [self reloadWebView:nil];
+    if (self.window) {
+        [self.window makeKeyAndOrderFront:nil];
+    }
+    return YES;
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {

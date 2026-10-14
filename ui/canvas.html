@@ -3491,6 +3491,8 @@ Auto-save: enabled</pre>
       return executedTools;
     }
 
+    const CLIENT_SESSION_ID = "client_" + Math.random().toString(36).slice(2, 10);
+
     async function handleSendMessage() {
       const input = document.getElementById("chatComposerInput");
       const text = input.value.trim();
@@ -3519,6 +3521,7 @@ Auto-save: enabled</pre>
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "room_message",
+          clientId: CLIENT_SESSION_ID,
           threadId: thread.id,
           sender: state.currentUser.name,
           senderType: "user",
@@ -5604,6 +5607,7 @@ Auto-save: enabled</pre>
         const es = new EventSource("/api/events");
         es.addEventListener("room_message", ev => {
           const payload = JSON.parse(ev.data);
+          if (payload.clientId && payload.clientId === CLIENT_SESSION_ID) return;
           const targetThread = state.threads.find(t => t.id === payload.threadId) || getActiveThread();
           if (targetThread && payload.text) {
             targetThread.messages.push({

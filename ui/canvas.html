@@ -4774,11 +4774,17 @@ Auto-save: enabled</pre>
 
     async function probeOnboardingModels() {
       const provider = document.getElementById("onboardProviderSelect").value;
-      const baseUrl = document.getElementById("onboardBaseUrlInput").value.trim();
+      let baseUrl = document.getElementById("onboardBaseUrlInput").value.trim() || "http://192.168.68.102:1234/v1";
+      if (provider === "local" && !baseUrl.endsWith("/v1") && !baseUrl.includes("/v1/")) {
+        baseUrl = baseUrl.replace(/\/+$/, "") + "/v1";
+        document.getElementById("onboardBaseUrlInput").value = baseUrl;
+      }
       const apiKey = document.getElementById("onboardApiKeyInput").value.trim();
-      const statusEl = document.getElementById("onboardModelStatus");
-      statusEl.style.color = "#a1a1aa";
-      statusEl.innerText = "Probing model endpoint...";
+      const statusEl = document.getElementById("onboardProbeStatus") || document.getElementById("onboardModelStatus");
+      if (statusEl) {
+        statusEl.style.color = "#a1a1aa";
+        statusEl.innerText = "Probing model endpoint...";
+      }
       try {
         const res = await fetch("/api/llm/models", {
           method: "POST",
@@ -4790,19 +4796,25 @@ Auto-save: enabled</pre>
           detectedLocalModel = data.models[0];
           llmOnlineStatus = true;
           document.getElementById("onboardModelInput").value = data.models[0];
-          statusEl.style.color = "#6ee7b7";
-          statusEl.innerText = `✓ Connected! Detected ${data.models.length} model(s): ${data.models.slice(0, 3).join(", ")}`;
+          if (statusEl) {
+            statusEl.style.color = "#10b981";
+            statusEl.innerText = `✓ Connected! Detected ${data.models.length} model(s): ${data.models.slice(0, 4).join(", ")}`;
+          }
           updateHeaderPills();
         } else {
           llmOnlineStatus = false;
-          statusEl.style.color = "#fbbf24";
-          statusEl.innerText = `Endpoint reachable, no model list returned (${data.error || "using manual model ID"}).`;
+          if (statusEl) {
+            statusEl.style.color = "#fbbf24";
+            statusEl.innerText = `Endpoint reachable, no model list returned (${data.error || "using manual model ID"}).`;
+          }
           updateHeaderPills();
         }
       } catch (e) {
         llmOnlineStatus = false;
-        statusEl.style.color = "#f87171";
-        statusEl.innerText = `Connection error: ${e.message}`;
+        if (statusEl) {
+          statusEl.style.color = "#f87171";
+          statusEl.innerText = `Connection error: ${e.message}`;
+        }
         updateHeaderPills();
       }
     }

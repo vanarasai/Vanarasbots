@@ -1460,6 +1460,15 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  function normalizeOpenAIBaseUrl(rawBase = "http://192.168.68.102:1234/v1") {
+    const trimmed = String(rawBase || "http://192.168.68.102:1234/v1").trim().replace(/\/+$/, "");
+    if (!trimmed) return "http://192.168.68.102:1234/v1";
+    if (trimmed.endsWith("/v1") || trimmed.endsWith("/chat/completions") || trimmed.endsWith("/models") || trimmed.includes("/v1/")) {
+      return trimmed;
+    }
+    return `${trimmed}/v1`;
+  }
+
   // 6A. Real-Time Token & Thought Streaming Proxy (POST /api/llm/stream)
   if (req.method === "POST" && req.url === "/api/llm/stream") {
     try {
@@ -1473,7 +1482,7 @@ const server = http.createServer(async (req, res) => {
         max_tokens = 2500
       } = await readJsonBody(req);
 
-      const cleanBase = baseUrl.replace(/\/+$/, "");
+      const cleanBase = normalizeOpenAIBaseUrl(baseUrl);
       const chatUrl = cleanBase.endsWith("/chat/completions") ? cleanBase : `${cleanBase}/chat/completions`;
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
@@ -1545,7 +1554,7 @@ const server = http.createServer(async (req, res) => {
         max_tokens = 3000
       } = await readJsonBody(req);
 
-      const cleanBase = baseUrl.replace(/\/+$/, "");
+      const cleanBase = normalizeOpenAIBaseUrl(baseUrl);
 
       // Native Anthropic Messages API
       if (provider === "anthropic" || cleanBase.includes("api.anthropic.com")) {
@@ -1671,7 +1680,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/api/llm/models") {
     try {
       const { provider = "local", baseUrl = "http://192.168.68.102:1234/v1", apiKey = "" } = await readJsonBody(req);
-      const cleanBase = baseUrl.replace(/\/+$/, "");
+      const cleanBase = normalizeOpenAIBaseUrl(baseUrl);
 
       if (provider === "gemini") {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;

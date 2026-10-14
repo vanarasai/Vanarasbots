@@ -182,7 +182,7 @@ function splitReasoningAndVisibleOutput(rawOutput = "", priorReasoning = "") {
   // If visible output is empty because an unclosed <think> or delta.reasoning_content swallowed
   // the final reply / ===FILE:=== / File 1: / [TOOL:...] blocks at the tail, split at the response boundary:
   if (!finalCleaned && combinedReasoning) {
-    const transitionRx = /\n((?:@R[1-4]\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n|(?:Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+)|File\s+1\s*:\s*[^\n]+\n)[\s\S]*)$/i;
+    const transitionRx = /\n((?:@[a-zA-Z0-9_-]+\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n|(?:Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+)|File\s+1\s*:\s*[^\n]+\n)[\s\S]*)$/i;
     const m = combinedReasoning.match(transitionRx);
     if (m && m.index !== undefined && m.index > 0) {
       finalCleaned = m[1]

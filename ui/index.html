@@ -1532,23 +1532,25 @@
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
 
-                <!-- Colored Agent Tag Pills: R1 ▾, R2 ▾, R3 ▾, R4 ▾ -->
-                <button onclick="quickInsertMention('@R1')" class="composer-agent-pill agent-badge-r1" title="Tag @R1 Principal Architect">
-                  <span>R1</span>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
-                </button>
-                <button onclick="quickInsertMention('@R2')" class="composer-agent-pill agent-badge-r2" title="Tag @R2 Systems Engineer">
-                  <span>R2</span>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
-                </button>
-                <button onclick="quickInsertMention('@R3')" class="composer-agent-pill agent-badge-r3" title="Tag @R3 Quality & Verification">
-                  <span>R3</span>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
-                </button>
-                <button onclick="quickInsertMention('@R4')" class="composer-agent-pill agent-badge-r4" title="Tag @R4 Frontend Engineer">
-                  <span>R4</span>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
-                </button>
+                <!-- Dynamic Colored Agent Tag Pills (adapts to any agent names, roles, or count) -->
+                <div id="composerAgentPillsContainer" style="display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                  <button onclick="quickInsertMention('@R1')" class="composer-agent-pill agent-badge-r1" title="Tag @R1 Principal Systems & AI Architect">
+                    <span>R1</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  <button onclick="quickInsertMention('@R2')" class="composer-agent-pill agent-badge-r2" title="Tag @R2 Backend & Systems Engineer">
+                    <span>R2</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  <button onclick="quickInsertMention('@R3')" class="composer-agent-pill agent-badge-r3" title="Tag @R3 QA, Verification & Code Reviewer">
+                    <span>R3</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  <button onclick="quickInsertMention('@R4')" class="composer-agent-pill agent-badge-r4" title="Tag @R4 Frontend & Runtime Engineer">
+                    <span>R4</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                </div>
               </div>
 
               <!-- Stop Generation Button + Blue Circular Up-Arrow Send Button -->
@@ -2671,31 +2673,119 @@ Auto-save: enabled</pre>
       const thread = getActiveThread();
       if (!thread) return state.bots[0];
       if (thread.type === "dm") return getBot(thread.botId);
-      return getBot(thread.botIds?.[0] || "bot_r1");
+      const relay = buildDynamicSquadRelay(thread);
+      return relay[0] || getBot(thread.botIds?.[0]) || state.bots[0];
+    }
+
+    function classifyAgentSquadArchetype(bot) {
+      if (!bot) return "specialist";
+      const roleText = String(bot.role || "").toLowerCase();
+      const instrText = String(bot.instructions || "").toLowerCase();
+      // 1. Inspect explicit role title first (so editing a bot's role immediately updates its squad behavior!)
+      if (/\b(qa|review|reviewer|verif|test|audit|security|critic|quality)\b/i.test(roleText)) return "reviewer";
+      if (/\b(front[\s-]*end|ui|ux|web|cli|client|design|canvas|interface)\b/i.test(roleText)) return "frontend";
+      if (/\b(architect|lead|principal|planner|orchestrat|director)\b/i.test(roleText)) return "architect";
+      if (/\b(back[\s-]*end|system|data|pipeline|api|infra|engine|server|db|database)\b/i.test(roleText)) return "specialist";
+      // 2. Fallback to instructions if role is custom/generic
+      if (/\b(peer review|code review|qa|verification|test suite)\b/i.test(instrText)) return "reviewer";
+      if (/\b(frontend|ui|web|cli|user interface)\b/i.test(instrText)) return "frontend";
+      if (/\b(architect|system design|assign responsibilities)\b/i.test(instrText)) return "architect";
+      return "specialist";
+    }
+
+    function buildDynamicSquadRelay(thread) {
+      const memberIds = (thread?.type === "group" && Array.isArray(thread.botIds) && thread.botIds.length > 0)
+        ? thread.botIds
+        : state.bots.map(b => b.id);
+      const members = memberIds.map(id => getBot(id)).filter(Boolean);
+      if (members.length <= 1) return members;
+
+      const architects = [];
+      const specialists = [];
+      const frontends = [];
+      const reviewers = [];
+
+      members.forEach((b) => {
+        const arch = classifyAgentSquadArchetype(b);
+        if (arch === "architect") architects.push(b);
+        else if (arch === "reviewer") reviewers.push(b);
+        else if (arch === "frontend") frontends.push(b);
+        else specialists.push(b);
+      });
+
+      return [...architects, ...specialists, ...frontends, ...reviewers];
+    }
+
+    function getSquadReviewerBot(thread, excludeBotId = null) {
+      const relay = buildDynamicSquadRelay(thread).filter(b => b.id !== excludeBotId);
+      const explicitReviewer = relay.find(b => classifyAgentSquadArchetype(b) === "reviewer")
+        || state.bots.find(b => b.id !== excludeBotId && classifyAgentSquadArchetype(b) === "reviewer");
+      if (explicitReviewer) return explicitReviewer;
+      return relay[relay.length - 1] || state.bots.find(b => b.id !== excludeBotId) || state.bots[0];
     }
 
     function getAgentBadgeClass(botNameOrId) {
-      const key = String(botNameOrId || "").toLowerCase();
-      if (key.includes("r1")) return "agent-badge-r1";
-      if (key.includes("r2")) return "agent-badge-r2";
-      if (key.includes("r3")) return "agent-badge-r3";
-      if (key.includes("r4")) return "agent-badge-r4";
-      return "agent-badge-r1";
+      const palette = ["agent-badge-r1", "agent-badge-r2", "agent-badge-r3", "agent-badge-r4"];
+      if (!botNameOrId) return palette[0];
+      const key = String(botNameOrId).toLowerCase();
+      const idx = state.bots.findIndex(b =>
+        String(b.id || "").toLowerCase() === key ||
+        String(b.name || "").toLowerCase() === key
+      );
+      if (idx >= 0) return palette[idx % palette.length];
+      if (key.includes("r1")) return palette[0];
+      if (key.includes("r2")) return palette[1];
+      if (key.includes("r3")) return palette[2];
+      if (key.includes("r4")) return palette[3];
+      let hash = 0;
+      for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+      return palette[hash % palette.length];
+    }
+
+    function extractShortRoleTag(roleStr) {
+      const r = String(roleStr || "").trim();
+      if (!r) return "Agent";
+      if (/\barchitect\b/i.test(r)) return "Architect";
+      if (/\bfront[\s-]*end\b/i.test(r)) return "Frontend";
+      if (/\bback[\s-]*end\b/i.test(r) && !/\bsystems?\b/i.test(r)) return "Backend";
+      if (/\bsystems?\b/i.test(r)) return "Systems";
+      if (/\b(qa|quality|verif|review|reviewer|test)\b/i.test(r)) return "Quality";
+      if (/\b(security|audit|auditor)\b/i.test(r)) return "Security";
+      if (/\b(data|ml|ai)\b/i.test(r)) return "AI/Data";
+      if (/\b(devops|infra|cloud)\b/i.test(r)) return "Infra";
+      const words = r.replace(/[^a-zA-Z0-9\s/-]/g, " ").split(/\s+/).filter(w => w.length >= 2 && !/^(and|the|for|with|principal|senior|lead|staff|specialist|engineer|developer|monkey|vanara)$/i.test(w));
+      return words[0] || r.split(/\s+/)[0] || "Agent";
     }
 
     function getAgentShortTitle(bot) {
       if (!bot) return "Agent";
-      const n = String(bot.name || "").toUpperCase();
-      if (n === "R1") return "R1 Architect";
-      if (n === "R2") return "R2 Systems";
-      if (n === "R3") return "R3 Quality";
-      if (n === "R4") return "R4 Frontend";
-      return bot.name;
+      const tag = extractShortRoleTag(bot.role);
+      if (String(bot.name || "").toLowerCase().includes(tag.toLowerCase())) return bot.name;
+      return `${bot.name} ${tag}`;
+    }
+
+    function renderComposerAgentPills() {
+      const container = document.getElementById("composerAgentPillsContainer");
+      if (!container) return;
+      const thread = getActiveThread();
+      const botsToShow = (thread?.type === "group" && Array.isArray(thread.botIds) && thread.botIds.length > 0)
+        ? thread.botIds.map(id => getBot(id)).filter(Boolean)
+        : state.bots;
+      container.innerHTML = botsToShow.map(b => {
+        const badgeCls = getAgentBadgeClass(b.id || b.name);
+        const safeMention = `@${b.name}`.replace(/'/g, "\\'");
+        return `
+          <button onclick="quickInsertMention('${safeMention}')" class="composer-agent-pill ${badgeCls}" title="Tag @${escapeHtml(b.name)} — ${escapeHtml(b.role || 'Agent')}">
+            <span>${escapeHtml(b.name)}</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        `;
+      }).join("");
     }
 
     function renderCleanAgentCircle(bot, size = 34) {
       const code = String(bot?.name || "A").slice(0, 2).toUpperCase();
-      const cls = getAgentBadgeClass(bot?.name || bot?.id);
+      const cls = getAgentBadgeClass(bot?.id || bot?.name);
       return `<div class="agent-circle-badge ${cls}" style="width:${size}px; height:${size}px; font-size:${Math.round(size * 0.36)}px;">${escapeHtml(code)}</div>`;
     }
 
@@ -2920,6 +3010,7 @@ Auto-save: enabled</pre>
           if (el) container.appendChild(el);
         });
       }
+      renderComposerAgentPills();
     }
 
     // =========================================================================
@@ -3225,34 +3316,29 @@ Auto-save: enabled</pre>
           row.setAttribute("data-msg-id", m.id);
 
           const isWelcomeSquadMsg = idx === 0 && (m.text.includes("Welcome to") || m.text.includes("Your squad is ready"));
-          const roleShort = bot?.name === "R1" ? "Principal Architect" : (bot?.role || "Agent");
+          const roleShort = bot?.role || "Agent";
           const isMsgStreaming = Boolean(m.isStreaming || m.streaming);
 
           let bodyHtml = "";
           if (isWelcomeSquadMsg && thread.type === "group") {
+            const rosterBots = (Array.isArray(thread.botIds) && thread.botIds.length > 0)
+              ? thread.botIds.map(id => getBot(id)).filter(Boolean)
+              : state.bots;
+            const rosterRowsHtml = rosterBots.map(rb => {
+              const badgeCls = getAgentBadgeClass(rb.id || rb.name);
+              const branchStr = rb.worktreeBranch || `vanara/${String(rb.name || "agent").toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`;
+              return `
+                <div class="squad-roster-item">
+                  <span class="roster-code-pill ${badgeCls}">${escapeHtml(rb.name)}</span>
+                  <span>${escapeHtml(rb.role || "Specialist Agent")}</span>
+                  <span class="roster-branch-pill mono">${escapeHtml(branchStr)}</span>
+                </div>
+              `;
+            }).join("");
             bodyHtml = `
               <p>Your squad is ready.</p>
               <div class="squad-roster-list">
-                <div class="squad-roster-item">
-                  <span class="roster-code-pill agent-badge-r1">R1</span>
-                  <span>Principal Systems &amp; AI Architect</span>
-                  <span class="roster-branch-pill mono">vanara/r1</span>
-                </div>
-                <div class="squad-roster-item">
-                  <span class="roster-code-pill agent-badge-r2">R2</span>
-                  <span>Backend &amp; Systems Engineer</span>
-                  <span class="roster-branch-pill mono">vanara/r2</span>
-                </div>
-                <div class="squad-roster-item">
-                  <span class="roster-code-pill agent-badge-r3">R3</span>
-                  <span>QA, Verification &amp; Code Reviewer</span>
-                  <span class="roster-branch-pill mono">vanara/r3</span>
-                </div>
-                <div class="squad-roster-item">
-                  <span class="roster-code-pill agent-badge-r4">R4</span>
-                  <span>Frontend &amp; Runtime Engineer</span>
-                  <span class="roster-branch-pill mono">vanara/r4</span>
-                </div>
+                ${rosterRowsHtml}
               </div>
               <p>Describe what you want to build. We'll take it from here.</p>
             `;
@@ -3517,34 +3603,44 @@ Auto-save: enabled</pre>
       const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"]).join(", ");
       const mcpLine = bot.mcpCommand ? `\n- Connected MCP Server: ${bot.mcpCommand}` : "";
       const isDm = thread?.type === "dm";
+      const relayBots = buildDynamicSquadRelay(thread);
+      const reviewerBot = getSquadReviewerBot(thread);
+      const peers = relayBots.filter(b => b.id !== bot.id);
+      const myIdx = relayBots.findIndex(b => b.id === bot.id);
+      const nextBot = (myIdx >= 0 && myIdx + 1 < relayBots.length)
+        ? relayBots[myIdx + 1]
+        : (reviewerBot && reviewerBot.id !== bot.id ? reviewerBot : peers[0]);
+      const isLead = myIdx === 0 && relayBots.length > 1;
+      const isReviewer = Boolean(reviewerBot && reviewerBot.id === bot.id && relayBots.length > 1);
+
       let squadRoleDirective = "";
-      if (!isDm) {
-        const botKey = String(bot.id || bot.name || "").toLowerCase();
-        if (botKey.includes("r1")) {
-          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @R1 Architect):
+      if (!isDm && relayBots.length > 1) {
+        if (isLead) {
+          const peerBullets = peers.map(p => `  • **@${p.name}** (${p.role})`).join("\n");
+          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @${bot.name} ${bot.role}):
 - NEVER try to build the entire project alone in a single monologue!
 - Step 1: Discuss the architecture, technical trade-offs, and module interfaces concisely (120–180 words).
-- Step 2: Explicitly assign responsibilities to your teammates:
-  • **@R2** (Backend & Systems): core engine, data pipeline, and model integrations.
-  • **@R4** (Frontend & Runtime): CLI or local web UI entrypoint.
-  • **@R3** (QA & Peer Review): code review, edge-case audit, and automated test suite.
-- Step 3: Output at most 1–2 foundational schema/config files (\`===FILE: ...===\`) and end your message with \`[HANDOFF: @R2]\`.`;
-        } else if (botKey.includes("r2")) {
-          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @R2 Backend & Systems):
-- Review @R1's architecture and role assignment, briefly discuss your backend design choices, implement ONLY your assigned backend/pipeline module(s) using \`===FILE: <filename>===\`, and end your message with \`[HANDOFF: @R4]\`.`;
-        } else if (botKey.includes("r4")) {
-          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @R4 Frontend & CLI):
-- Review @R1's architecture and @R2's backend module, build the user-facing CLI or local web UI entrypoint using \`===FILE: <filename>===\`, and end your message with \`[HANDOFF: @R3]\` for peer review.`;
-        } else if (botKey.includes("r3")) {
-          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @R3 QA & Peer Review):
-- Perform a candid **Peer Review** of @R1's architecture, @R2's backend code, and @R4's CLI/UI: highlight strengths, catch edge cases or integration bugs, and output a runnable verification test (\`===FILE: test_...===\`).
-- If you find any critical bug or missing requirement that must be fixed, end with \`[HANDOFF: @R2]\` or \`[HANDOFF: @R4]\` so they revise it and return it to you for re-review.
+- Step 2: Explicitly assign responsibilities to your squad teammates according to their roles:
+${peerBullets}
+- Step 3: Output at most 1–2 foundational schema/config files (\`===FILE: ...===\`) and end your message with \`[HANDOFF: @${nextBot?.name || peers[0]?.name}]\`.`;
+        } else if (isReviewer) {
+          const buildersList = peers.map(p => `@${p.name} (${p.role})`).join(", ");
+          const sampleFixTarget = peers[peers.length - 1]?.name || peers[0]?.name || "teammate";
+          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @${bot.name} ${bot.role}):
+- Perform a candid **Peer Review** of your teammates' work (${buildersList}): highlight strengths, catch edge cases or integration bugs, and output a runnable verification test (\`===FILE: test_...===\`).
+- If you find any critical bug or missing requirement that must be fixed, end with \`[HANDOFF: @${sampleFixTarget}]\` (or the responsible specialist) so they revise it and return it to you for re-review.
 - Once all modules and tests pass your review, end your message with \`[SQUAD_COMPLETE]\` to sign off and complete the build.`;
+        } else {
+          const priorNames = relayBots.slice(0, Math.max(1, myIdx)).map(p => `@${p.name}`).join(" and ");
+          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @${bot.name} ${bot.role}):
+- Review ${priorNames}'s architecture and modules, briefly discuss your design choices as **${bot.role}**, implement ONLY your assigned module(s) using \`===FILE: <filename>===\`, and end your message with \`[HANDOFF: @${nextBot?.name || reviewerBot?.name}]\`.`;
         }
       }
+      const otherAgentMentions = state.bots.filter(b => b.id !== bot.id).map(b => `@${b.name}`).join(", ") || "other agents";
+      const squadHandoffExamples = peers.slice(0, 3).map(p => `[HANDOFF: @${p.name}]`).join(", ") || "[HANDOFF: @teammate]";
       const handoffRule = isDm
-        ? `5. This is a private 1-on-1 chat with the user. Do NOT mention, tag, or hand off to @R1, @R2, @R3, or @R4 unless the user explicitly asks you to.`
-        : `5. In this group squad room, collaborate with your teammates, divide responsibilities by role, and end with [HANDOFF: @R2], [HANDOFF: @R4], or [HANDOFF: @R3] so the next specialist continues the discussion and peer review.`;
+        ? `5. This is a private 1-on-1 chat with the user. Do NOT mention, tag, or hand off to ${otherAgentMentions} unless the user explicitly asks you to.`
+        : `5. In this group squad room, collaborate with your teammates, divide responsibilities by role, and end with ${squadHandoffExamples} so the next specialist continues the discussion and peer review.`;
       const toolsProtocolBlock = `\n\nCODE & TOOL PROTOCOL (${enabledTools})${mcpLine}:
 1. Answer the user's message directly and naturally. If the user greets you (e.g. "Hi", "Hello") or asks a question, respond briefly in 1–3 sentences without invoking [TOOL: ...] tags and NEVER invent an unrequested project.
 2. When asked to build or create software, web apps, shaders, or scripts, output complete runnable files in your visible response using:
@@ -3564,7 +3660,7 @@ ${handoffRule}
 6. Keep any internal thinking (<think>) brief (under 120 words — high-level bullet plan only). NEVER write full source code files inside <think> or internal reasoning; close </think> immediately and output all code and explanations in your visible answer.`;
       const teamContext = isDm
         ? ""
-        : `\n\nSquad teammates in this room: ${state.bots.map(b => `@${b.name} (${b.role})`).join(", ")}.${squadRoleDirective}`;
+        : `\n\nSquad teammates in this room (in relay order): ${relayBots.map(b => `@${b.name} (${b.role})`).join(" → ")}.${squadRoleDirective}`;
       return `You are ${bot.name} (${bot.role}) in the Vanaras software engineering workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${teamContext}\nBe concise, high-signal, and only write code or invoke tools when the user's task calls for it.`;
     }
 
@@ -3598,7 +3694,7 @@ ${handoffRule}
       // If visibleText is empty because an unclosed <think> or delta.reasoning_content swallowed
       // the final reply / ===FILE:=== / File 1: / [TOOL:...] blocks at the tail, split at the response boundary:
       if (!visibleText && thoughtText) {
-        const transitionRx = /\n((?:@R[1-4]\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n|(?:Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+)|File\s+1\s*:\s*[^\n]+\n)[\s\S]*)$/i;
+        const transitionRx = /\n((?:@[a-zA-Z0-9_-]+\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n|(?:Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+)|File\s+1\s*:\s*[^\n]+\n)[\s\S]*)$/i;
         const m = thoughtText.match(transitionRx);
         if (m && m.index !== undefined && m.index > 0) {
           visibleText = m[1]
@@ -4266,41 +4362,55 @@ ${handoffRule}
           targetThread.type === "group" &&
           !isShortGreeting &&
           state.autoTriggerEnabled !== false &&
-          chainDepth < 6 &&
           (targetBot.tools || []).includes("handoff")
         ) {
-          // Strict Group-Only Squad Discussion, Revision & Peer Review Relay: NEVER auto-trigger inside a 1-on-1 DM thread!
-          const handoffBots = findExplicitHandoffBots(postThoughtContent, targetBot.id);
-          if (targetBot.id === "bot_r3") {
-            // If @R3 (Peer Reviewer) found an issue and handed back to @R2 or @R4 without [SQUAD_COMPLETE], continue revision loop!
-            if (!isSquadComplete && handoffBots.length > 0) {
+          // Strict Group-Only Dynamic Squad Discussion, Revision & Peer Review Relay:
+          // Adapts automatically to any role changes, custom agent names, or N agents in the squad!
+          const relayBots = buildDynamicSquadRelay(targetThread);
+          const reviewerBot = getSquadReviewerBot(targetThread);
+          const maxRelayDepth = Math.max(6, relayBots.length + 2);
+          if (chainDepth < maxRelayDepth) {
+            const handoffBots = findExplicitHandoffBots(postThoughtContent, targetBot.id);
+            const isCurrentBotReviewer = Boolean(reviewerBot && targetBot.id === reviewerBot.id && relayBots.length > 1);
+            if (isCurrentBotReviewer) {
+              // If the Peer Reviewer found an issue and handed back to a specialist without [SQUAD_COMPLETE], continue revision loop!
+              if (!isSquadComplete && handoffBots.length > 0) {
+                nextAutoBot = handoffBots[0];
+              } else {
+                // Peer Reviewer signed off — mark squad build verified & complete
+                liveMsg.collabRound = `Turn ${chainDepth + 1} • Peer Review Signed Off ✓ • ${targetBot.worktreeBranch}`;
+              }
+            } else if (handoffBots.length > 0) {
               nextAutoBot = handoffBots[0];
-            } else {
-              // @R3 signed off — mark squad build verified & complete
-              liveMsg.collabRound = `Turn ${chainDepth + 1} • Peer Review Signed Off ✓ • ${targetBot.worktreeBranch}`;
+            } else if (chainDepth >= Math.max(1, relayBots.length - 1) && reviewerBot && reviewerBot.id !== targetBot.id) {
+              // After a post-review revision by a specialist, automatically return to the squad's Peer Reviewer for final sign-off
+              nextAutoBot = reviewerBot;
+            } else if (triggerText.trim().length >= 24) {
+              // Dynamic Role-Ordered Squad Relay (Architect/Lead -> Specialists -> Frontend/UI -> QA/Peer Reviewer)
+              const curIdx = relayBots.findIndex(b => b.id === targetBot.id);
+              if (curIdx >= 0 && curIdx + 1 < relayBots.length) {
+                nextAutoBot = relayBots[curIdx + 1];
+              }
             }
-          } else if (handoffBots.length > 0) {
-            nextAutoBot = handoffBots[0];
-          } else if (chainDepth >= 3) {
-            // After a post-review revision by @R2 or @R4, automatically return to @R3 for final peer review sign-off
-            nextAutoBot = getBot("bot_r3");
-          } else if (triggerText.trim().length >= 24) {
-            // Deterministic 4-agent Squad Relay (R1 Architect -> R2 Backend -> R4 Frontend/CLI -> R3 Peer Review)
-            const squadRelayOrder = ["bot_r1", "bot_r2", "bot_r4", "bot_r3"];
-            const curIdx = squadRelayOrder.indexOf(targetBot.id);
-            if (curIdx >= 0 && curIdx + 1 < squadRelayOrder.length) {
-              nextAutoBot = getBot(squadRelayOrder[curIdx + 1]);
+            if (nextAutoBot) {
+              await invokeAgentLifecycleHook("SubagentStart", {
+                botId: nextAutoBot.id,
+                botName: nextAutoBot.name
+              });
+              const isPeerReviewStep = Boolean(reviewerBot && nextAutoBot.id === reviewerBot.id && relayBots.length > 1);
+              const buildersDesc = relayBots
+                .filter(b => b.id !== nextAutoBot.id)
+                .map(b => `@${b.name} (${b.role})`)
+                .join(", ");
+              const sampleSpecialists = relayBots
+                .filter(b => b.id !== nextAutoBot.id)
+                .slice(-2)
+                .map(b => `@${b.name}`)
+                .join("/");
+              nextAutoPrompt = isPeerReviewStep
+                ? `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} and the squad just completed their implementation/revision:\n"${cleanDisplay.slice(0, 600)}"\n\nPerform a candid Peer Review of your teammates' modules (${buildersDesc}), run a verification test in your worktree (${nextAutoBot.worktreeBranch}), and either hand back to ${sampleSpecialists || "a teammate"} if fixes are needed or end with [SQUAD_COMPLETE] if all checks pass.`
+                : `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} just completed their turn and handed off to you:\n"${cleanDisplay.slice(0, 600)}"\n\nDiscuss your technical approach as ${nextAutoBot.role}, implement or revise your assigned module(s) in your worktree (${nextAutoBot.worktreeBranch}), and hand off to the next squad specialist.`;
             }
-          }
-          if (nextAutoBot) {
-            await invokeAgentLifecycleHook("SubagentStart", {
-              botId: nextAutoBot.id,
-              botName: nextAutoBot.name
-            });
-            const isPeerReviewStep = nextAutoBot.id === "bot_r3";
-            nextAutoPrompt = isPeerReviewStep
-              ? `@${nextAutoBot.name} (QA & Peer Reviewer), @${targetBot.name} and the squad just completed their implementation/revision:\n"${cleanDisplay.slice(0, 600)}"\n\nPerform a candid Peer Review of @R1's architecture, @R2's backend pipeline, and @R4's CLI/UI, run a verification test in your worktree (${nextAutoBot.worktreeBranch}), and either hand back to @R2/@R4 if fixes are needed or end with [SQUAD_COMPLETE] if all checks pass.`
-              : `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} just completed their turn and handed off to you:\n"${cleanDisplay.slice(0, 600)}"\n\nDiscuss your technical approach, implement or revise your assigned module(s) in your worktree (${nextAutoBot.worktreeBranch}), and hand off to the next squad specialist.`;
           }
         }
       } catch (e) {
@@ -5020,6 +5130,13 @@ ${handoffRule}
           worktreeBranch: `vanara/${name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`
         };
         state.bots.push(targetBotRef);
+        // Automatically enroll the new agent in any group squad rooms so it participates in squad relays
+        state.threads.forEach(t => {
+          if (t.type === "group") {
+            if (!Array.isArray(t.botIds)) t.botIds = state.bots.map(b => b.id);
+            else if (!t.botIds.includes(newBotId)) t.botIds.push(newBotId);
+          }
+        });
         const newThreadId = "thread_dm_" + Date.now();
         state.threads.push({
           id: newThreadId,
@@ -5051,11 +5168,17 @@ ${handoffRule}
       if (!editId || state.bots.length <= 1) return;
       state.bots = state.bots.filter(b => b.id !== editId);
       state.threads = state.threads.filter(t => !(t.type === "dm" && t.botId === editId));
+      state.threads.forEach(t => {
+        if (t.type === "group" && Array.isArray(t.botIds)) {
+          t.botIds = t.botIds.filter(id => id !== editId);
+        }
+      });
       activeThreadId = state.threads[0]?.id;
       saveState();
       closeBotModal();
       renderThreadList();
       renderActiveThread();
+      populateWorkspaceAgentSelector();
     }
 
     // UPGRADE 4: Per-Agent Isolated Git Worktree Inspector Modal
@@ -6062,9 +6185,7 @@ ${handoffRule}
     async function triggerPeerReviewForActiveWorkspace() {
       const authorBot = getBot(activeWorkspaceBotId) || state.bots[0];
       if (!authorBot) return;
-      const reviewerBot = state.bots.find(b => b.name.toLowerCase() === "r3" && b.id !== authorBot.id)
-        || state.bots.find(b => b.id !== authorBot.id)
-        || authorBot;
+      const reviewerBot = getSquadReviewerBot(getActiveThread(), authorBot.id) || authorBot;
       const consoleOut = document.getElementById("workspaceConsoleOutput");
       if (consoleOut) consoleOut.textContent = `$ computing git diff main...${authorBot.worktreeBranch || ""} for peer review by @${reviewerBot.name}...`;
       try {

@@ -3537,7 +3537,9 @@ Auto-save: enabled</pre>
 - Review @R1's architecture and @R2's backend module, build the user-facing CLI or local web UI entrypoint using \`===FILE: <filename>===\`, and end your message with \`[HANDOFF: @R3]\` for peer review.`;
         } else if (botKey.includes("r3")) {
           squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @R3 QA & Peer Review):
-- Perform a candid **Peer Review** of @R1's architecture, @R2's backend code, and @R4's CLI/UI: highlight strengths, catch edge cases or integration bugs, output a runnable verification test (\`===FILE: test_...===\`), and give your final QA sign-off.`;
+- Perform a candid **Peer Review** of @R1's architecture, @R2's backend code, and @R4's CLI/UI: highlight strengths, catch edge cases or integration bugs, and output a runnable verification test (\`===FILE: test_...===\`).
+- If you find any critical bug or missing requirement that must be fixed, end with \`[HANDOFF: @R2]\` or \`[HANDOFF: @R4]\` so they revise it and return it to you for re-review.
+- Once all modules and tests pass your review, end your message with \`[SQUAD_COMPLETE]\` to sign off and complete the build.`;
         }
       }
       const handoffRule = isDm
@@ -4162,6 +4164,25 @@ ${handoffRule}
           hasDeliverables = true;
           if (extracted.length > 0) {
             await saveFilesToAgentWorkspace(targetBot, extracted);
+            // In a group squad room, sync generated module files across squad worktrees so @R2, @R4, and @R3 can import & test each other's modules
+            if (targetThread.type === "group") {
+              const peerBots = (targetThread.botIds || [])
+                .map(id => getBot(id))
+                .filter(b => b && b.id !== targetBot.id);
+              for (const peer of peerBots) {
+                fetch("/api/agent/workspace", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    action: "save_files",
+                    botId: peer.id,
+                    botName: peer.name,
+                    customWorkspacePath: peer.workspacePath || "",
+                    files: extracted
+                  })
+                }).catch(() => {});
+              }
+            }
           }
           // Automatically verify/run the primary entrypoint or test file (.py, .js, .mjs, .sh, .rs) in the agent's workspace
           const candidateList = extracted.length > 0 ? extracted : extractedPatches;
@@ -4217,9 +4238,11 @@ ${handoffRule}
 
         if (turnCtx.aborted) return;
 
+        const isSquadComplete = /\[SQUAD_COMPLETE\]/i.test(postThoughtContent);
         const cleanDisplay = postThoughtContent
           .replace(/\[REMEMBER:\s*[^\]]+\]/gi, "")
           .replace(/\[HANDOFF:\s*@?[a-zA-Z0-9_-]+\]/gi, "")
+          .replace(/\[SQUAD_COMPLETE\]/gi, "")
           .trim() || (combinedReasoning ? combinedReasoning.slice(-900).trim() : "(Completed)");
 
         liveMsg.isStreaming = false;
@@ -4236,20 +4259,31 @@ ${handoffRule}
         const isShortGreeting = /^(hi|hello|hey|yo|sup|hola|namaste|thanks|thank you|ok|okay|ping|test|status)\b/i.test(triggerText.trim()) && triggerText.trim().length < 28;
 
         // Self-Healing Loop: If auto-verification of generated software failed, self-trigger targetBot to fix the error
-        if (autoVerifyFailedFile && state.autoTriggerEnabled !== false && chainDepth < 2) {
+        if (autoVerifyFailedFile && state.autoTriggerEnabled !== false && chainDepth < 5) {
           nextAutoBot = targetBot;
           nextAutoPrompt = `[PostToolUseFailure Auto-Heal] Executing '${autoVerifyFailedFile}' in your workspace exited with an error:\n\`\`\`\n${autoVerifyErrorOutput.slice(0, 800)}\n\`\`\`\nFix '${autoVerifyFailedFile}' and output a surgical ===PATCH: ${autoVerifyFailedFile}=== or corrected ===FILE: ${autoVerifyFailedFile}=== block so the build passes.`;
         } else if (
           targetThread.type === "group" &&
           !isShortGreeting &&
           state.autoTriggerEnabled !== false &&
-          chainDepth < 3 &&
+          chainDepth < 6 &&
           (targetBot.tools || []).includes("handoff")
         ) {
-          // Strict Group-Only Squad Discussion & Peer Review Relay: NEVER auto-trigger inside a 1-on-1 DM thread!
+          // Strict Group-Only Squad Discussion, Revision & Peer Review Relay: NEVER auto-trigger inside a 1-on-1 DM thread!
           const handoffBots = findExplicitHandoffBots(postThoughtContent, targetBot.id);
-          if (handoffBots.length > 0) {
+          if (targetBot.id === "bot_r3") {
+            // If @R3 (Peer Reviewer) found an issue and handed back to @R2 or @R4 without [SQUAD_COMPLETE], continue revision loop!
+            if (!isSquadComplete && handoffBots.length > 0) {
+              nextAutoBot = handoffBots[0];
+            } else {
+              // @R3 signed off — mark squad build verified & complete
+              liveMsg.collabRound = `Turn ${chainDepth + 1} • Peer Review Signed Off ✓ • ${targetBot.worktreeBranch}`;
+            }
+          } else if (handoffBots.length > 0) {
             nextAutoBot = handoffBots[0];
+          } else if (chainDepth >= 3) {
+            // After a post-review revision by @R2 or @R4, automatically return to @R3 for final peer review sign-off
+            nextAutoBot = getBot("bot_r3");
           } else if (triggerText.trim().length >= 24) {
             // Deterministic 4-agent Squad Relay (R1 Architect -> R2 Backend -> R4 Frontend/CLI -> R3 Peer Review)
             const squadRelayOrder = ["bot_r1", "bot_r2", "bot_r4", "bot_r3"];
@@ -4265,8 +4299,8 @@ ${handoffRule}
             });
             const isPeerReviewStep = nextAutoBot.id === "bot_r3";
             nextAutoPrompt = isPeerReviewStep
-              ? `@${nextAutoBot.name} (QA & Peer Reviewer), @${targetBot.name} and the squad just designed and implemented their modules for the user's request:\n"${cleanDisplay.slice(0, 600)}"\n\nPerform a candid Peer Review of @R1's architecture, @R2's backend pipeline, and @R4's CLI/UI, call out any bugs or edge cases, and write a runnable verification test in your worktree (${nextAutoBot.worktreeBranch}).`
-              : `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} just completed their part and assigned your responsibilities:\n"${cleanDisplay.slice(0, 600)}"\n\nDiscuss your technical approach, implement ONLY your assigned module(s) in your worktree (${nextAutoBot.worktreeBranch}), and hand off to the next squad specialist.`;
+              ? `@${nextAutoBot.name} (QA & Peer Reviewer), @${targetBot.name} and the squad just completed their implementation/revision:\n"${cleanDisplay.slice(0, 600)}"\n\nPerform a candid Peer Review of @R1's architecture, @R2's backend pipeline, and @R4's CLI/UI, run a verification test in your worktree (${nextAutoBot.worktreeBranch}), and either hand back to @R2/@R4 if fixes are needed or end with [SQUAD_COMPLETE] if all checks pass.`
+              : `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} just completed their turn and handed off to you:\n"${cleanDisplay.slice(0, 600)}"\n\nDiscuss your technical approach, implement or revise your assigned module(s) in your worktree (${nextAutoBot.worktreeBranch}), and hand off to the next squad specialist.`;
           }
         }
       } catch (e) {

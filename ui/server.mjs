@@ -158,6 +158,9 @@ function splitReasoningAndVisibleOutput(rawOutput = "", priorReasoning = "") {
     thoughts.push(String(priorReasoning).trim());
   }
   let cleanedOutput = String(rawOutput || "");
+  if (cleanedOutput.trim() === "*(Completed reasoning pass — see Internal Reasoning above)*") {
+    cleanedOutput = "";
+  }
   cleanedOutput = cleanedOutput.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
     if (t && t.trim()) thoughts.push(t.trim());
     return "";
@@ -177,12 +180,15 @@ function splitReasoningAndVisibleOutput(rawOutput = "", priorReasoning = "") {
   let combinedReasoning = thoughts.join("\n\n").trim();
 
   // If visible output is empty because an unclosed <think> or delta.reasoning_content swallowed
-  // the final reply / ===FILE:=== / [TOOL:...] blocks at the tail, split at the response boundary:
+  // the final reply / ===FILE:=== / File 1: / [TOOL:...] blocks at the tail, split at the response boundary:
   if (!finalCleaned && combinedReasoning) {
-    const transitionRx = /\n((?:@R[1-4]\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n)[\s\S]*)$/i;
+    const transitionRx = /\n((?:@R[1-4]\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n|(?:Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+)|File\s+1\s*:\s*[^\n]+\n)[\s\S]*)$/i;
     const m = combinedReasoning.match(transitionRx);
     if (m && m.index !== undefined && m.index > 0) {
-      finalCleaned = m[1].replace(/^(?:Final\s+)?Response:\s*\n/i, "").trim();
+      finalCleaned = m[1]
+        .replace(/^(?:Final\s+)?Response:\s*\n/i, "")
+        .replace(/^Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+/i, "")
+        .trim();
       combinedReasoning = combinedReasoning.slice(0, m.index).trim();
     }
   }

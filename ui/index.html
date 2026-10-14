@@ -2416,8 +2416,24 @@ Auto-save: enabled</pre>
           if (m.senderType === "bot" && !rsn && (!txt || txt === "▍" || txt.startsWith("⏳ Thinking") || txt.includes("fetch failed") || txt.startsWith("$f = fs_read") || txt.startsWith("$l = read("))) {
             continue;
           }
-          if (m.senderType === "bot" && (!txt || txt === "▍" || txt.startsWith("⏳ Thinking")) && rsn && (!activeTurnState || !activeTurnState[t.id])) {
-            m.text = "*(Completed reasoning pass — see Internal Reasoning above)*";
+          if (
+            m.senderType === "bot" &&
+            (!txt || txt === "▍" || txt.startsWith("⏳ Thinking") || txt === "*(Completed reasoning pass — see Internal Reasoning above)*") &&
+            rsn &&
+            (!activeTurnState || !activeTurnState[t.id])
+          ) {
+            const transitionRx = /\n((?:@R[1-4]\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n|(?:Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+)|File\s+1\s*:\s*[^\n]+\n)[\s\S]*)$/i;
+            const splitMatch = rsn.match(transitionRx);
+            if (splitMatch && splitMatch.index !== undefined && splitMatch.index > 0) {
+              m.text = splitMatch[1]
+                .replace(/^(?:Final\s+)?Response:\s*\n/i, "")
+                .replace(/^Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+/i, "")
+                .trim();
+              m.reasoning = rsn.slice(0, splitMatch.index).trim();
+            } else {
+              m.thoughtOpen = true;
+              m.text = rsn.length > 900 ? rsn.slice(-900).trim() : rsn;
+            }
           }
           // Strip auto-triggered messages from other bots that intruded into a 1-on-1 DM thread
           if (t.type === "dm" && m.senderType === "bot" && m.botId && m.botId !== t.botId && String(m.collabRound || "").includes("Auto-Triggered")) {
@@ -3501,7 +3517,7 @@ Auto-save: enabled</pre>
         : `5. To remember a key fact, include [REMEMBER: fact]. Only when you have completed a concrete engineering task and want a squad teammate to take the next step, include [HANDOFF: @R2] (or @R3/@R4).`;
       const toolsProtocolBlock = `\n\nCODE & TOOL PROTOCOL (${enabledTools})${mcpLine}:
 1. Answer the user's message directly and naturally. If the user greets you (e.g. "Hi", "Hello") or asks a question, respond briefly in 1–3 sentences without invoking [TOOL: ...] tags and NEVER invent an unrequested project.
-2. When asked to build or create software, web apps, shaders, or scripts, output complete runnable files using:
+2. When asked to build or create software, web apps, shaders, or scripts, output complete runnable files in your visible response using:
 ===FILE: <relative_filename>===
 <full source code>
 ===END_FILE===
@@ -3514,7 +3530,8 @@ Auto-save: enabled</pre>
 >>>>>>> REPLACE
 ===END_PATCH===
 4. Only when you explicitly need to inspect or run something in your worktree for the user's task, include an exact tag such as [TOOL: fs_read | <path>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
-${handoffRule}`;
+${handoffRule}
+6. Keep any internal thinking (<think>) brief (under 120 words — high-level bullet plan only). NEVER write full source code files inside <think> or internal reasoning; close </think> immediately and output all code and explanations in your visible answer.`;
       const teamContext = isDm
         ? ""
         : `\n\nSquad teammates in this room: ${state.bots.map(b => `@${b.name} (${b.role})`).join(", ")}.`;
@@ -3527,6 +3544,9 @@ ${handoffRule}`;
         thoughts.push(String(rawReasoning).trim());
       }
       let visible = String(rawText || "");
+      if (visible.trim() === "*(Completed reasoning pass — see Internal Reasoning above)*") {
+        visible = "";
+      }
       visible = visible.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
         if (t && t.trim()) thoughts.push(t.trim());
         return "";
@@ -3546,12 +3566,15 @@ ${handoffRule}`;
       let thoughtText = thoughts.join("\n\n").trim();
 
       // If visibleText is empty because an unclosed <think> or delta.reasoning_content swallowed
-      // the final reply / ===FILE:=== / [TOOL:...] blocks at the tail, split at the response boundary:
+      // the final reply / ===FILE:=== / File 1: / [TOOL:...] blocks at the tail, split at the response boundary:
       if (!visibleText && thoughtText) {
-        const transitionRx = /\n((?:@R[1-4]\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n)[\s\S]*)$/i;
+        const transitionRx = /\n((?:@R[1-4]\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n|(?:Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+)|File\s+1\s*:\s*[^\n]+\n)[\s\S]*)$/i;
         const m = thoughtText.match(transitionRx);
         if (m && m.index !== undefined && m.index > 0) {
-          visibleText = m[1].replace(/^(?:Final\s+)?Response:\s*\n/i, "").trim();
+          visibleText = m[1]
+            .replace(/^(?:Final\s+)?Response:\s*\n/i, "")
+            .replace(/^Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+/i, "")
+            .trim();
           thoughtText = thoughtText.slice(0, m.index).trim();
         }
       }
@@ -4029,7 +4052,7 @@ ${handoffRule}`;
         };
 
         // Capability #1: Multi-Step ReAct Tool Loop inside a single turn (up to 1 internal inspect->observe round)
-        let reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 3500, onStreamProgress, turnController.signal);
+        let reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 8192, onStreamProgress, turnController.signal);
         if (turnCtx.aborted) return;
         let accumulatedReasoning = [reply.reasoning || "", liveMsg.reasoning || ""].filter(Boolean)[0] || "";
 
@@ -4052,6 +4075,9 @@ ${handoffRule}`;
           const hasFilesAlready = parseDeliverableBlocks(stepCleaned).length > 0;
           if (stepObservations.length === 0 || hasFilesAlready) {
             reply.content = stepCleaned;
+            if (stepHook.reasoning !== undefined) {
+              reply.reasoning = stepHook.reasoning;
+            }
             break;
           }
 
@@ -4061,7 +4087,7 @@ ${handoffRule}`;
           hooksTrace.push(`ReActObsStep(${reactStep + 1})`);
           const obsDigest = stepObservations.map(o => `[Tool Output: ${o.tool}]\n${o.output}`).join("\n\n");
           currentPrompt += `\n\nYour previous step invoked inspection tool(s). Real output from your worktree:\n${obsDigest}\n\nNow synthesize your final answer and/or ===FILE: ...=== deliverables based on this evidence:`;
-          reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 2500, onStreamProgress, turnController.signal);
+          reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 6000, onStreamProgress, turnController.signal);
           if (turnCtx.aborted) return;
         }
 
@@ -4078,9 +4104,21 @@ ${handoffRule}`;
           reply.reasoning || "",
           ...(Array.isArray(thoughtHook.thoughts) ? thoughtHook.thoughts : [])
         ].filter(Boolean).join("\n\n").trim();
-        const combinedReasoning = [priorStepsReasoning, finalStepReasoning].filter(Boolean).join("\n\n---\n\n").trim() || liveMsg.reasoning || "";
+        let combinedReasoning = [priorStepsReasoning, finalStepReasoning].filter(Boolean).join("\n\n---\n\n").trim() || liveMsg.reasoning || "";
         const finalStepVisible = thoughtHook.cleanedOutput !== undefined ? thoughtHook.cleanedOutput : reply.content;
-        const postThoughtContent = [priorStepsVisibleText, finalStepVisible].filter(Boolean).join("\n\n").trim();
+        let postThoughtContent = [priorStepsVisibleText, finalStepVisible].filter(Boolean).join("\n\n").trim();
+
+        // If the model spent all tokens inside reasoning without emitting separate visible content, promote the deliverables/final section into postThoughtContent
+        if (!postThoughtContent && combinedReasoning) {
+          const fallbackSplit = extractInlineThinkBlocks("", combinedReasoning);
+          if (fallbackSplit.visibleText) {
+            postThoughtContent = fallbackSplit.visibleText;
+            combinedReasoning = fallbackSplit.thoughtText;
+          } else {
+            liveMsg.thoughtOpen = true;
+            postThoughtContent = combinedReasoning.length > 1200 ? combinedReasoning.slice(-1200).trim() : combinedReasoning;
+          }
+        }
 
         const extracted = parseDeliverableBlocks(postThoughtContent);
         const extractedPatches = parseSurgicalPatches(postThoughtContent);
@@ -4154,7 +4192,7 @@ ${handoffRule}`;
         const cleanDisplay = postThoughtContent
           .replace(/\[REMEMBER:\s*[^\]]+\]/gi, "")
           .replace(/\[HANDOFF:\s*@?[a-zA-Z0-9_-]+\]/gi, "")
-          .trim() || (combinedReasoning ? "*(Completed reasoning pass — see Internal Reasoning above)*" : "(Completed)");
+          .trim() || (combinedReasoning ? combinedReasoning.slice(-900).trim() : "(Completed)");
 
         liveMsg.isStreaming = false;
         liveMsg.text = cleanDisplay;
@@ -4226,7 +4264,7 @@ ${handoffRule}`;
       }
     }
 
-    async function queryBotLLM(bot, systemPrompt, userPrompt, maxTokens = 3000, onStreamDelta = null, abortSignal = undefined) {
+    async function queryBotLLM(bot, systemPrompt, userPrompt, maxTokens = 8192, onStreamDelta = null, abortSignal = undefined) {
       const modelToUse = (bot.provider === "local" && (!bot.model || bot.model === "auto"))
         ? detectedLocalModel
         : bot.model;
@@ -4290,12 +4328,11 @@ ${handoffRule}`;
             if (streamUpstreamError && !fullContent && !fullReasoning) {
               throw streamUpstreamError;
             }
-            const split = extractInlineThinkBlocks(fullContent);
-            const combinedReasoning = [fullReasoning.trim(), split.thoughtText].filter(Boolean).join("\n\n").trim();
-            if (split.visibleText || combinedReasoning) {
+            const split = extractInlineThinkBlocks(fullContent, fullReasoning);
+            if (split.visibleText || split.thoughtText) {
               return {
-                content: split.visibleText || "*(Completed reasoning pass — see Internal Reasoning above)*",
-                reasoning: combinedReasoning
+                content: split.visibleText || "",
+                reasoning: split.thoughtText
               };
             }
           }
@@ -4349,14 +4386,13 @@ ${handoffRule}`;
       const msg = data.choices?.[0]?.message || {};
       const rawContent = (msg.content || "").trim();
       const rawReasoning = (msg.reasoning_content || msg.reasoning || "").trim();
-      const split = extractInlineThinkBlocks(rawContent);
-      const combinedReasoning = [rawReasoning, split.thoughtText].filter(Boolean).join("\n\n").trim();
+      const split = extractInlineThinkBlocks(rawContent, rawReasoning);
       if (typeof onStreamDelta === "function") {
         onStreamDelta(rawContent, rawReasoning);
       }
       return {
-        content: split.visibleText || (combinedReasoning ? "*(Completed reasoning pass — see Internal Reasoning above)*" : "(Empty response)"),
-        reasoning: combinedReasoning
+        content: split.visibleText || "",
+        reasoning: split.thoughtText
       };
     }
 
@@ -4586,6 +4622,15 @@ ${handoffRule}`;
       while ((m = toolWriteFenceRx.exec(rawText)) !== null) {
         const name = (m[1] || m[2] || "").trim();
         const content = (m[3] || "").trim();
+        if (name && content && !files.some(f => f.name === name)) {
+          files.push({ name, content });
+        }
+      }
+      // Also support models that emit "File 1: path/to/file.py" or "### 1. `path/to/file.py`" followed by a code fence
+      const labeledFileFenceRx = /(?:^|\n)(?:File\s+\d+\s*:\s*|###?\s*(?:\d+\.\s*)?)\s*[`*]*([a-zA-Z0-9_./-]+\.[a-zA-Z0-9]+)[`*]*[ \t]*\n```[a-zA-Z0-9_.-]*\n([\s\S]*?)```/gi;
+      while ((m = labeledFileFenceRx.exec(rawText)) !== null) {
+        const name = (m[1] || "").trim();
+        const content = (m[2] || "").trim();
         if (name && content && !files.some(f => f.name === name)) {
           files.push({ name, content });
         }

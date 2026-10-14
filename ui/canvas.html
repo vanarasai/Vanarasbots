@@ -177,7 +177,7 @@
       border-right: 1px solid var(--border-subtle);
       display: flex;
       flex-direction: column;
-      z-index: 20;
+      z-index: 40;
     }
 
     .sidebar-top-chrome {
@@ -1296,7 +1296,7 @@
           </button>
 
           <!-- (+) Popover Menu -->
-          <div id="plusMenuDropdown" class="popover-menu hidden" style="top: 32px; right: 0; width: 248px;">
+          <div id="plusMenuDropdown" class="popover-menu hidden" style="top: 32px; left: -170px; width: 232px;">
             <button onclick="openBotModal(null); hidePlusMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:var(--accent-blue);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
@@ -1795,10 +1795,10 @@ Auto-save: enabled</pre>
         </div>
 
         <!-- UPGRADE 2: PER-AGENT PERSISTENT MEMORY -->
-        <div style="padding:12px; border-radius:12px; background:#121216; border:1px solid #26262f;">
+        <div style="padding:12px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <label class="field-label" style="margin-bottom:0; color:#a7f3d0;">Per-Agent Private Memory (Saved on Disk)</label>
-            <span style="font-size:10.5px; color:#787884;" class="mono">Auto-learns via [REMEMBER: ...]</span>
+            <label class="field-label" style="margin-bottom:0; color:var(--accent-emerald);">Per-Agent Private Memory (Saved on Disk)</label>
+            <span style="font-size:10.5px; color:var(--text-muted);" class="mono">Auto-learns via [REMEMBER: ...]</span>
           </div>
           <div style="display:flex; gap:6px; margin-bottom:8px;">
             <input id="botNewMemoryInput" type="text" placeholder="Add private memory for this Vanara..." class="field-input" style="height:30px; font-size:12px;">
@@ -1808,28 +1808,28 @@ Auto-save: enabled</pre>
         </div>
 
         <!-- UPGRADE 3: PER-AGENT TOOLS & MCP SERVER POLICIES -->
-        <div style="padding:12px; border-radius:12px; background:#121216; border:1px solid #26262f;">
+        <div style="padding:12px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <label class="field-label" style="margin-bottom:0; color:#bae6fd;">Per-Agent Tools, MCP & PreToolUse Blacklist</label>
-            <button type="button" onclick="openWorktreeFromBotModal()" style="font-size:11px; color:#38bdf8;">Inspect Bot Worktree →</button>
+            <label class="field-label" style="margin-bottom:0; color:var(--accent-blue);">Per-Agent Tools, MCP & PreToolUse Blacklist</label>
+            <button type="button" onclick="openWorktreeFromBotModal()" style="font-size:11px; color:var(--accent-blue); font-weight:600;">Inspect Bot Worktree →</button>
           </div>
           <div id="botToolsChecklist" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:10px;"></div>
           <div style="display:flex; flex-direction:column; gap:8px;">
             <div>
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <span style="font-size:11px; color:#94949e;">Custom MCP Server Command (stdio JSON-RPC 2.0 / mcpBoxServers)</span>
-                <button type="button" onclick="probeMcpServerInModal()" style="font-size:11px; color:#60a5fa;">Probe MCP Tools</button>
+                <span style="font-size:11px; color:var(--text-secondary);">Custom MCP Server Command (stdio JSON-RPC 2.0 / mcpBoxServers)</span>
+                <button type="button" onclick="probeMcpServerInModal()" style="font-size:11px; color:var(--accent-blue); font-weight:600;">Probe MCP Tools</button>
               </div>
               <input id="botMcpCommandInput" type="text" placeholder="e.g. npx -y @modelcontextprotocol/server-filesystem ." class="field-input mono" style="font-size:12px;">
-              <div id="botMcpProbeStatus" class="mono" style="font-size:10.5px; color:#888894; margin-top:5px;"></div>
+              <div id="botMcpProbeStatus" class="mono" style="font-size:10.5px; color:var(--text-muted); margin-top:5px;"></div>
             </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
               <div>
-                <span style="font-size:10.5px; color:#94949e; display:block; margin-bottom:3px;">MCP Custom Instructions (mcpCustomInstructions)</span>
+                <span style="font-size:10.5px; color:var(--text-secondary); display:block; margin-bottom:3px;">MCP Custom Instructions (mcpCustomInstructions)</span>
                 <input id="botMcpInstructionsInput" type="text" placeholder="Injected on BeforeSubmitPrompt..." class="field-input" style="height:28px; font-size:11.5px;">
               </div>
               <div>
-                <span style="font-size:10.5px; color:#94949e; display:block; margin-bottom:3px;">Disabled Tools Blacklist (mcpDisabledTools)</span>
+                <span style="font-size:10.5px; color:var(--text-secondary); display:block; margin-bottom:3px;">Disabled Tools Blacklist (mcpDisabledTools)</span>
                 <input id="botMcpDisabledToolsInput" type="text" placeholder="e.g. rm_rf, drop_table" class="field-input mono" style="height:28px; font-size:11.5px;">
               </div>
             </div>
@@ -1838,7 +1838,7 @@ Auto-save: enabled</pre>
       </div>
 
       <div class="modal-footer">
-        <button id="deleteBotBtn" onclick="deleteBotFromModal()" style="color:#f87171; font-size:12px;" class="hidden">Delete Bot</button>
+        <button id="deleteBotBtn" onclick="deleteBotFromModal()" style="color:var(--accent-red); font-size:12px; font-weight:600;" class="hidden">Delete Bot</button>
         <div style="display:flex; gap:8px; margin-left:auto;">
           <button onclick="closeBotModal()" class="btn-secondary">Cancel</button>
           <button onclick="saveBotFromModal()" class="btn-primary">Save Vanara</button>
@@ -1855,7 +1855,7 @@ Auto-save: enabled</pre>
       <div class="modal-header">
         <div>
           <div id="groupModalTitle" style="font-size:15px; font-weight:600;">Group & Collab Squad</div>
-          <div style="font-size:11.5px; color:#888894;">Combine Vanara bots and teammates in one shared room</div>
+          <div style="font-size:11.5px; color:var(--text-muted);">Combine Vanara bots and teammates in one shared room</div>
         </div>
         <button onclick="closeGroupModal()" class="side-icon-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1866,7 +1866,7 @@ Auto-save: enabled</pre>
         <input type="hidden" id="groupEditId">
         <div>
           <label class="field-label">Room Name</label>
-          <input id="groupNameInput" type="text" placeholder="e.g. Project Maaya, Core Rust Squad" class="field-input">
+          <input id="groupNameInput" type="text" placeholder="e.g. Core Rust Squad, Platform Engineering" class="field-input">
         </div>
         <div>
           <label class="field-label">Mounted Project Folder</label>
@@ -1879,14 +1879,14 @@ Auto-save: enabled</pre>
         <div>
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <label class="field-label" style="margin-bottom:0;">Teammates (Humans)</label>
-            <button onclick="quickAddHumanInGroupModal()" style="font-size:11px; color:#60a5fa;">+ Add Person</button>
+            <button onclick="quickAddHumanInGroupModal()" style="font-size:11px; color:var(--accent-blue); font-weight:600;">+ Add Person</button>
           </div>
           <div id="groupHumansChecklist" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
         </div>
       </div>
 
       <div class="modal-footer">
-        <button id="deleteGroupBtn" onclick="deleteGroupFromModal()" style="color:#f87171; font-size:12px;" class="hidden">Delete Room</button>
+        <button id="deleteGroupBtn" onclick="deleteGroupFromModal()" style="color:var(--accent-red); font-size:12px; font-weight:600;" class="hidden">Delete Room</button>
         <div style="display:flex; gap:8px; margin-left:auto;">
           <button onclick="closeGroupModal()" class="btn-secondary">Cancel</button>
           <button onclick="saveGroupFromModal()" class="btn-primary">Save Squad</button>
@@ -1903,7 +1903,7 @@ Auto-save: enabled</pre>
       <div class="modal-header">
         <div>
           <div style="font-size:15px; font-weight:600;">Shared Workspace Memory</div>
-          <div style="font-size:11.5px; color:#888894;">Facts & constraints automatically injected into every Vanara's context</div>
+          <div style="font-size:11.5px; color:var(--text-muted);">Facts & constraints automatically injected into every Vanara's context</div>
         </div>
         <button onclick="closeMemoryModal()" class="side-icon-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1927,7 +1927,7 @@ Auto-save: enabled</pre>
       <div class="modal-header">
         <div>
           <div style="font-size:15px; font-weight:600;">Mounted Project Folder</div>
-          <div style="font-size:11.5px; color:#888894;">Ground this conversation in real local files & terminal tools</div>
+          <div style="font-size:11.5px; color:var(--text-muted);">Ground this conversation in real local files & terminal tools</div>
         </div>
         <button onclick="closeMountModal()" class="side-icon-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1942,7 +1942,7 @@ Auto-save: enabled</pre>
           <button onclick="setQuickMount('DEFAULT')" class="btn-secondary" style="height:28px; font-size:11px;">Workspace Root</button>
           <button onclick="setQuickMount('PARENT')" class="btn-secondary" style="height:28px; font-size:11px;">Parent Repo</button>
         </div>
-        <pre id="mountedFolderPreview" class="code-block mono" style="max-height:200px; color:#a7f3d0;">Click Mount to inspect directory...</pre>
+        <pre id="mountedFolderPreview" class="code-block mono" style="max-height:200px; color:var(--text-primary);">Click Mount to inspect directory...</pre>
       </div>
     </div>
   </div>
@@ -1955,7 +1955,7 @@ Auto-save: enabled</pre>
       <div class="modal-header">
         <div>
           <div style="font-size:15px; font-weight:600;">Connect Apps & Specialist Vanaras</div>
-          <div style="font-size:11.5px; color:#888894;">Add specialist system monkeys or local tools to your workspace</div>
+          <div style="font-size:11.5px; color:var(--text-muted);">Add specialist system monkeys or local tools to your workspace</div>
         </div>
         <button onclick="closeConnectAppsModal()" class="side-icon-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1973,7 +1973,7 @@ Auto-save: enabled</pre>
       <div class="modal-header">
         <div>
           <div style="font-size:15px; font-weight:600;">Per-Agent Isolated Git Worktree</div>
-          <div style="font-size:11.5px; color:#888894;">Every Vanara works in its own isolated Git worktree & branch so concurrent bots never collide</div>
+          <div style="font-size:11.5px; color:var(--text-muted);">Every Vanara works in its own isolated Git worktree & branch so concurrent bots never collide</div>
         </div>
         <button onclick="closeWorktreeModal()" class="side-icon-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1987,26 +1987,25 @@ Auto-save: enabled</pre>
           </div>
           <div style="padding-top:18px; display:flex; gap:6px;">
             <button onclick="refreshWorktreeInspector()" class="btn-secondary" style="height:34px;">Refresh</button>
-            <button onclick="commitAgentWorktreeFromModal()" class="btn-primary" style="height:34px; background:#10b981;">Commit Worktree</button>
+            <button onclick="commitAgentWorktreeFromModal()" class="btn-primary" style="height:34px;">Commit Worktree</button>
           </div>
         </div>
 
-        <div style="padding:10px 12px; border-radius:12px; background:#111115; border:1px solid #26262f; display:flex; flex-direction:column; gap:4px;" class="mono">
-          <div style="font-size:11.5px; color:#bae6fd;">Branch: <strong id="wtBranchDisplay">vanara/r1</strong></div>
-          <div style="font-size:11px; color:#888894; word-break:break-all;">Worktree Path: <span id="wtPathDisplay">.worktrees/bot_r1</span></div>
+        <div style="padding:10px 12px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:4px;" class="mono">
+          <div style="font-size:11.5px; color:var(--accent-blue-text);">Branch: <strong id="wtBranchDisplay">vanara/r1</strong></div>
+          <div style="font-size:11px; color:var(--text-muted); word-break:break-all;">Worktree Path: <span id="wtPathDisplay">.worktrees/bot_r1</span></div>
         </div>
 
         <div>
           <label class="field-label">Worktree Status & Diff</label>
-          <pre id="wtStatusPreview" class="code-block mono" style="max-height:200px; color:#7ee787; margin:0;">Provisioning isolated worktree...</pre>
+          <pre id="wtStatusPreview" class="code-block mono" style="max-height:200px; color:var(--text-primary); margin:0;">Provisioning isolated worktree...</pre>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Toast -->
   <!-- ===================================================================== -->
-  <!-- MODAL 6: FIRST-RUN ONBOARDING & WORKSPACE MODEL SETUP WIZARD          -->
+  <!-- MODAL 7: FIRST-RUN ONBOARDING & WORKSPACE MODEL SETUP WIZARD          -->
   <!-- ===================================================================== -->
   <div id="onboardingModal" class="modal-backdrop hidden">
     <div class="modal-card" style="max-width:600px;">
@@ -2014,8 +2013,8 @@ Auto-save: enabled</pre>
         <div style="display:flex; align-items:center; gap:10px;">
           <img src="avatars/monkey-01-coral.png" alt="Vanaras" style="width:32px; height:32px; border-radius:50%; background:#f0283c;">
           <div>
-            <div style="font-size:15.5px; font-weight:700;">Welcome to Vanaras — Autonomous Engineering Setup</div>
-            <div style="font-size:11.5px; color:#888894;">Configure your identity, project repository, AI model backend & engineering squad</div>
+            <div style="font-size:15.5px; font-weight:700;">Welcome to Vanaras Pro — Engineering Setup</div>
+            <div style="font-size:11.5px; color:var(--text-muted);">Configure your identity, project repository, AI model backend & engineering squad</div>
           </div>
         </div>
         <button onclick="closeOnboardingModal()" class="side-icon-btn" title="Close">
@@ -2025,25 +2024,29 @@ Auto-save: enabled</pre>
 
       <div class="modal-body" style="gap:14px;">
         <!-- Step 1: Identity & Mounted Repo -->
-        <div style="padding:12px 14px; border-radius:12px; background:#121216; border:1px solid #26262f;">
-          <div style="font-size:11px; font-weight:700; color:#60a5fa; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Step 1 • Your Identity & Local Project Folder</div>
-          <div style="display:grid; grid-template-columns:1fr 1.6fr; gap:10px;">
+        <div style="padding:12px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
+          <div style="font-size:11px; font-weight:700; color:var(--accent-blue); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Step 1 • Your Identity & Local Project Folder</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:8px;">
             <div>
               <label class="field-label">Your Display Name</label>
               <input id="onboardUserNameInput" type="text" placeholder="e.g. Priya" class="field-input">
             </div>
             <div>
-              <label class="field-label">Local Repository / Project Path</label>
-              <input id="onboardMountPathInput" type="text" placeholder="/Users/lakshmipriyasridharan/AI/REA/vanaras" class="field-input mono" style="font-size:11.5px;">
+              <label class="field-label">Your Role</label>
+              <input id="onboardUserRoleInput" type="text" placeholder="e.g. Lead Architect" class="field-input">
             </div>
+          </div>
+          <div>
+            <label class="field-label">Local Repository / Project Path</label>
+            <input id="onboardMountPathInput" type="text" placeholder="/Users/lakshmipriyasridharan/AI/REA/vanaras" class="field-input mono" style="font-size:11.5px;">
           </div>
         </div>
 
         <!-- Step 2: AI Model Connection & Live Verification -->
-        <div style="padding:12px 14px; border-radius:12px; background:#121216; border:1px solid #26262f;">
+        <div style="padding:12px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <span style="font-size:11px; font-weight:700; color:#10b981; text-transform:uppercase; letter-spacing:0.05em;">Step 2 • Default AI Model Backend (Applied to Squad)</span>
-            <button type="button" onclick="probeOnboardingModels()" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px; border-color:rgba(16,185,129,0.45); color:#6ee7b7;">⚡ Test & Detect Models</button>
+            <span style="font-size:11px; font-weight:700; color:var(--accent-emerald); text-transform:uppercase; letter-spacing:0.05em;">Step 2 • Default AI Model Backend (Applied to Squad)</span>
+            <button type="button" onclick="probeOnboardingModels()" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px; border-color:var(--accent-emerald); color:var(--accent-emerald);">⚡ Test & Detect Models</button>
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
             <div>
@@ -2072,21 +2075,21 @@ Auto-save: enabled</pre>
               <input id="onboardApiKeyInput" type="password" placeholder="sk-..." class="field-input mono" style="font-size:11.5px;">
             </div>
           </div>
-          <div id="onboardProbeStatus" class="mono" style="margin-top:8px; font-size:11px; color:#94949e;">Click "⚡ Test & Detect Models" to verify your LLM server connection.</div>
+          <div id="onboardProbeStatus" class="mono" style="margin-top:8px; font-size:11px; color:var(--text-muted);">Click "⚡ Test & Detect Models" to verify your LLM server connection.</div>
         </div>
 
         <!-- Step 3: Active Engineering Squad -->
-        <div style="padding:12px 14px; border-radius:12px; background:#121216; border:1px solid #26262f;">
-          <div style="font-size:11px; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Step 3 • Your Vanara Engineering Squad (Each with Isolated Git Worktree)</div>
+        <div style="padding:12px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
+          <div style="font-size:11px; font-weight:700; color:var(--accent-amber); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Step 3 • Your Vanara Engineering Squad (Each with Isolated Git Worktree)</div>
           <div id="onboardSquadPreview" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
         </div>
       </div>
 
       <div class="modal-footer" style="justify-content:space-between;">
-        <button type="button" onclick="completeOnboarding(true)" class="btn-secondary" style="font-size:11.5px; color:#fda4af; border-color:rgba(244,63,94,0.35);" title="Clear all existing chats and start with clean engineering threads">Reset to Clean Threads</button>
+        <button type="button" onclick="completeOnboarding(true)" class="btn-secondary" style="font-size:11.5px; color:var(--accent-red);" title="Clear all existing chats and start with clean engineering threads">Reset to Clean Threads</button>
         <div style="display:flex; gap:8px;">
           <button type="button" onclick="closeOnboardingModal()" class="btn-secondary">Cancel</button>
-          <button type="button" onclick="completeOnboarding(false)" class="btn-primary" style="background:#10b981; color:#06281e; font-weight:700;">Save & Launch Workspace</button>
+          <button type="button" onclick="completeOnboarding(false)" class="btn-primary">Save & Launch Workspace</button>
         </div>
       </div>
     </div>
@@ -4106,7 +4109,7 @@ Auto-save: enabled</pre>
       grid.innerHTML = MONKEY_STYLES.map(s => `
         <button type="button" onclick="selectAvatarStyle('${s.id}')" class="monkey-pick-btn ${selectedAvatarStyleInModal === s.id ? 'selected' : ''}">
           ${renderMonkeyAvatar(s.id, 30)}
-          <span style="font-size:10px; color:#b4b4c0;">${s.label}</span>
+          <span style="font-size:10px; color:var(--text-secondary);">${s.label}</span>
         </button>
       `).join("");
     }
@@ -4122,13 +4125,13 @@ Auto-save: enabled</pre>
       const box = document.getElementById("botPrivateMemoryList");
       if (!box) return;
       box.innerHTML = modalPrivateMemories.map((fact, idx) => `
-        <div style="padding:6px 10px; border-radius:8px; background:#18181e; border:1px solid #272730; display:flex; align-items:center; justify-content:space-between; gap:8px;">
-          <span style="font-size:11.5px; color:#d4d4de;">${escapeHtml(fact)}</span>
+        <div style="padding:6px 10px; border-radius:8px; background:var(--bg-surface); border:1px solid var(--border-card); display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span style="font-size:11.5px; color:var(--text-primary);">${escapeHtml(fact)}</span>
           <button type="button" onclick="removePrivateMemoryInBotModal(${idx})" class="side-icon-btn" style="width:20px; height:20px;" title="Remove">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-      `).join("") || `<div style="font-size:11px; color:#686873;">No private memories yet for this Vanara.</div>`;
+      `).join("") || `<div style="font-size:11px; color:var(--text-muted);">No private memories yet for this Vanara.</div>`;
     }
 
     function addPrivateMemoryInBotModal() {
@@ -4151,7 +4154,7 @@ Auto-save: enabled</pre>
       const box = document.getElementById("botToolsChecklist");
       if (!box) return;
       box.innerHTML = AVAILABLE_AGENT_TOOLS.map(t => `
-        <label style="display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:8px; background:#18181e; border:1px solid #272730; font-size:11.5px; color:#d4d4de; cursor:pointer;">
+        <label style="display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:8px; background:var(--bg-surface); border:1px solid var(--border-card); font-size:11.5px; color:var(--text-primary); cursor:pointer;">
           <input type="checkbox" class="bot-tool-cb" value="${t.id}" ${(selectedTools || []).includes(t.id) ? "checked" : ""}>
           <span>${escapeHtml(t.label)}</span>
         </label>
@@ -4175,14 +4178,14 @@ Auto-save: enabled</pre>
         });
         const data = await res.json();
         if (res.ok && Array.isArray(data.tools)) {
-          statusEl.style.color = "#6ee7b7";
+          statusEl.style.color = "var(--accent-emerald)";
           statusEl.innerText = `MCP Ready (${data.tools.length} tools): ${data.tools.map(t => t.name).join(", ") || "connected"}`;
         } else {
-          statusEl.style.color = "#f87171";
+          statusEl.style.color = "var(--accent-red)";
           statusEl.innerText = `MCP Error: ${data.error || "Failed to list tools"}`;
         }
       } catch (e) {
-        statusEl.style.color = "#f87171";
+        statusEl.style.color = "var(--accent-red)";
         statusEl.innerText = `MCP Error: ${e.message}`;
       }
     }
@@ -4211,7 +4214,7 @@ Auto-save: enabled</pre>
         renderBotToolsChecklistInModal(bot.tools || AVAILABLE_AGENT_TOOLS.map(t => t.id));
         deleteBtn.classList.toggle("hidden", state.bots.length <= 1);
       } else {
-        document.getElementById("botModalTitle").innerText = "New Vanara Bot";
+        document.getElementById("botModalTitle").innerText = "New Vanara Agent (1:1 Worktree)";
         document.getElementById("botEditId").value = "";
         document.getElementById("botNameInput").value = "";
         document.getElementById("botRoleInput").value = "";
@@ -4347,13 +4350,13 @@ Auto-save: enabled</pre>
         };
         state.bots.push(targetBotRef);
         const newThreadId = "thread_dm_" + Date.now();
-        state.threads.unshift({
+        state.threads.push({
           id: newThreadId,
           type: "dm",
           botId: newBotId,
           mountPath: serverDefaultMountPath,
           messages: [
-            { senderType: "bot", botId: newBotId, text: `Hey! I'm ${name} (${role}), running on ${provider}/${model} with my own isolated worktree (${targetBotRef.worktreeBranch}). How can I help?` }
+            { senderType: "bot", botId: newBotId, text: `Hey! I'm **${name}** (${role}), running on \`${provider}/${model}\` with my own isolated worktree (\`${targetBotRef.worktreeBranch}\`). How can I help?` }
           ]
         });
         activeThreadId = newThreadId;
@@ -4368,6 +4371,7 @@ Auto-save: enabled</pre>
       closeBotModal();
       renderThreadList();
       renderActiveThread();
+      populateWorkspaceAgentSelector();
       showToast(`Saved ${name} (memory, tools & worktree synced)`);
     }
 
@@ -4462,7 +4466,7 @@ Auto-save: enabled</pre>
     function openGroupModal(threadId) {
       const modal = document.getElementById("groupModal");
       const deleteBtn = document.getElementById("deleteGroupBtn");
-      let selectedBots = state.bots.slice(0, 3).map(b => b.id);
+      let selectedBots = state.bots.slice(0, 4).map(b => b.id);
       let selectedHumans = state.humans.map(h => h.id);
 
       if (threadId) {
@@ -4477,7 +4481,7 @@ Auto-save: enabled</pre>
           deleteBtn.classList.remove("hidden");
         }
       } else {
-        document.getElementById("groupModalTitle").innerText = "New Group / Collab Squad";
+        document.getElementById("groupModalTitle").innerText = "New Engineering Squad";
         document.getElementById("groupEditId").value = "";
         document.getElementById("groupNameInput").value = "";
         document.getElementById("groupMountPathInput").value = "/Users/lakshmipriyasridharan/AI/REA/vanaras";
@@ -4485,23 +4489,23 @@ Auto-save: enabled</pre>
       }
 
       document.getElementById("groupBotsChecklist").innerHTML = state.bots.map(b => `
-        <label style="display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px; background:#111114; border:1px solid #26262e; cursor:pointer;">
+        <label style="display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-card); cursor:pointer;">
           <input type="checkbox" class="group-bot-cb" value="${b.id}" ${selectedBots.includes(b.id) ? "checked" : ""}>
-          ${renderMonkeyAvatar(b.avatarStyle, 22)}
+          ${renderCleanAgentCircle(b, 26)}
           <div style="min-width:0;">
-            <div style="font-size:12px; font-weight:600;">${escapeHtml(b.name)}</div>
-            <div style="font-size:10px; color:#858590; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(b.role)}</div>
+            <div style="font-size:12px; font-weight:600; color:var(--text-primary);">${escapeHtml(b.name)}</div>
+            <div style="font-size:10px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(b.role)}</div>
           </div>
         </label>
       `).join("");
 
       document.getElementById("groupHumansChecklist").innerHTML = state.humans.map(h => `
-        <label style="display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px; background:#111114; border:1px solid #26262e; cursor:pointer;">
+        <label style="display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-card); cursor:pointer;">
           <input type="checkbox" class="group-human-cb" value="${h.id}" ${selectedHumans.includes(h.id) ? "checked" : ""}>
-          <span style="width:22px; height:22px; border-radius:50%; background:#26262e; font-size:10px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;">${escapeHtml(h.initials)}</span>
+          <span style="width:24px; height:24px; border-radius:50%; background:var(--accent-blue-soft); color:var(--accent-blue-text); font-size:10px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;">${escapeHtml(h.initials)}</span>
           <div style="min-width:0;">
-            <div style="font-size:12px; font-weight:600;">${escapeHtml(h.name)}</div>
-            <div style="font-size:10px; color:#858590;">${escapeHtml(h.role)}</div>
+            <div style="font-size:12px; font-weight:600; color:var(--text-primary);">${escapeHtml(h.name)}</div>
+            <div style="font-size:10px; color:var(--text-muted);">${escapeHtml(h.role)}</div>
           </div>
         </label>
       `).join("");
@@ -4558,7 +4562,7 @@ Auto-save: enabled</pre>
           botIds,
           humanIds,
           messages: [
-            { senderType: "bot", botId: botIds[0], text: `Group squad "${name}" ready. Click Collab or @mention any Vanara!` }
+            { senderType: "bot", botId: botIds[0], text: `Engineering squad **"${name}"** is ready. Click **Run collaboration** or @mention any agent!` }
           ]
         });
         activeThreadId = newThreadId;
@@ -4591,13 +4595,13 @@ Auto-save: enabled</pre>
     function renderSharedFactsList() {
       const box = document.getElementById("sharedFactsList");
       box.innerHTML = (state.sharedFacts || []).map((f, i) => `
-        <div style="padding:10px 12px; border-radius:12px; background:#111114; border:1px solid #26262e; display:flex; align-items:center; justify-content:space-between; gap:10px;">
-          <span style="font-size:12.5px; color:#e4e4ec;">${escapeHtml(f)}</span>
+        <div style="padding:10px 12px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-card); display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <span style="font-size:12.5px; color:var(--text-primary);">${escapeHtml(f)}</span>
           <button onclick="removeSharedFact(${i})" class="side-icon-btn" title="Remove">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-      `).join("") || `<div style="color:#787884; font-size:12px;">No shared facts yet.</div>`;
+      `).join("") || `<div style="color:var(--text-muted); font-size:12px;">No shared facts yet.</div>`;
     }
     function addSharedFactFromInput() {
       const input = document.getElementById("newSharedFactInput");
@@ -4664,15 +4668,15 @@ Auto-save: enabled</pre>
     function openConnectAppsModal() {
       const container = document.getElementById("systemAgentsList");
       container.innerHTML = SYSTEM_AGENTS_CATALOG.map(sa => `
-        <div style="padding:12px; border-radius:14px; background:#111114; border:1px solid #26262e; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+        <div style="padding:12px; border-radius:14px; background:var(--bg-surface-subtle); border:1px solid var(--border-card); display:flex; align-items:center; justify-content:space-between; gap:12px;">
           <div style="display:flex; align-items:center; gap:10px;">
             ${renderMonkeyAvatar(sa.avatarStyle, 36)}
             <div>
-              <div style="font-size:13px; font-weight:600;">${escapeHtml(sa.name)}</div>
-              <div style="font-size:11px; color:#888894;">${escapeHtml(sa.role)}</div>
+              <div style="font-size:13px; font-weight:600; color:var(--text-primary);">${escapeHtml(sa.name)}</div>
+              <div style="font-size:11px; color:var(--text-muted);">${escapeHtml(sa.role)}</div>
             </div>
           </div>
-          <button onclick="addSystemAgentToWorkspace('${sa.id}')" class="btn-secondary" style="height:30px; font-size:11.5px;">+ Add Vanara</button>
+          <button onclick="addSystemAgentToWorkspace('${sa.id}')" class="btn-secondary" style="height:30px; font-size:11.5px;">+ Add Agent</button>
         </div>
       `).join("");
       document.getElementById("connectAppsModal").classList.remove("hidden");
@@ -4684,25 +4688,33 @@ Auto-save: enabled</pre>
       const sa = SYSTEM_AGENTS_CATALOG.find(x => x.id === sysId);
       if (!sa) return;
       const newBotId = "bot_" + Date.now();
-      state.bots.push({
+      const lead = state.bots[0] || {};
+      const slug = sa.name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+      const newBot = {
         id: newBotId,
-        name: sa.name,
+        name: sa.name.split(" ")[0] || sa.name,
         role: sa.role,
         avatarStyle: sa.avatarStyle,
-        provider: "local",
-        baseUrl: "http://192.168.68.102:1234/v1",
-        apiKey: "",
-        model: detectedLocalModel,
-        instructions: sa.instructions
-      });
+        provider: lead.provider || "local",
+        baseUrl: lead.baseUrl || "http://192.168.68.102:1234/v1",
+        apiKey: lead.apiKey || "",
+        model: lead.model || detectedLocalModel,
+        instructions: sa.instructions,
+        memories: [],
+        tools: ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"],
+        mcpCommand: "",
+        worktreeBranch: `vanara/${slug}`
+      };
+      state.bots.push(newBot);
+      ensureAgentWorktreeOnServer(newBot);
       const newThreadId = "thread_dm_" + Date.now();
-      state.threads.unshift({
+      state.threads.push({
         id: newThreadId,
         type: "dm",
         botId: newBotId,
-        mountPath: "/Users/lakshmipriyasridharan/AI/REA/vanaras",
+        mountPath: serverDefaultMountPath,
         messages: [
-          { senderType: "bot", botId: newBotId, text: `${sa.name} connected and ready.` }
+          { senderType: "bot", botId: newBotId, text: `**${sa.name}** connected and ready in isolated worktree \`${newBot.worktreeBranch}\`.` }
         ]
       });
       activeThreadId = newThreadId;
@@ -4710,6 +4722,7 @@ Auto-save: enabled</pre>
       closeConnectAppsModal();
       renderThreadList();
       renderActiveThread();
+      populateWorkspaceAgentSelector();
       showToast(`Added ${sa.name}`);
     }
 
@@ -4723,21 +4736,22 @@ Auto-save: enabled</pre>
       const leadBot = state.bots[0] || {};
       const activeThread = getActiveThread();
       document.getElementById("onboardUserNameInput").value = state.currentUser?.name || "Engineer";
-      document.getElementById("onboardUserRoleInput").value = state.currentUser?.role || "Lead Architect";
+      const roleInput = document.getElementById("onboardUserRoleInput");
+      if (roleInput) roleInput.value = state.currentUser?.role || "Lead Architect";
       document.getElementById("onboardMountPathInput").value = activeThread?.mountPath || serverDefaultMountPath;
       document.getElementById("onboardProviderSelect").value = leadBot.provider || "local";
       document.getElementById("onboardBaseUrlInput").value = leadBot.baseUrl || "http://192.168.68.102:1234/v1";
       document.getElementById("onboardApiKeyInput").value = leadBot.apiKey || "";
       document.getElementById("onboardModelInput").value = leadBot.model || detectedLocalModel;
 
-      const squadEl = document.getElementById("onboardSquadSummary");
+      const squadEl = document.getElementById("onboardSquadPreview");
       if (squadEl) {
         squadEl.innerHTML = state.bots.map(b => `
-          <div style="display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:8px; background:#18181e; border:1px solid #272730;">
-            ${renderMonkeyAvatar(b.avatarStyle, 20)}
+          <div style="display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:9px; background:var(--bg-surface); border:1px solid var(--border-card);">
+            ${renderCleanAgentCircle(b, 26)}
             <div style="min-width:0;">
-              <div style="font-size:11.5px; font-weight:700; color:#f4f4f8;">@${escapeHtml(b.name)}</div>
-              <div style="font-size:10px; color:#888894; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(b.role)}</div>
+              <div style="font-size:12px; font-weight:700; color:var(--text-primary);">@${escapeHtml(b.name)}</div>
+              <div style="font-size:10.5px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(b.role)}</div>
             </div>
           </div>
         `).join("");
@@ -4783,9 +4797,9 @@ Auto-save: enabled</pre>
         document.getElementById("onboardBaseUrlInput").value = baseUrl;
       }
       const apiKey = document.getElementById("onboardApiKeyInput").value.trim();
-      const statusEl = document.getElementById("onboardProbeStatus") || document.getElementById("onboardModelStatus");
+      const statusEl = document.getElementById("onboardProbeStatus");
       if (statusEl) {
-        statusEl.style.color = "#a1a1aa";
+        statusEl.style.color = "var(--text-secondary)";
         statusEl.innerText = "Probing model endpoint...";
       }
       try {

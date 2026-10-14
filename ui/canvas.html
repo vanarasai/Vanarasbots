@@ -3761,12 +3761,33 @@ ${handoffRule}
       }
     }
 
-    async function processBotAutonomousActions(thread, bot, replyText, hooksTrace = [], observationsOut = []) {
+    async function processBotAutonomousActions(thread, bot, replyText, hooksTrace = [], observationsOut = [], reasoningText = "") {
       const executedTools = [];
-      if (!replyText) return executedTools;
+      if (!replyText && !reasoningText) return executedTools;
 
-      // Never scan inside <think> reasoning blocks so mental-sandbox mentions of [TOOL: ...] are ignored
-      const { visibleText: scanSource } = extractInlineThinkBlocks(replyText);
+      const { visibleText } = extractInlineThinkBlocks(replyText || "");
+      let scanSource = visibleText || "";
+
+      // If visibleText had no [TOOL: ...] tags, check if the agent emitted concrete [TOOL: ...] tags at the tail of reasoningText
+      const toolCheckRx = /\[TOOL:\s*[a-z_]+(?:\s*\|\s*[^\]\n]+)?\]/i;
+      if (!toolCheckRx.test(scanSource) && reasoningText) {
+        const tailReasoning = String(reasoningText).slice(-800);
+        const reasoningTools = tailReasoning.match(/\[TOOL:\s*(?:fs_read|fs_write|shell_exec|shell|git_status|git_diff|git_commit)(?:\s*\|\s*[^\]<\n]+)?\]/gi);
+        if (reasoningTools && reasoningTools.length > 0) {
+          scanSource = `${scanSource}\n${reasoningTools.join("\n")}`.trim();
+        }
+      }
+
+      // If the agent promised "Checking my worktree state first" without emitting a [TOOL: ...] tag or ===FILE:=== block, auto-inject a live workspace verification tool call
+      if (
+        !toolCheckRx.test(scanSource) &&
+        parseDeliverableBlocks(scanSource).length === 0 &&
+        scanSource.length < 260 &&
+        /\b(checking (?:my |the )?(?:worktree|state|files)|let me (?:actually )?run|pull(?:ing)? (?:in )?the squad's files|run everything in my worktree)\b/i.test(scanSource)
+      ) {
+        scanSource += `\n[TOOL: shell | ls -la && (if [ -f test_podcast.py ]; then python3 test_podcast.py; fi) && (if [ -f app.py ]; then python3 app.py "LLM 101"; fi)]`;
+      }
+
       if (!scanSource) return executedTools;
 
       // 1. Extract [REMEMBER: ...] into Per-Agent Private Memory on disk
@@ -3796,6 +3817,9 @@ ${handoffRule}
         const arg1 = (tMatch[2] || tMatch[4] || "").trim();
         const arg2 = (tMatch[3] || tMatch[5] || "").trim();
 
+        // Skip template placeholders like <path> or <command>
+        if (/^<[a-z_-\s]+>$/i.test(arg1)) continue;
+
         // Skip empty planned fs_write placeholders (e.g. "[TOOL: fs_write] config.py" without content)
         if (normalizedTool === "fs_write" && (!arg1 || !arg2)) {
           continue;
@@ -3822,13 +3846,23 @@ ${handoffRule}
 
         try {
           if (normalizedTool === "shell_exec" && arg1) {
-            await fetch("/api/workspace/exec", {
+            const res = await fetch("/api/agent/tool", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ command: arg1, threadId: thread.id, botId: bot.id, botName: bot.name })
+              body: JSON.stringify({ action: "shell_exec", botId: bot.id, botName: bot.name, content: arg1 })
             });
+            const data = await res.json();
+            const shellOut = data.output || data.error || "(exit 0)";
+            const exitCode = typeof data.exitCode === "number" ? data.exitCode : (res.ok && data.ok !== false ? 0 : 1);
+            insertTerminalBeforeStreaming(thread, {
+              senderType: "terminal",
+              command: `[${bot.name} ${data.branch || bot.worktreeBranch || "worktree"}] $ ${arg1}`,
+              exitCode,
+              text: shellOut.slice(0, 1600)
+            });
+            observationsOut.push({ tool: `shell_exec(${arg1})`, output: `exitCode=${exitCode}\n${shellOut.slice(0, 2000)}` });
             executedTools.push(`shell: ${arg1}`);
-            hooksTrace.push(`PostToolUse(shell_exec)`);
+            hooksTrace.push(`PostToolUse(shell_exec:exit=${exitCode})`);
           } else if (normalizedTool === "fs_read") {
             const targetReadPath = arg1 || ".";
             const res = await fetch("/api/agent/tool", {
@@ -4177,12 +4211,12 @@ ${handoffRule}
           }
         };
 
-        // Capability #1: Multi-Step ReAct Tool Loop inside a single turn (up to 1 internal inspect->observe round)
+        // Capability #1: Multi-Step ReAct Tool Loop inside a single turn (up to 3 internal inspect/run -> observe rounds)
         let reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 8192, onStreamProgress, turnController.signal);
         if (turnCtx.aborted) return;
         let accumulatedReasoning = [reply.reasoning || "", liveMsg.reasoning || ""].filter(Boolean)[0] || "";
 
-        for (let reactStep = 0; reactStep < 1; reactStep++) {
+        for (let reactStep = 0; reactStep < 3; reactStep++) {
           if (turnCtx.aborted) return;
           const stepHook = await invokeAgentLifecycleHook("AfterAgentThoughtRequest", {
             botId: targetBot.id,
@@ -4191,12 +4225,13 @@ ${handoffRule}
             reasoning: reply.reasoning || ""
           });
           const stepCleaned = stepHook.cleanedOutput !== undefined ? stepHook.cleanedOutput : reply.content;
-          if (stepHook.reasoning) {
-            accumulatedReasoning = [priorStepsReasoning, stepHook.reasoning].filter(Boolean).join("\n\n---\n\n").trim();
+          const stepReason = stepHook.reasoning || reply.reasoning || "";
+          if (stepReason) {
+            accumulatedReasoning = [priorStepsReasoning, stepReason].filter(Boolean).join("\n\n---\n\n").trim();
             liveMsg.reasoning = accumulatedReasoning;
           }
           const stepObservations = [];
-          await processBotAutonomousActions(targetThread, targetBot, stepCleaned, hooksTrace, stepObservations);
+          await processBotAutonomousActions(targetThread, targetBot, stepCleaned, hooksTrace, stepObservations, stepReason);
 
           const hasFilesAlready = parseDeliverableBlocks(stepCleaned).length > 0;
           if (stepObservations.length === 0 || hasFilesAlready) {
@@ -4207,12 +4242,16 @@ ${handoffRule}
             break;
           }
 
-          // Preserve step 1's reasoning and visible text before starting step 2 so they are NEVER lost!
+          // Preserve reasoning across ReAct rounds; only keep prior visible text if it wasn't a short "Checking state first" stub
           priorStepsReasoning = liveMsg.reasoning || accumulatedReasoning;
-          priorStepsVisibleText = stepCleaned.replace(/\[TOOL:[^\]]+\](?:[ \t]*:?[ \t]*[^\n\[`]*)?/gi, "").trim();
+          const strippedPrevVisible = stepCleaned.replace(/\[TOOL:[^\]]+\](?:[ \t]*:?[ \t]*[^\n\[`]*)?/gi, "").trim();
+          const isCheckingStub = strippedPrevVisible.length < 220 && /\b(checking|let me|on it|pulling)\b/i.test(strippedPrevVisible);
+          if (!isCheckingStub && strippedPrevVisible) {
+            priorStepsVisibleText = [priorStepsVisibleText, strippedPrevVisible].filter(Boolean).join("\n\n").trim();
+          }
           hooksTrace.push(`ReActObsStep(${reactStep + 1})`);
           const obsDigest = stepObservations.map(o => `[Tool Output: ${o.tool}]\n${o.output}`).join("\n\n");
-          currentPrompt += `\n\nYour previous step invoked inspection tool(s). Real output from your worktree:\n${obsDigest}\n\nNow synthesize your final answer and/or ===FILE: ...=== deliverables based on this evidence:`;
+          currentPrompt += `\n\nReal execution output from your worktree (${targetBot.worktreeBranch}):\n${obsDigest}\n\nNow report the concrete execution results, test pass/fail status, and output directly (or invoke one more [TOOL: shell | <cmd>] / ===FILE: <name>=== if needed). Do NOT say "Checking my worktree state first":`;
           reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 6000, onStreamProgress, turnController.signal);
           if (turnCtx.aborted) return;
         }
@@ -4231,7 +4270,9 @@ ${handoffRule}
           ...(Array.isArray(thoughtHook.thoughts) ? thoughtHook.thoughts : [])
         ].filter(Boolean).join("\n\n").trim();
         let combinedReasoning = [priorStepsReasoning, finalStepReasoning].filter(Boolean).join("\n\n---\n\n").trim() || liveMsg.reasoning || "";
-        const finalStepVisible = thoughtHook.cleanedOutput !== undefined ? thoughtHook.cleanedOutput : reply.content;
+        const finalStepVisible = (thoughtHook.cleanedOutput !== undefined ? thoughtHook.cleanedOutput : reply.content)
+          .replace(/\[TOOL:[^\]]+\](?:[ \t]*:?[ \t]*[^\n\[`]*)?/gi, "")
+          .trim();
         let postThoughtContent = [priorStepsVisibleText, finalStepVisible].filter(Boolean).join("\n\n").trim();
 
         // If the model spent all tokens inside reasoning without emitting separate visible content, promote the deliverables/final section into postThoughtContent

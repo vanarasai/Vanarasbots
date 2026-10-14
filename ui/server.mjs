@@ -727,8 +727,9 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      if (action === "save_files" && Array.isArray(files)) {
+      if ((action === "save_files" || action === "save") && Array.isArray(files)) {
         const savedNames = [];
+        const reservedRootNames = new Set(["ui", "crates", "macos", "Vanaras.app", "Cargo.toml", "Cargo.lock", "README.md", "build-macos-app.sh", "run-windows.bat", ".git", ".gitignore"]);
         for (const f of files) {
           if (!f || !f.name) continue;
           const cleanRel = String(f.name).replace(/^\/+/, "").replace(/\.\./g, "");
@@ -737,6 +738,16 @@ const server = http.createServer(async (req, res) => {
             fs.mkdirSync(path.dirname(dest), { recursive: true });
             fs.writeFileSync(dest, String(f.content ?? ""), "utf8");
             savedNames.push(cleanRel);
+            const topSegment = cleanRel.split("/")[0];
+            if (topSegment && !reservedRootNames.has(topSegment)) {
+              const wtDest = path.resolve(wt.worktreePath, cleanRel);
+              if (isPathInside(wtDest, wt.worktreePath)) {
+                try {
+                  fs.mkdirSync(path.dirname(wtDest), { recursive: true });
+                  fs.writeFileSync(wtDest, String(f.content ?? ""), "utf8");
+                } catch {}
+              }
+            }
           }
         }
         // Automatically stage & commit the agent's code changes onto its isolated branch (vanara/<bot>)
@@ -1299,12 +1310,52 @@ const server = http.createServer(async (req, res) => {
           } else {
             const st = await execFileAsync("git", ["status", "--short"], { cwd: wt.worktreePath, timeout: 5000 });
             const br = await execFileAsync("git", ["branch", "--show-current"], { cwd: wt.worktreePath, timeout: 5000 });
-            out = [st.stdout.trim(), br.stdout.trim()].filter(Boolean).join("\n");
+            const codeFiles = listAgentCodeFiles(wt.codeDir).map(f => f.name);
+            out = [
+              `Branch: ${br.stdout.trim() || wt.branch} (${wt.codeDir})`,
+              codeFiles.length > 0 ? `Workspace files: ${codeFiles.join(", ")}` : "",
+              st.stdout.trim() || "(Clean worktree)"
+            ].filter(Boolean).join("\n");
           }
         } catch (err) {
           out = err.message;
         }
-        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, output: out || "(Clean worktree)" });
+        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, codeDir: wt.codeDir, branch: wt.branch, output: out || "(Clean worktree)" });
+      }
+
+      if (toolName === "shell_exec" || toolName === "shell") {
+        const cmdStr = String(content || filePath || args.command || "").trim();
+        if (!cmdStr) {
+          return sendJson(res, 400, { ok: false, error: "Missing shell command" });
+        }
+        const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
+        const result = await new Promise((resolve) => {
+          exec(
+            cmdStr,
+            {
+              cwd: execCwd,
+              timeout: 18000,
+              maxBuffer: 1024 * 512,
+              env: {
+                ...process.env,
+                PYTHONPATH: [wt.codeDir, wt.worktreePath, process.env.PYTHONPATH || ""].filter(Boolean).join(path.delimiter)
+              },
+              ...(process.platform === "win32" ? { shell: "powershell.exe" } : {})
+            },
+            (error, stdout, stderr) => {
+              const combined = ((stdout || "") + (stderr ? `\n${stderr}` : "")).trim().slice(0, 4000);
+              const exitCode = error ? (error.killed ? 124 : (typeof error.code === "number" ? error.code : 1)) : 0;
+              resolve({
+                ok: exitCode === 0,
+                exitCode,
+                cwd: execCwd,
+                branch: wt.branch,
+                output: combined || `(exit ${exitCode})`
+              });
+            }
+          );
+        });
+        return sendJson(res, 200, result);
       }
 
       return sendJson(res, 400, { error: `Unknown agent tool: ${toolName}` });

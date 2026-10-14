@@ -1551,13 +1551,19 @@
                 </button>
               </div>
 
-              <!-- Blue Circular Up-Arrow Send Button -->
-              <button onclick="handleSendMessage()" id="composerSendBtn" class="composer-send-circle" title="Send message (Enter)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="12" y1="19" x2="12" y2="5"></line>
-                  <polyline points="5 12 12 5 19 12"></polyline>
-                </svg>
-              </button>
+              <!-- Stop Generation Button + Blue Circular Up-Arrow Send Button -->
+              <div style="display:flex; align-items:center; gap:8px;">
+                <button onclick="stopActiveThreadGeneration()" id="composerStopBtn" class="hidden" title="Stop active generation and auto-triggers (Esc)" style="display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 12px; border-radius:999px; font-size:12px; font-weight:600; background:rgba(239,68,68,0.12); color:#ef4444; border:1px solid rgba(239,68,68,0.35); cursor:pointer;">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                  <span>Stop</span>
+                </button>
+                <button onclick="handleSendMessage()" id="composerSendBtn" class="composer-send-circle" title="Send message (Enter)">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="19" x2="12" y2="5"></line>
+                    <polyline points="5 12 12 5 19 12"></polyline>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -2288,7 +2294,7 @@ Auto-save: enabled</pre>
           baseUrl: "http://192.168.68.102:1234/v1",
           apiKey: "",
           model: "qwen/qwen3.5-9b",
-          instructions: "You are R1, Principal Systems & AI Architect in Vanaras. Design clean architectures, write production-ready code in ===FILE: ...=== blocks, and coordinate with @R2, @R3, and @R4.",
+          instructions: "You are R1, Principal Systems & AI Architect in Vanaras. Design clean architectures and write production-ready code in ===FILE: ...=== blocks when asked to build.",
           memories: [
             "Prefer modular, dependency-light code that can be verified immediately in the agent workspace."
           ],
@@ -2389,17 +2395,36 @@ Auto-save: enabled</pre>
         if (b.provider === "local" && (b.model === "bonsai-27b-mlx" || b.model === "google/gemma-4-12b")) {
           b.model = "qwen/qwen3.5-9b";
         }
+        if (b.id === "bot_r1" && typeof b.instructions === "string" && b.instructions.includes("and coordinate with @R2, @R3, and @R4")) {
+          b.instructions = DEFAULT_STATE.bots[0].instructions;
+        }
       });
-      // Sanitize any legacy duplicate SSE echo messages or stuck streaming placeholders in threads
+      // Sanitize any legacy duplicate SSE echo messages, stuck streaming placeholders, or unwanted auto-triggered DM intruders
       (state.threads || []).forEach(t => {
         if (!Array.isArray(t.messages)) return;
         const cleaned = [];
         for (let i = 0; i < t.messages.length; i++) {
           const m = t.messages[i];
           if (!m) continue;
-          m.isStreaming = false;
+          // Do not clobber an actively streaming message in the current runtime session
+          if (!activeTurnState || !activeTurnState[t.id]) {
+            m.isStreaming = false;
+            delete m.streaming;
+          }
           const txt = String(m.text || "").trim();
-          if (m.senderType === "bot" && (!txt || txt === "▍" || txt.startsWith("⏳ Thinking") || txt.includes("fetch failed") || txt.startsWith("$f = fs_read") || txt.startsWith("$l = read("))) {
+          const rsn = String(m.reasoning || "").trim();
+          if (m.senderType === "bot" && !rsn && (!txt || txt === "▍" || txt.startsWith("⏳ Thinking") || txt.includes("fetch failed") || txt.startsWith("$f = fs_read") || txt.startsWith("$l = read("))) {
+            continue;
+          }
+          if (m.senderType === "bot" && (!txt || txt === "▍" || txt.startsWith("⏳ Thinking")) && rsn && (!activeTurnState || !activeTurnState[t.id])) {
+            m.text = "*(Completed reasoning pass — see Internal Reasoning above)*";
+          }
+          // Strip auto-triggered messages from other bots that intruded into a 1-on-1 DM thread
+          if (t.type === "dm" && m.senderType === "bot" && m.botId && m.botId !== t.botId && String(m.collabRound || "").includes("Auto-Triggered")) {
+            continue;
+          }
+          // Strip hallucinated Event Aggregation Service intruder message if present
+          if (m.senderType === "bot" && txt.includes("High-Performance Event Aggregation Service") && txt.endsWith("[TOOL:")) {
             continue;
           }
           // Skip legacy duplicate self-echoes (where senderName was set by old room_message echo)
@@ -2417,6 +2442,7 @@ Auto-save: enabled</pre>
         t.messages = cleaned;
       });
     }
+    let activeTurnState = {};
     hydrateBotAgentFields();
 
     let activeThreadId = state.threads?.[0]?.id || "thread_r1";
@@ -2472,6 +2498,11 @@ Auto-save: enabled</pre>
           e.preventDefault();
           resolveInAppInput(null);
         }
+        return;
+      }
+      if (e.key === "Escape" && isThreadBusy(activeThreadId)) {
+        e.preventDefault();
+        stopActiveThreadGeneration(activeThreadId);
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -2846,13 +2877,48 @@ Auto-save: enabled</pre>
     // =========================================================================
     // 4. RENDER ACTIVE CONVERSATION & MISSION CONTROL QUICK-START
     // =========================================================================
+    function isThreadBusy(threadId = activeThreadId) {
+      if (!threadId) return false;
+      return Boolean(
+        activeTurnState[threadId] ||
+        activeWorkingThreads[threadId] ||
+        activeAutonomousTimers[threadId]
+      );
+    }
+
+    function updateComposerStopButton() {
+      const stopBtn = document.getElementById("composerStopBtn");
+      if (!stopBtn) return;
+      const busy = isThreadBusy(activeThreadId);
+      stopBtn.classList.toggle("hidden", !busy);
+    }
+
+    function onThoughtDetailsToggle(threadId, msgIdx, isOpen) {
+      const t = state.threads.find(x => x.id === threadId);
+      const m = t?.messages?.[msgIdx];
+      if (m) {
+        m.thoughtOpen = Boolean(isOpen);
+      }
+    }
+
     function findMentionedBotsInText(text, excludeBotId) {
       if (!text) return [];
       return state.bots.filter(b => {
         if (b.id === excludeBotId) return false;
         const escaped = b.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const rx = new RegExp(`(?:^|\\s|@)${escaped}\\b`, "i");
+        const rx = new RegExp(`(?:^|\\s)@${escaped}\\b`, "i");
         return rx.test(text);
+      });
+    }
+
+    function findExplicitHandoffBots(text, excludeBotId) {
+      if (!text) return [];
+      return state.bots.filter(b => {
+        if (b.id === excludeBotId) return false;
+        const escaped = b.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const explicitTagRx = new RegExp(`\\[HANDOFF:\\s*@?${escaped}\\]`, "i");
+        const handoffPhraseRx = new RegExp(`(?:hand(?:ing)?\\s+off\\s+to|over\\s+to|passing\\s+to)\\s+@${escaped}\\b`, "i");
+        return explicitTagRx.test(text) || handoffPhraseRx.test(text);
       });
     }
 
@@ -2919,11 +2985,61 @@ Auto-save: enabled</pre>
       await handleSendMessage();
     }
 
+    function updateStreamingMessageDomInPlace(threadId, liveMsg) {
+      if (activeThreadId !== threadId || !liveMsg) return;
+      updateComposerStopButton();
+      const msgInner = document.getElementById("messagesInner");
+      if (!msgInner) return;
+      const row = msgInner.querySelector(`[data-msg-id="${liveMsg.id}"]`);
+      if (!row) {
+        renderActiveThread();
+        return;
+      }
+      const thoughtWrap = row.querySelector(".msg-thought-wrap");
+      if (thoughtWrap) {
+        if (liveMsg.reasoning) {
+          let detailsEl = thoughtWrap.querySelector("details");
+          if (!detailsEl) {
+            thoughtWrap.innerHTML = `
+              <details open style="margin-bottom:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:9px; padding:6px 10px; font-size:11px; color:var(--text-secondary);" class="mono">
+                <summary class="msg-thought-summary" style="cursor:pointer; user-select:none;">Internal Reasoning (streaming…)</summary>
+                <div class="msg-thought-body" style="margin-top:6px; padding-top:6px; border-top:1px solid var(--border-subtle); white-space:pre-wrap; max-height:260px; overflow-y:auto;"></div>
+              </details>
+            `;
+            detailsEl = thoughtWrap.querySelector("details");
+          }
+          const summaryEl = thoughtWrap.querySelector(".msg-thought-summary");
+          if (summaryEl) {
+            summaryEl.textContent = `Internal Reasoning${liveMsg.isStreaming || liveMsg.streaming ? " (streaming…)" : ""}`;
+          }
+          const bodyEl = thoughtWrap.querySelector(".msg-thought-body");
+          if (bodyEl) {
+            bodyEl.textContent = liveMsg.reasoning;
+            bodyEl.scrollTop = bodyEl.scrollHeight;
+          }
+        } else {
+          thoughtWrap.innerHTML = "";
+        }
+      }
+      const botBodyEl = row.querySelector(".msg-bot-body");
+      if (botBodyEl) {
+        botBodyEl.innerHTML = formatRichMessage(liveMsg.text);
+      }
+      const scrollBox = document.getElementById("messagesContainer");
+      if (scrollBox) {
+        const distFromBottom = scrollBox.scrollHeight - scrollBox.scrollTop - scrollBox.clientHeight;
+        if (distFromBottom < 180) {
+          scrollBox.scrollTop = scrollBox.scrollHeight;
+        }
+      }
+    }
+
     function renderActiveThread() {
       const thread = getActiveThread();
       if (!thread) return;
       unreadCounts[thread.id] = 0;
       updateHeaderPills();
+      updateComposerStopButton();
 
       const pill = document.getElementById("activeThreadPill");
       const input = document.getElementById("chatComposerInput");
@@ -3027,9 +3143,11 @@ Auto-save: enabled</pre>
       }
 
       thread.messages.forEach((m, idx) => {
+        if (!m.id) m.id = `msg_${thread.id}_${idx}`;
         if (m.senderType === "user") {
           const row = document.createElement("div");
           row.className = "msg-user-row";
+          row.setAttribute("data-msg-id", m.id);
           row.innerHTML = `
             <div class="msg-user-wrap">
               <div class="msg-user-bubble">
@@ -3042,6 +3160,7 @@ Auto-save: enabled</pre>
         } else if (m.senderType === "terminal") {
           const row = document.createElement("div");
           row.className = "terminal-card mono";
+          row.setAttribute("data-msg-id", m.id);
           row.innerHTML = `
             <div class="terminal-header">
               <span>$ ${escapeHtml(m.command || "shell")}</span>
@@ -3054,9 +3173,11 @@ Auto-save: enabled</pre>
           const bot = getBot(m.botId);
           const row = document.createElement("div");
           row.className = "msg-bot-row";
+          row.setAttribute("data-msg-id", m.id);
 
           const isWelcomeSquadMsg = idx === 0 && (m.text.includes("Welcome to") || m.text.includes("Your squad is ready"));
           const roleShort = bot?.name === "R1" ? "Principal Architect" : (bot?.role || "Agent");
+          const isMsgStreaming = Boolean(m.isStreaming || m.streaming);
 
           let bodyHtml = "";
           if (isWelcomeSquadMsg && thread.type === "group") {
@@ -3090,10 +3211,11 @@ Auto-save: enabled</pre>
             bodyHtml = formatRichMessage(m.text);
           }
 
+          const shouldOpenThought = isMsgStreaming || m.thoughtOpen !== false;
           const thoughtHtml = m.reasoning
-            ? `<details ${m.isStreaming ? "open" : ""} style="margin-bottom:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:9px; padding:6px 10px; font-size:11px; color:var(--text-secondary);" class="mono">
-                 <summary style="cursor:pointer; user-select:none;">Internal Reasoning${m.isStreaming ? " (streaming…)" : ""}</summary>
-                 <div style="margin-top:6px; padding-top:6px; border-top:1px solid var(--border-subtle); white-space:pre-wrap;">${escapeHtml(m.reasoning)}</div>
+            ? `<details ${shouldOpenThought ? "open" : ""} ontoggle="onThoughtDetailsToggle('${thread.id}', ${idx}, this.open)" style="margin-bottom:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:9px; padding:6px 10px; font-size:11px; color:var(--text-secondary);" class="mono">
+                 <summary class="msg-thought-summary" style="cursor:pointer; user-select:none;">Internal Reasoning${isMsgStreaming ? " (streaming…)" : ""}</summary>
+                 <div class="msg-thought-body" style="margin-top:6px; padding-top:6px; border-top:1px solid var(--border-subtle); white-space:pre-wrap; max-height:260px; overflow-y:auto;">${escapeHtml(m.reasoning)}</div>
                </details>`
             : "";
 
@@ -3139,15 +3261,23 @@ Auto-save: enabled</pre>
           `;
           actionBarHtml += `</div>`;
 
+          const stopPillHtml = isMsgStreaming
+            ? `<button onclick="stopActiveThreadGeneration('${thread.id}')" style="margin-left:auto; display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:600; background:rgba(239,68,68,0.12); color:#ef4444; border:1px solid rgba(239,68,68,0.35); cursor:pointer;">
+                 <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                 <span>Stop</span>
+               </button>`
+            : "";
+
           row.innerHTML = `
             ${renderCleanAgentCircle(bot, 34)}
             <div class="msg-bot-content-col">
-              <div class="msg-bot-header">
+              <div class="msg-bot-header" style="display:flex; align-items:center; gap:8px;">
                 <span class="msg-bot-name">${escapeHtml(bot?.name || "R1")}</span>
                 <span class="msg-bot-role-pill">${escapeHtml(roleShort)}</span>
                 <span class="msg-bot-time">${escapeHtml(m.collabRound || "9:41 AM")}</span>
+                ${stopPillHtml}
               </div>
-              ${thoughtHtml}
+              <div class="msg-thought-wrap">${thoughtHtml}</div>
               <div class="msg-bot-body">${bodyHtml}</div>
               ${actionBarHtml}
             </div>
@@ -3337,8 +3467,12 @@ Auto-save: enabled</pre>
       const worktreeBlock = `\n\nISOLATED GIT WORKTREE:\n- Branch: ${wtBranch} (${wtPath})`;
       const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"]).join(", ");
       const mcpLine = bot.mcpCommand ? `\n- Connected MCP Server: ${bot.mcpCommand}` : "";
+      const isDm = thread?.type === "dm";
+      const handoffRule = isDm
+        ? `5. This is a private 1-on-1 chat with the user. Do NOT mention, tag, or hand off to @R1, @R2, @R3, or @R4 unless the user explicitly asks you to.`
+        : `5. To remember a key fact, include [REMEMBER: fact]. Only when you have completed a concrete engineering task and want a squad teammate to take the next step, include [HANDOFF: @R2] (or @R3/@R4).`;
       const toolsProtocolBlock = `\n\nCODE & TOOL PROTOCOL (${enabledTools})${mcpLine}:
-1. Answer the user's message directly and naturally. If the user greets you or asks a question, respond conversationally without invoking tools.
+1. Answer the user's message directly and naturally. If the user greets you (e.g. "Hi", "Hello") or asks a question, respond briefly in 1–3 sentences without invoking [TOOL: ...] tags and NEVER invent an unrequested project.
 2. When asked to build or create software, web apps, shaders, or scripts, output complete runnable files using:
 ===FILE: <relative_filename>===
 <full source code>
@@ -3351,10 +3485,35 @@ Auto-save: enabled</pre>
 <replacement lines>
 >>>>>>> REPLACE
 ===END_PATCH===
-4. Only when you explicitly need to inspect or run something in your worktree, include an exact tag such as [TOOL: fs_read | <path>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
-5. To remember a key fact, include [REMEMBER: fact]. To hand off to a teammate, mention @R1, @R2, @R3, or @R4.`;
-      const teamNames = state.bots.map(b => `@${b.name} (${b.role})`).join(", ");
-      return `You are ${bot.name} (${bot.role}) in the Vanaras autonomous multi-agent software engineering workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}\n\nFellow Vanara agents: ${teamNames}.\nBe concise, high-signal, and write real runnable code when asked to build.`;
+4. Only when you explicitly need to inspect or run something in your worktree for the user's task, include an exact tag such as [TOOL: fs_read | <path>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
+${handoffRule}`;
+      const teamContext = isDm
+        ? ""
+        : `\n\nSquad teammates in this room: ${state.bots.map(b => `@${b.name} (${b.role})`).join(", ")}.`;
+      return `You are ${bot.name} (${bot.role}) in the Vanaras software engineering workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${teamContext}\nBe concise, high-signal, and only write code or invoke tools when the user's task calls for it.`;
+    }
+
+    function extractInlineThinkBlocks(rawText) {
+      const thoughts = [];
+      let visible = String(rawText || "");
+      visible = visible.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
+        if (t && t.trim()) thoughts.push(t.trim());
+        return "";
+      });
+      const openIdx = visible.search(/<think>/i);
+      if (openIdx !== -1 && !/<\/think>/i.test(visible.slice(openIdx))) {
+        const openThink = visible.slice(openIdx).replace(/^<think>/i, "").trim();
+        if (openThink) thoughts.push(openThink);
+        visible = visible.slice(0, openIdx);
+      }
+      visible = visible.replace(/\[THOUGHT:\s*([^\]]+)\]/gi, (_, t) => {
+        if (t && t.trim()) thoughts.push(t.trim());
+        return "";
+      });
+      return {
+        visibleText: visible.trim(),
+        thoughtText: thoughts.join("\n\n").trim()
+      };
     }
 
     async function invokeAgentLifecycleHook(hook, payload = {}) {
@@ -3399,7 +3558,7 @@ Auto-save: enabled</pre>
 
     function insertTerminalBeforeStreaming(thread, msgObj) {
       if (!thread || !Array.isArray(thread.messages)) return;
-      const streamIdx = thread.messages.findIndex(m => m && m.isStreaming);
+      const streamIdx = thread.messages.findIndex(m => m && (m.isStreaming || m.streaming));
       if (streamIdx >= 0) {
         thread.messages.splice(streamIdx, 0, msgObj);
       } else {
@@ -3477,7 +3636,7 @@ Auto-save: enabled</pre>
             insertTerminalBeforeStreaming(thread, {
               senderType: "terminal",
               command: `[${bot.name} worktree] read ${arg1}`,
-              exitCode: res.ok ? 0 : 1,
+              exitCode: res.ok && data.ok !== false ? 0 : 1,
               text: readOut.slice(0, 1200)
             });
             observationsOut.push({ tool: `fs_read(${arg1})`, output: readOut.slice(0, 1800) });
@@ -3530,10 +3689,9 @@ Auto-save: enabled</pre>
     }
 
     const CLIENT_SESSION_ID = "client_" + Math.random().toString(36).slice(2, 10);
-    const activeTurnState = {};
 
-    function cancelActiveTurnForThread(thread) {
-      if (!thread) return;
+    function cancelActiveTurnForThread(thread, keepStoppedNote = false) {
+      if (!thread) return null;
       if (activeAutonomousTimers[thread.id]) {
         clearTimeout(activeAutonomousTimers[thread.id]);
         delete activeAutonomousTimers[thread.id];
@@ -3544,17 +3702,52 @@ Auto-save: enabled</pre>
         try { prevTurn.controller.abort(); } catch {}
         delete activeTurnState[thread.id];
       }
-      // Remove any unfinished streaming placeholder ("▍" or "⏳ Thinking...") so a stale turn never sits above a newer user message
+      delete activeWorkingThreads[thread.id];
+
+      // Finalize or clean up any in-flight streaming message
       thread.messages = thread.messages.filter(m => {
-        if (m && m.isStreaming) {
+        if (m && (m.isStreaming || m.streaming)) {
           m.isStreaming = false;
+          delete m.streaming;
           const t = (m.text || "").trim();
-          if (!t || t === "▍" || t.startsWith("⏳ Thinking")) {
+          const r = (m.reasoning || "").trim();
+          const isPlaceholder = !t || t === "▍" || t.startsWith("⏳ Thinking") || t.startsWith("Synthesizing squad");
+          if (isPlaceholder && !r) {
             return false;
+          }
+          if (isPlaceholder && r) {
+            m.text = keepStoppedNote
+              ? "*(Generation stopped by user — Chain-of-Thought preserved above)*"
+              : "*(Completed reasoning pass — see Internal Reasoning above)*";
+            m.thoughtOpen = true;
+          } else if (keepStoppedNote) {
+            m.thoughtOpen = true;
           }
         }
         return true;
       });
+
+      const controller = new AbortController();
+      const nextCtx = {
+        turnId: "turn_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        controller,
+        abortController: controller,
+        aborted: false
+      };
+      return nextCtx;
+    }
+
+    function stopActiveThreadGeneration(threadId = activeThreadId) {
+      const targetThread = state.threads.find(t => t.id === threadId) || getActiveThread();
+      if (!targetThread) return;
+      cancelActiveTurnForThread(targetThread, true);
+      saveState();
+      renderThreadList();
+      if (activeThreadId === targetThread.id) {
+        renderActiveThread();
+      }
+      updateComposerStopButton();
+      showToast("Stopped generation");
     }
 
     async function handleSendMessage() {
@@ -3566,18 +3759,18 @@ Auto-save: enabled</pre>
       const thread = getActiveThread();
       input.value = "";
 
-      cancelActiveTurnForThread(thread);
+      cancelActiveTurnForThread(thread, false);
 
       if (text.startsWith("/run ")) {
         const cmd = text.slice(5).trim();
-        thread.messages.push({ senderType: "user", text });
+        thread.messages.push({ id: "msg_u_" + Date.now(), senderType: "user", text });
         saveState();
         renderActiveThread();
         await executeBackgroundCommand(cmd);
         return;
       }
 
-      thread.messages.push({ senderType: "user", text });
+      thread.messages.push({ id: "msg_u_" + Date.now(), senderType: "user", text });
       saveState();
       renderThreadList();
       renderActiveThread();
@@ -3627,10 +3820,11 @@ Auto-save: enabled</pre>
       });
       if (!goal || !goal.trim()) return;
 
-      cancelActiveTurnForThread(thread);
+      cancelActiveTurnForThread(thread, false);
       state.autoTriggerEnabled = true;
       updateHeaderPills();
       thread.messages.push({
+        id: "msg_goal_" + Date.now(),
         senderType: "user",
         text: `[Autonomous Goal] ${goal.trim()}`
       });
@@ -3639,7 +3833,7 @@ Auto-save: enabled</pre>
       renderActiveThread();
 
       const leadBot = getActiveLeadBot();
-      await runBotTurnInThread(thread.id, leadBot, `${goal.trim()}\n\n(Autonomous Mode: execute any helpful [TOOL: ...] in your worktree and @mention the next specialist Vanara so they self-trigger automatically.)`, 0);
+      await runBotTurnInThread(thread.id, leadBot, `${goal.trim()}\n\n(Autonomous Mode: execute any helpful [TOOL: ...] in your worktree and include [HANDOFF: @R2] or [HANDOFF: @R3] when ready for the next specialist.)`, 0);
     }
 
     async function runBotTurnInThread(threadId, targetBot, triggerText, chainDepth = 0) {
@@ -3647,12 +3841,18 @@ Auto-save: enabled</pre>
       if (!targetThread || !targetBot) return;
 
       const turnController = new AbortController();
-      const turnCtx = { controller: turnController, aborted: false };
+      const turnCtx = {
+        turnId: "turn_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        controller: turnController,
+        abortController: turnController,
+        aborted: false
+      };
       activeTurnState[threadId] = turnCtx;
 
       const depthLabel = chainDepth > 0 ? ` (Auto-Turn ${chainDepth + 1})` : "";
       activeWorkingThreads[threadId] = `${targetBot.name} working in ${targetBot.worktreeBranch || "worktree"}${depthLabel}...`;
       renderThreadList();
+      updateComposerStopButton();
 
       let nextAutoBot = null;
       let nextAutoPrompt = "";
@@ -3660,10 +3860,12 @@ Auto-save: enabled</pre>
 
       // Insert live streaming message placeholder at the end of the thread (always below the latest user message)
       const liveMsg = {
+        id: `msg_bot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         senderType: "bot",
         botId: targetBot.id,
         text: "▍",
         reasoning: "",
+        thoughtOpen: true,
         isStreaming: true,
         hooksTrace,
         collabRound: chainDepth > 0 ? `Auto-Triggered • ${targetBot.worktreeBranch}` : targetBot.worktreeBranch,
@@ -3686,6 +3888,7 @@ Auto-save: enabled</pre>
           if (!turnCtx.aborted && compactRes && compactRes.compactedCount > 0 && Array.isArray(compactRes.keptMessages)) {
             targetThread.messages = [
               {
+                id: "msg_compact_" + Date.now(),
                 senderType: "terminal",
                 command: `[PreCompactRequest • ${targetBot.name}] Auto-compacted ${compactRes.compactedCount} turns`,
                 exitCode: 0,
@@ -3730,85 +3933,92 @@ Auto-save: enabled</pre>
           : enrichedTrigger;
 
         let lastRenderTs = 0;
+        let lastPersistTs = 0;
+        let priorStepsReasoning = "";
+        let priorStepsVisibleText = "";
+
         const onStreamProgress = (partialContent, partialReasoning) => {
           if (turnCtx.aborted) return;
-          let displayContent = partialContent || "";
-          let displayReasoning = partialReasoning || "";
-          // Extract any inline <think>...</think> or open <think>... block during streaming
-          displayContent = displayContent.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
-            if (t.trim()) displayReasoning = [displayReasoning, t.trim()].filter(Boolean).join("\n");
-            return "";
-          });
-          if (/^[\s]*<think>/i.test(displayContent) && !/<\/think>/i.test(displayContent)) {
-            const openThink = displayContent.replace(/^[\s]*<think>/i, "").trim();
-            if (openThink) displayReasoning = [displayReasoning, openThink].filter(Boolean).join("\n");
-            displayContent = "";
+          const split = extractInlineThinkBlocks(partialContent || "");
+          const currentStepReasoning = [partialReasoning || "", split.thoughtText || ""].filter(Boolean).join("\n\n").trim();
+          const fullReasoningNow = [priorStepsReasoning, currentStepReasoning].filter(Boolean).join("\n\n---\n\n").trim();
+          const fullVisibleNow = [priorStepsVisibleText, split.visibleText].filter(Boolean).join("\n\n").trim();
+
+          if (fullReasoningNow) {
+            liveMsg.reasoning = fullReasoningNow;
           }
-          displayContent = displayContent.trim();
-          if (displayContent) {
-            liveMsg.text = displayContent;
-          } else if (displayReasoning) {
+          if (fullVisibleNow) {
+            liveMsg.text = fullVisibleNow;
+          } else if (liveMsg.reasoning) {
             liveMsg.text = "⏳ Thinking...";
           } else {
             liveMsg.text = "▍";
           }
-          if (displayReasoning) liveMsg.reasoning = displayReasoning;
+
           const now = Date.now();
-          if (activeThreadId === threadId && now - lastRenderTs > 95) {
+          if (now - lastPersistTs > 1200) {
+            lastPersistTs = now;
+            try { localStorage.setItem("vanaras_v6_app", JSON.stringify(state)); } catch {}
+          }
+          if (activeThreadId === threadId && now - lastRenderTs > 85) {
             lastRenderTs = now;
-            renderActiveThread();
+            updateStreamingMessageDomInPlace(threadId, liveMsg);
           }
         };
 
-        // Capability #1: Multi-Step ReAct Tool Loop inside a single turn (up to 2 internal inspect->observe rounds)
+        // Capability #1: Multi-Step ReAct Tool Loop inside a single turn (up to 1 internal inspect->observe round)
         let reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 3500, onStreamProgress, turnController.signal);
         if (turnCtx.aborted) return;
-        let accumulatedReasoning = reply.reasoning || "";
+        let accumulatedReasoning = [reply.reasoning || "", liveMsg.reasoning || ""].filter(Boolean)[0] || "";
 
-        for (let reactStep = 0; reactStep < 2; reactStep++) {
+        for (let reactStep = 0; reactStep < 1; reactStep++) {
           if (turnCtx.aborted) return;
           const stepHook = await invokeAgentLifecycleHook("AfterAgentThoughtRequest", {
             botId: targetBot.id,
             botName: targetBot.name,
-            rawOutput: reply.content
+            rawOutput: reply.content,
+            reasoning: reply.reasoning || ""
           });
-          const stepCleaned = stepHook.cleanedOutput || reply.content;
+          const stepCleaned = stepHook.cleanedOutput !== undefined ? stepHook.cleanedOutput : reply.content;
+          if (stepHook.reasoning) {
+            accumulatedReasoning = [priorStepsReasoning, stepHook.reasoning].filter(Boolean).join("\n\n---\n\n").trim();
+            liveMsg.reasoning = accumulatedReasoning;
+          }
           const stepObservations = [];
           await processBotAutonomousActions(targetThread, targetBot, stepCleaned, hooksTrace, stepObservations);
 
-          // If the agent executed read/inspect tools (fs_read, git_status, git_diff) and hasn't emitted final ===FILE:=== yet, feed observation back in-turn
           const hasFilesAlready = parseDeliverableBlocks(stepCleaned).length > 0;
           if (stepObservations.length === 0 || hasFilesAlready) {
             reply.content = stepCleaned;
-            if (Array.isArray(stepHook.thoughts) && stepHook.thoughts.length > 0) {
-              accumulatedReasoning = [accumulatedReasoning, ...stepHook.thoughts].filter(Boolean).join("\n\n");
-            }
             break;
           }
 
+          // Preserve step 1's reasoning and visible text before starting step 2 so they are NEVER lost!
+          priorStepsReasoning = liveMsg.reasoning || accumulatedReasoning;
+          priorStepsVisibleText = stepCleaned.replace(/\[TOOL:[^\]]+\]/gi, "").trim();
           hooksTrace.push(`ReActObsStep(${reactStep + 1})`);
           const obsDigest = stepObservations.map(o => `[Tool Output: ${o.tool}]\n${o.output}`).join("\n\n");
           currentPrompt += `\n\nYour previous step invoked inspection tool(s). Real output from your worktree:\n${obsDigest}\n\nNow synthesize your final answer and/or ===FILE: ...=== deliverables based on this evidence:`;
-          reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 2200, onStreamProgress, turnController.signal);
+          reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 2500, onStreamProgress, turnController.signal);
           if (turnCtx.aborted) return;
-          if (reply.reasoning) {
-            accumulatedReasoning = [accumulatedReasoning, reply.reasoning].filter(Boolean).join("\n\n");
-          }
         }
 
         // Vanaras Hook 2: AfterAgentThoughtRequest
         const thoughtHook = await invokeAgentLifecycleHook("AfterAgentThoughtRequest", {
           botId: targetBot.id,
           botName: targetBot.name,
-          rawOutput: reply.content
+          rawOutput: reply.content,
+          reasoning: reply.reasoning || ""
         });
         if (turnCtx.aborted) return;
         hooksTrace.push("AfterAgentThought");
-        const combinedReasoning = [
-          accumulatedReasoning,
+        const finalStepReasoning = thoughtHook.reasoning || [
+          reply.reasoning || "",
           ...(Array.isArray(thoughtHook.thoughts) ? thoughtHook.thoughts : [])
-        ].filter(Boolean).join("\n\n");
-        const postThoughtContent = thoughtHook.cleanedOutput || reply.content;
+        ].filter(Boolean).join("\n\n").trim();
+        const combinedReasoning = [priorStepsReasoning, finalStepReasoning].filter(Boolean).join("\n\n---\n\n").trim() || liveMsg.reasoning || "";
+        const finalStepVisible = thoughtHook.cleanedOutput !== undefined ? thoughtHook.cleanedOutput : reply.content;
+        const postThoughtContent = [priorStepsVisibleText, finalStepVisible].filter(Boolean).join("\n\n").trim();
 
         const extracted = parseDeliverableBlocks(postThoughtContent);
         const extractedPatches = parseSurgicalPatches(postThoughtContent);
@@ -3878,7 +4088,8 @@ Auto-save: enabled</pre>
 
         const cleanDisplay = postThoughtContent
           .replace(/\[REMEMBER:\s*[^\]]+\]/gi, "")
-          .trim() || postThoughtContent;
+          .replace(/\[HANDOFF:\s*@?[a-zA-Z0-9_-]+\]/gi, "")
+          .trim() || (combinedReasoning ? "*(Completed reasoning pass — see Internal Reasoning above)*" : "(Completed)");
 
         liveMsg.isStreaming = false;
         liveMsg.text = cleanDisplay;
@@ -3891,20 +4102,28 @@ Auto-save: enabled</pre>
           showToast(`${targetBot.name} completed turn in ${targetThread.name || targetBot.name}`);
         }
 
+        const isShortGreeting = /^(hi|hello|hey|yo|sup|hola|namaste|thanks|thank you|ok|okay|ping|test|status)\b/i.test(triggerText.trim()) && triggerText.trim().length < 28;
+
         // Self-Healing Loop: If auto-verification of generated software failed, self-trigger targetBot to fix the error
         if (autoVerifyFailedFile && state.autoTriggerEnabled !== false && chainDepth < 2) {
           nextAutoBot = targetBot;
           nextAutoPrompt = `[PostToolUseFailure Auto-Heal] Executing '${autoVerifyFailedFile}' in your workspace exited with an error:\n\`\`\`\n${autoVerifyErrorOutput.slice(0, 800)}\n\`\`\`\nFix '${autoVerifyFailedFile}' and output a surgical ===PATCH: ${autoVerifyFailedFile}=== or corrected ===FILE: ${autoVerifyFailedFile}=== block so the build passes.`;
-        } else if (state.autoTriggerEnabled !== false && chainDepth < 2 && (targetBot.tools || []).includes("handoff")) {
-          // UPGRADE 1: Vanaras Self-Triggered Autonomous Chaining (SubagentStart / SubagentStop)
-          const mentionedBots = findMentionedBotsInText(cleanDisplay, targetBot.id);
-          if (mentionedBots.length > 0) {
-            nextAutoBot = mentionedBots[0];
+        } else if (
+          targetThread.type === "group" &&
+          !isShortGreeting &&
+          state.autoTriggerEnabled !== false &&
+          chainDepth < 2 &&
+          (targetBot.tools || []).includes("handoff")
+        ) {
+          // Strict Group-Only Explicit Handoff: NEVER auto-trigger another agent inside a 1-on-1 DM thread!
+          const handoffBots = findExplicitHandoffBots(postThoughtContent, targetBot.id);
+          if (handoffBots.length > 0) {
+            nextAutoBot = handoffBots[0];
             await invokeAgentLifecycleHook("SubagentStart", {
               botId: nextAutoBot.id,
               botName: nextAutoBot.name
             });
-            nextAutoPrompt = `@${nextAutoBot.name}, ${targetBot.name} just completed their turn and tagged you:\n"${cleanDisplay.slice(0, 500)}"\n\nContinue the work autonomously from your perspective (${nextAutoBot.role}) in your worktree (${nextAutoBot.worktreeBranch}).`;
+            nextAutoPrompt = `@${nextAutoBot.name}, ${targetBot.name} completed their step on the user's request ("${triggerText.slice(0, 240)}") and handed off to you:\n"${cleanDisplay.slice(0, 500)}"\n\nComplete your part (${nextAutoBot.role}) in your worktree (${nextAutoBot.worktreeBranch}).`;
           }
         }
       } catch (e) {
@@ -3919,14 +4138,16 @@ Auto-save: enabled</pre>
         }
         saveState();
         renderThreadList();
+        updateComposerStopButton();
         if (activeThreadId === threadId) {
           renderActiveThread();
         }
       }
 
-      if (!turnCtx.aborted && nextAutoBot && state.autoTriggerEnabled !== false) {
+      if (!turnCtx.aborted && nextAutoBot && state.autoTriggerEnabled !== false && targetThread.type === "group") {
         activeWorkingThreads[threadId] = `Auto-triggering @${nextAutoBot.name}...`;
         renderThreadList();
+        updateComposerStopButton();
         activeAutonomousTimers[threadId] = setTimeout(() => {
           delete activeAutonomousTimers[threadId];
           if (state.autoTriggerEnabled !== false && !turnCtx.aborted) {
@@ -3934,12 +4155,13 @@ Auto-save: enabled</pre>
           } else {
             delete activeWorkingThreads[threadId];
             renderThreadList();
+            updateComposerStopButton();
           }
         }, 1100);
       }
     }
 
-    async function queryBotLLM(bot, systemPrompt, userPrompt, maxTokens = 2000, onStreamDelta = null, abortSignal = undefined) {
+    async function queryBotLLM(bot, systemPrompt, userPrompt, maxTokens = 3000, onStreamDelta = null, abortSignal = undefined) {
       const modelToUse = (bot.provider === "local" && (!bot.model || bot.model === "auto"))
         ? detectedLocalModel
         : bot.model;
@@ -3992,10 +4214,12 @@ Auto-save: enabled</pre>
                 } catch {}
               }
             }
-            if (fullContent.trim() || fullReasoning.trim()) {
+            const split = extractInlineThinkBlocks(fullContent);
+            const combinedReasoning = [fullReasoning.trim(), split.thoughtText].filter(Boolean).join("\n\n").trim();
+            if (split.visibleText || combinedReasoning) {
               return {
-                content: fullContent.trim() || fullReasoning.trim(),
-                reasoning: fullContent.trim() && fullReasoning.trim() ? fullReasoning.trim() : ""
+                content: split.visibleText || "*(Completed reasoning pass — see Internal Reasoning above)*",
+                reasoning: combinedReasoning
               };
             }
           }
@@ -4015,14 +4239,16 @@ Auto-save: enabled</pre>
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
       const msg = data.choices?.[0]?.message || {};
-      const content = (msg.content || "").trim();
-      const reasoning = (msg.reasoning_content || "").trim();
+      const rawContent = (msg.content || "").trim();
+      const rawReasoning = (msg.reasoning_content || "").trim();
+      const split = extractInlineThinkBlocks(rawContent);
+      const combinedReasoning = [rawReasoning, split.thoughtText].filter(Boolean).join("\n\n").trim();
       if (typeof onStreamDelta === "function") {
-        onStreamDelta(content, reasoning);
+        onStreamDelta(rawContent, rawReasoning);
       }
       return {
-        content: content || (reasoning ? reasoning : "(Empty response)"),
-        reasoning: content && reasoning ? reasoning : ""
+        content: split.visibleText || (combinedReasoning ? "*(Completed reasoning pass — see Internal Reasoning above)*" : "(Empty response)"),
+        reasoning: combinedReasoning
       };
     }
 
@@ -4049,7 +4275,8 @@ Auto-save: enabled</pre>
       }
 
       const threadId = thread.id;
-      const turnCtx = cancelActiveTurnForThread(thread);
+      const turnCtx = cancelActiveTurnForThread(thread, false);
+      activeTurnState[threadId] = turnCtx;
 
       thread.messages.push({
         id: "msg_collab_goal_" + Date.now(),
@@ -4081,6 +4308,7 @@ Auto-save: enabled</pre>
           const bot = collabBots[i];
           activeWorkingThreads[threadId] = `Collab (${i + 1}/${collabBots.length}): ${bot.name}...`;
           renderThreadList();
+          updateComposerStopButton();
 
           const priorText = transcript.length === 0
             ? "(You are opening the collaboration. Propose a crisp architecture and tag the next Vanara.)"
@@ -4100,8 +4328,9 @@ Auto-save: enabled</pre>
             botId: bot.id,
             text: "Synthesizing squad contribution…",
             reasoning: "",
+            thoughtOpen: true,
             collabRound: `Round ${i + 1}/${collabBots.length} • ${bot.worktreeBranch}`,
-            streaming: true
+            isStreaming: true
           };
           thread.messages.push(liveMsg);
           if (activeThreadId === threadId) renderActiveThread();
@@ -4110,30 +4339,27 @@ Auto-save: enabled</pre>
           const res = await queryBotLLM(bot, sys, usr, isLast ? 3500 : 1800, (partialText, partialReason) => {
             if (turnCtx.aborted) return;
             const split = extractInlineThinkBlocks(partialText || "");
-            liveMsg.text = split.visibleText || (split.thoughtText ? "Reasoning through squad architecture…" : "Synthesizing squad contribution…");
-            liveMsg.reasoning = [partialReason || "", split.thoughtText || ""].filter(Boolean).join("\n\n").trim();
+            liveMsg.text = split.visibleText || (split.thoughtText || partialReason ? "Reasoning through squad architecture…" : "Synthesizing squad contribution…");
+            const r = [partialReason || "", split.thoughtText || ""].filter(Boolean).join("\n\n").trim();
+            if (r) liveMsg.reasoning = r;
             const now = Date.now();
-            if (activeThreadId === threadId && now - lastRenderTs > 95) {
+            if (activeThreadId === threadId && now - lastRenderTs > 85) {
               lastRenderTs = now;
-              renderActiveThread();
+              updateStreamingMessageDomInPlace(threadId, liveMsg);
             }
           }, turnCtx.abortController.signal);
 
-          if (turnCtx.aborted) {
-            const idx = thread.messages.indexOf(liveMsg);
-            if (idx >= 0) thread.messages.splice(idx, 1);
-            return;
-          }
+          if (turnCtx.aborted) return;
 
-          delete liveMsg.streaming;
-          const thoughtHook = await invokeLifecycleHook("AfterAgentThoughtRequest", {
+          liveMsg.isStreaming = false;
+          const thoughtHook = await invokeAgentLifecycleHook("AfterAgentThoughtRequest", {
             botId: bot.id,
             botName: bot.name,
-            content: res.content,
+            rawOutput: res.content,
             reasoning: res.reasoning || ""
           });
-          const cleanedContent = thoughtHook?.cleanedContent || res.content;
-          const cleanedReasoning = thoughtHook?.reasoning !== undefined ? thoughtHook.reasoning : res.reasoning;
+          const cleanedContent = thoughtHook?.cleanedOutput || res.content;
+          const cleanedReasoning = thoughtHook?.reasoning || res.reasoning || liveMsg.reasoning || "";
 
           let displayContent = cleanedContent;
           let hasDeliverables = false;
@@ -4173,16 +4399,19 @@ Auto-save: enabled</pre>
       } catch (e) {
         if (e?.name === "AbortError" || turnCtx.aborted) return;
         thread.messages.push({
+          id: "msg_collab_err_" + Date.now(),
           senderType: "bot",
           botId: collabBots[0].id,
           text: `Collab error: ${e.message}`
         });
       } finally {
-        if (activeTurnContextByThread[threadId]?.turnId === turnCtx.turnId) {
+        if (activeTurnState[threadId] === turnCtx) {
+          delete activeTurnState[threadId];
           delete activeWorkingThreads[threadId];
         }
         saveState();
         renderThreadList();
+        updateComposerStopButton();
         if (activeThreadId === threadId) renderActiveThread();
       }
     }

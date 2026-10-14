@@ -1082,20 +1082,22 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 2E. Vanaras Local-Exec-Daemon Lifecycle Hooks & PreCompact Engine (/api/agent/hooks)
-  if (req.method === "POST" && req.url === "/api/agent/hooks") {
+  if (req.method === "POST" && (req.url === "/api/agent/hooks" || req.url === "/api/agent/hook")) {
     try {
+      const bodyObj = await readJsonBody(req);
       const {
-        hook = "BeforeSubmitPromptRequest",
         botId = "bot_r1",
         botName = "R1",
         prompt = "",
-        rawOutput = "",
         toolName = "",
         allowedTools = [],
         disabledTools = [],
         mcpCustomInstructions = "",
         messages = []
-      } = await readJsonBody(req);
+      } = bodyObj;
+      const hook = bodyObj.hook || bodyObj.hookType || "BeforeSubmitPromptRequest";
+      const rawOutput = bodyObj.rawOutput !== undefined ? bodyObj.rawOutput : (bodyObj.content || "");
+      const priorReasoning = bodyObj.reasoning || "";
 
       const wt = ensureAgentWorktree(botId, botName);
       const timestamp = new Date().toISOString();
@@ -1103,9 +1105,15 @@ const server = http.createServer(async (req, res) => {
       // 1. BeforeSubmitPromptRequest: records worktree & AgentStore manifest metadata and applies optional MCP custom instructions
       if (hook === "BeforeSubmitPromptRequest") {
         const files = listAgentCodeFiles(wt.codeDir).map(f => f.name);
+        let sanitizedPrompt = String(prompt || "");
+        let redactions = 0;
+        sanitizedPrompt = sanitizedPrompt.replace(/\b(sk-[a-zA-Z0-9_-]{16,}|ghp_[a-zA-Z0-9]{20,}|AIza[0-9A-Za-z-_]{25,})\b/g, () => {
+          redactions++;
+          return "[REDACTED_SECRET]";
+        });
         const enrichedPrompt = mcpCustomInstructions
-          ? `${prompt}\n\n[Additional Instructions: ${mcpCustomInstructions}]`
-          : prompt;
+          ? `${sanitizedPrompt}\n\n[Additional Instructions: ${mcpCustomInstructions}]`
+          : sanitizedPrompt;
         broadcastEvent("agent_hook", { hook, botId, botName, branch: wt.branch, timestamp });
         return sendJson(res, 200, {
           ok: true,
@@ -1113,35 +1121,45 @@ const server = http.createServer(async (req, res) => {
           botId,
           branch: wt.branch,
           sandboxManifest: { branch: wt.branch, codeDir: wt.codeDir, files },
+          sanitizedPrompt,
+          redactions,
           enrichedPrompt,
           timestamp
         });
       }
 
-      // 2. AfterAgentThoughtRequest: extracts <think>...</think> or [THOUGHT: ...] internal reasoning
+      // 2. AfterAgentThoughtRequest: extracts <think>...</think> or trailing unclosed <think>... or [THOUGHT: ...] internal reasoning
       if (hook === "AfterAgentThoughtRequest") {
         const thoughts = [];
+        if (priorReasoning && String(priorReasoning).trim()) {
+          thoughts.push(String(priorReasoning).trim());
+        }
         let cleanedOutput = String(rawOutput || "");
         cleanedOutput = cleanedOutput.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
           if (t.trim()) thoughts.push(t.trim());
           return "";
         });
-        // If an unclosed <think> tag exists at the start of the output, extract it
-        if (/^[\s]*<think>/i.test(cleanedOutput) && !/<\/think>/i.test(cleanedOutput)) {
-          const rawThink = cleanedOutput.replace(/^[\s]*<think>/i, "").trim();
+        // If an unclosed <think> tag exists anywhere in the remaining output, extract from <think> to end
+        const openIdx = cleanedOutput.search(/<think>/i);
+        if (openIdx !== -1 && !/<\/think>/i.test(cleanedOutput.slice(openIdx))) {
+          const rawThink = cleanedOutput.slice(openIdx).replace(/^<think>/i, "").trim();
           if (rawThink) thoughts.push(rawThink);
-          cleanedOutput = "";
+          cleanedOutput = cleanedOutput.slice(0, openIdx);
         }
         cleanedOutput = cleanedOutput.replace(/\[THOUGHT:\s*([^\]]+)\]/gi, (_, t) => {
           if (t.trim()) thoughts.push(t.trim());
           return "";
         });
+        const finalCleaned = cleanedOutput.trim();
+        const combinedReasoning = thoughts.join("\n\n").trim();
         broadcastEvent("agent_hook", { hook, botId, botName, thoughtCount: thoughts.length, timestamp });
         return sendJson(res, 200, {
           ok: true,
           hook,
           thoughts,
-          cleanedOutput: cleanedOutput.trim(),
+          reasoning: combinedReasoning,
+          cleanedOutput: finalCleaned,
+          cleanedContent: finalCleaned,
           timestamp
         });
       }
@@ -1536,7 +1554,7 @@ const server = http.createServer(async (req, res) => {
     return `${trimmed}/v1`;
   }
 
-  async function fetchWithLocalFallback(cleanBase, pathSuffix, init = {}, connectTimeoutMs = 3500) {
+  async function fetchWithLocalFallback(cleanBase, pathSuffix, init = {}, primaryTimeoutMs = 90000, parentSignal = null) {
     const candidates = [
       cleanBase,
       "http://192.168.68.102:1234/v1",
@@ -1546,23 +1564,34 @@ const server = http.createServer(async (req, res) => {
     ];
     const seen = new Set();
     let lastError = null;
+    let isFirst = true;
     for (const base of candidates) {
       const norm = normalizeOpenAIBaseUrl(base);
       if (seen.has(norm)) continue;
       seen.add(norm);
       const targetUrl = norm.endsWith(pathSuffix) ? norm : `${norm}${pathSuffix}`;
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), connectTimeoutMs);
+      const timeoutMs = isFirst ? primaryTimeoutMs : 2500;
+      isFirst = false;
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      if (parentSignal) {
+        if (parentSignal.aborted) {
+          clearTimeout(timer);
+          ctrl.abort();
+        } else {
+          parentSignal.addEventListener("abort", () => ctrl.abort(), { once: true });
+        }
+      }
       try {
         const res = await fetch(targetUrl, { ...init, signal: ctrl.signal });
         clearTimeout(timer);
         if (res.ok) return res;
         lastError = new Error(`HTTP ${res.status} from ${targetUrl}`);
-        // If this was the primary requested base and it responded with an HTTP error (e.g. 400), return it if no fallback works
         if (norm === cleanBase && candidates.length === 1) return res;
       } catch (err) {
         clearTimeout(timer);
         lastError = err;
+        if (parentSignal?.aborted) throw err;
       }
     }
     throw lastError || new Error("All local LLM endpoints unreachable");
@@ -1570,6 +1599,12 @@ const server = http.createServer(async (req, res) => {
 
   // 6A. Real-Time Token & Thought Streaming Proxy (POST /api/llm/stream)
   if (req.method === "POST" && req.url === "/api/llm/stream") {
+    const streamAbortCtrl = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        try { streamAbortCtrl.abort(); } catch {}
+      }
+    });
     try {
       const {
         provider = "local",
@@ -1578,7 +1613,7 @@ const server = http.createServer(async (req, res) => {
         model = "",
         messages = [],
         temperature = 0.7,
-        max_tokens = 2500
+        max_tokens = 3500
       } = await readJsonBody(req);
 
       const cleanBase = normalizeOpenAIBaseUrl(baseUrl);
@@ -1589,10 +1624,11 @@ const server = http.createServer(async (req, res) => {
       const reqInit = {
         method: "POST",
         headers,
-        body: JSON.stringify({ model, messages, temperature, max_tokens, stream: true })
+        body: JSON.stringify({ model, messages, temperature, max_tokens, stream: true }),
+        signal: streamAbortCtrl.signal
       };
       const upstream = provider === "local"
-        ? await fetchWithLocalFallback(cleanBase, "/chat/completions", reqInit, 8000)
+        ? await fetchWithLocalFallback(cleanBase, "/chat/completions", reqInit, 90000, streamAbortCtrl.signal)
         : await fetch(chatUrl, reqInit);
 
       if (!upstream.ok || !upstream.body) {

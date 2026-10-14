@@ -2435,6 +2435,10 @@ Auto-save: enabled</pre>
               m.text = rsn.length > 900 ? rsn.slice(-900).trim() : rsn;
             }
           }
+          // Strip E2E test harness sleep 20 terminal messages that leaked via SSE fallback
+          if (m.senderType === "terminal" && String(m.command || "").trim() === "sleep 20") {
+            continue;
+          }
           // Strip auto-triggered messages from other bots that intruded into a 1-on-1 DM thread
           if (t.type === "dm" && m.senderType === "bot" && m.botId && m.botId !== t.botId && String(m.collabRound || "").includes("Auto-Triggered")) {
             continue;
@@ -6340,7 +6344,10 @@ ${handoffRule}
         es.addEventListener("room_message", ev => {
           const payload = JSON.parse(ev.data);
           if (payload.clientId && payload.clientId === CLIENT_SESSION_ID) return;
-          const targetThread = state.threads.find(t => t.id === payload.threadId) || getActiveThread();
+          if (String(payload.threadId || "").startsWith("thread_test")) return;
+          const targetThread = payload.threadId
+            ? state.threads.find(t => t.id === payload.threadId)
+            : getActiveThread();
           if (targetThread && payload.text) {
             targetThread.messages.push({
               senderType: payload.senderType || "user",
@@ -6359,7 +6366,10 @@ ${handoffRule}
 
         es.addEventListener("job_finished", ev => {
           const data = JSON.parse(ev.data);
-          const targetThread = state.threads.find(t => t.id === data.threadId) || getActiveThread();
+          if (String(data.threadId || "").startsWith("thread_test")) return;
+          const targetThread = data.threadId
+            ? state.threads.find(t => t.id === data.threadId)
+            : getActiveThread();
           if (targetThread) {
             if (!activeTurnState[targetThread.id]) {
               delete activeWorkingThreads[targetThread.id];

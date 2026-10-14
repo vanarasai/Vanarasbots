@@ -10,7 +10,6 @@
 @implementation AppDelegate
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
-    [NSApp setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
     [self setupMainMenu];
     [self ensureBackendServerRunning];
 
@@ -18,7 +17,8 @@
     NSWindowStyleMask style = NSWindowStyleMaskTitled |
                               NSWindowStyleMaskClosable |
                               NSWindowStyleMaskMiniaturizable |
-                              NSWindowStyleMaskResizable;
+                              NSWindowStyleMaskResizable |
+                              NSWindowStyleMaskFullSizeContentView;
 
     self.window = [[NSWindow alloc] initWithContentRect:frame
                                               styleMask:style
@@ -26,8 +26,9 @@
                                                   defer:NO];
     [self.window center];
     [self.window setTitle:@"Vanaras Pro — Multi-Agent Engineering Workbench"];
+    [self.window setTitleVisibility:NSWindowTitleHidden];
     [self.window setTitlebarAppearsTransparent:YES];
-    [self.window setBackgroundColor:[NSColor colorWithSRGBRed:0.05 green:0.05 blue:0.05 alpha:1.0]];
+    [self.window setBackgroundColor:[NSColor colorWithSRGBRed:0.95 green:0.96 blue:0.97 alpha:1.0]];
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     [config setApplicationNameForUserAgent:@"VanarasNativeMacApp/2.1"];

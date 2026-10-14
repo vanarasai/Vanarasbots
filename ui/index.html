@@ -1,32 +1,101 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>Vanaras</title>
+  <title>Vanaras Pro</title>
   <style>
-    :root {
-      color-scheme: dark;
-      --bg-sidebar: #09090b;
-      --bg-main: #0c0c0f;
-      --bg-workbench: #0a0a0d;
-      --bg-card: #141418;
-      --bg-card-hover: #1b1b21;
-      --bg-pill: #18181d;
-      --bg-input: #141418;
-      --border-subtle: #1e1e24;
-      --border-card: #26262f;
-      --border-focus: #3f3f4e;
-      --text-primary: #f2f2f7;
-      --text-secondary: #9d9da8;
-      --text-muted: #696975;
+    /* ===================================================================== */
+    /* DUAL THEME SYSTEM: LIGHT (WHITE) & DARK THEME                         */
+    /* ===================================================================== */
+    :root,
+    html[data-theme="light"] {
+      color-scheme: light;
+      --bg-sidebar: #f3f5f8;
+      --bg-main: #f9fafb;
+      --bg-workbench: #f3f5f8;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #ffffff;
+      --bg-surface-subtle: #f1f4f9;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f5f8ff;
+      --bg-pill: #ffffff;
+      --bg-input: #ffffff;
+      --bg-code: #fbfcfe;
+      --bg-gutter: #f4f6fa;
+      --bg-active-row: #e3eeff;
+      --border-subtle: #e5e9f0;
+      --border-card: #e2e7f0;
+      --border-focus: #1d7dfa;
+      --text-primary: #111827;
+      --text-secondary: #4b5563;
+      --text-muted: #7c8596;
+      --accent-blue: #1d7dfa;
+      --accent-blue-hover: #1567d8;
+      --accent-blue-soft: #e6f0ff;
+      --accent-blue-text: #1559b8;
       --accent-red: #e13639;
-      --accent-red-bright: #f42c40;
-      --accent-blue: #3b82f6;
-      --accent-amber: #f59e0b;
       --accent-emerald: #10b981;
-      --accent-indigo: #6366f1;
+      --accent-amber: #f59e0b;
+      --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.03);
+      --shadow-composer: 0 8px 26px rgba(15, 23, 42, 0.06), 0 1px 4px rgba(15, 23, 42, 0.04);
+      --shadow-modal: 0 24px 60px rgba(15, 23, 42, 0.18);
+      --scrollbar-thumb: #cbd5e1;
+
+      /* Agent Badge Palette (Light) */
+      --r1-bg: #f9bdb6;
+      --r1-text: #591c15;
+      --r2-bg: #fde38c;
+      --r2-text: #5c4004;
+      --r3-bg: #bfd8fe;
+      --r3-text: #183a6d;
+      --r4-bg: #dcd3fe;
+      --r4-text: #391e74;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg-sidebar: #0e1015;
+      --bg-main: #13161c;
+      --bg-workbench: #0f1218;
+      --bg-surface: #181c24;
+      --bg-surface-elevated: #1d222c;
+      --bg-surface-subtle: #141820;
+      --bg-card: #181c24;
+      --bg-card-hover: #1f2531;
+      --bg-pill: #1b2029;
+      --bg-input: #171b23;
+      --bg-code: #12151c;
+      --bg-gutter: #101319;
+      --bg-active-row: rgba(29, 125, 250, 0.18);
+      --border-subtle: #232936;
+      --border-card: #283040;
+      --border-focus: #3b82f6;
+      --text-primary: #f3f5f8;
+      --text-secondary: #a2abb9;
+      --text-muted: #6e7787;
+      --accent-blue: #2581ff;
+      --accent-blue-hover: #3b8eff;
+      --accent-blue-soft: rgba(37, 129, 255, 0.16);
+      --accent-blue-text: #7cc0ff;
+      --accent-red: #f04447;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --shadow-card: 0 4px 14px rgba(0, 0, 0, 0.28);
+      --shadow-composer: 0 10px 30px rgba(0, 0, 0, 0.42);
+      --shadow-modal: 0 24px 70px rgba(0, 0, 0, 0.72);
+      --scrollbar-thumb: #2e3646;
+
+      /* Agent Badge Palette (Dark) */
+      --r1-bg: rgba(248, 113, 113, 0.22);
+      --r1-text: #fca5a5;
+      --r2-bg: rgba(251, 191, 36, 0.22);
+      --r2-text: #fde68a;
+      --r3-bg: rgba(96, 165, 250, 0.22);
+      --r3-text: #93c5fd;
+      --r4-bg: rgba(167, 139, 250, 0.22);
+      --r4-text: #c4b5fd;
     }
 
     * {
@@ -46,6 +115,7 @@
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
       user-select: none;
+      transition: background-color 0.15s ease, color 0.15s ease;
     }
 
     code, pre, .mono {
@@ -81,50 +151,51 @@
       background: transparent;
     }
     ::-webkit-scrollbar-thumb {
-      background: #272730;
+      background: var(--scrollbar-thumb);
       border-radius: 999px;
     }
-    ::-webkit-scrollbar-thumb:hover {
-      background: #3b3b48;
-    }
 
-    /* 3-PANE WORKBENCH SHELL */
+    /* ===================================================================== */
+    /* 3-PANE DESKTOP WORKBENCH SHELL                                        */
+    /* ===================================================================== */
     .app-shell {
       display: flex;
       width: 100vw;
       height: 100vh;
-      overflow: hidden;
       background: var(--bg-main);
+      overflow: hidden;
     }
 
-    /* =================================================================== */
-    /* PANE 1: LEFT NAVIGATION & AGENT FLEET SIDEBAR                       */
-    /* =================================================================== */
+    /* ===================================================================== */
+    /* PANE 1: LEFT SIDEBAR (MATCHING MOCKUP)                                */
+    /* ===================================================================== */
     .sidebar {
-      width: 268px;
+      width: 248px;
+      min-width: 248px;
       height: 100%;
       background: var(--bg-sidebar);
       border-right: 1px solid var(--border-subtle);
       display: flex;
       flex-direction: column;
-      flex-shrink: 0;
+      z-index: 20;
     }
 
-    .sidebar-header {
-      height: 52px;
-      padding: 0 14px;
-      border-bottom: 1px solid var(--border-subtle);
+    .sidebar-top-chrome {
+      padding: 12px 14px 4px 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      flex-shrink: 0;
+      -webkit-app-region: drag;
+      min-height: 36px;
+    }
+    .sidebar-top-chrome button {
+      -webkit-app-region: no-drag;
     }
 
     .traffic-lights {
       display: flex;
       align-items: center;
       gap: 7px;
-      padding-left: 2px;
     }
     .tl-dot {
       width: 11px;
@@ -132,199 +203,171 @@
       border-radius: 50%;
       display: inline-block;
     }
-    .tl-red { background: #ff5f57; }
+    .tl-red    { background: #ff5f57; }
     .tl-yellow { background: #febc2e; }
-    .tl-green { background: #28c840; }
+    .tl-green  { background: #28c840; }
+
+    .sidebar-brand-bar {
+      padding: 8px 14px 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
 
     .brand-lockup {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 9px;
+      font-size: 16.5px;
       font-weight: 700;
-      font-size: 13.5px;
-      color: #f4f4f8;
-      letter-spacing: -0.02em;
+      letter-spacing: -0.025em;
+      color: var(--text-primary);
     }
-    .brand-version-tag {
-      font-size: 9.5px;
-      font-weight: 600;
-      padding: 1px 5px;
-      border-radius: 4px;
-      background: rgba(225, 54, 57, 0.16);
-      border: 1px solid rgba(225, 54, 57, 0.35);
-      color: #fda4af;
-      letter-spacing: 0.02em;
+
+    .brand-logo-mark {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-primary);
     }
 
     .sidebar-actions {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       position: relative;
     }
 
     .circle-icon-btn {
-      width: 28px;
-      height: 28px;
-      border-radius: 8px;
-      background: #15151a;
-      border: 1px solid #25252e;
-      color: #b8b8c4;
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-secondary);
       display: flex;
       align-items: center;
       justify-content: center;
       transition: all 0.14s ease;
     }
     .circle-icon-btn:hover {
-      background: #22222b;
-      color: #ffffff;
-      border-color: #363644;
+      background: var(--bg-surface);
+      border-color: var(--border-card);
+      color: var(--text-primary);
     }
 
-    /* Repo & Memory Context Card in Sidebar */
+    /* Mounted Folder Pill Card (e.g. [ 📁 vanaras  › ]) */
     .sidebar-repo-card {
-      margin: 10px 10px 6px 10px;
-      padding: 8px 10px;
+      margin: 0 12px 12px 12px;
+    }
+    .sidebar-repo-btn {
+      width: 100%;
+      height: 38px;
+      padding: 0 12px;
       border-radius: 10px;
-      background: #121217;
-      border: 1px solid #22222b;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      box-shadow: var(--shadow-card);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 6px;
-    }
-    .sidebar-repo-btn {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      min-width: 0;
-      font-size: 11.5px;
+      font-size: 13px;
       font-weight: 600;
-      color: #e4e4ec;
-      padding: 3px 6px;
-      border-radius: 6px;
-      transition: background 0.12s ease;
+      color: var(--text-primary);
+      transition: all 0.14s ease;
     }
     .sidebar-repo-btn:hover {
-      background: #1d1d25;
+      border-color: var(--accent-blue);
     }
 
     .search-box-wrap {
-      padding: 4px 10px 6px 10px;
+      padding: 0 12px 8px 12px;
     }
     .search-input {
       width: 100%;
-      height: 30px;
-      background: #131318;
-      border: 1px solid #25252e;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
       border-radius: 8px;
-      padding: 0 10px;
+      padding: 6px 10px;
       font-size: 12px;
       color: var(--text-primary);
     }
     .search-input:focus {
-      border-color: #3e3e4d;
+      border-color: var(--accent-blue);
     }
 
-    .sidebar-section-label {
-      padding: 10px 12px 4px 12px;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #686875;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    /* THREAD LIST */
+    /* Sidebar Section Labels & Thread Rows */
     .thread-list {
       flex: 1;
       overflow-y: auto;
-      padding: 2px 8px 12px 8px;
+      padding: 2px 10px 10px 10px;
       display: flex;
       flex-direction: column;
       gap: 2px;
     }
 
+    .sidebar-section-label {
+      padding: 10px 8px 5px 8px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
     .thread-row {
       width: 100%;
-      padding: 7px 9px;
-      border-radius: 10px;
       display: flex;
       align-items: center;
       gap: 10px;
+      padding: 8px 10px;
+      border-radius: 11px;
       text-align: left;
-      transition: background 0.12s ease, border-color 0.12s ease;
-      border: 1px solid transparent;
+      transition: all 0.12s ease;
       position: relative;
+      border: 1px solid transparent;
     }
     .thread-row:hover {
-      background: #15151b;
+      background: var(--bg-surface);
     }
     .thread-row.active {
-      background: #1c1c24;
-      border-color: #2c2c38;
+      background: var(--bg-active-row);
+      border-color: rgba(29, 125, 250, 0.18);
     }
-    .thread-delete-btn {
-      width: 18px;
-      height: 18px;
-      border-radius: 5px;
+
+    /* Clean Circular Agent Badges (R1, R2, R3, R4) */
+    .agent-circle-badge {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      color: #787886;
-      opacity: 0;
-      transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
-    }
-    .thread-row:hover .thread-delete-btn {
-      opacity: 0.85;
-    }
-    .thread-delete-btn:hover {
-      background: rgba(248, 113, 113, 0.16);
-      color: #f87171;
-    }
-
-    .thread-avatar-wrap {
-      width: 34px;
-      height: 34px;
-      position: relative;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    /* Group 2x2 Cluster Avatar */
-    .group-cluster {
-      width: 34px;
-      height: 34px;
-      position: relative;
-    }
-    .cluster-item {
-      position: absolute;
-      border-radius: 50%;
-      box-shadow: 0 0 0 1.5px var(--bg-sidebar);
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .cluster-tl {
-      width: 16px;
-      height: 16px;
-      top: 0;
-      left: 0;
-      background: #1d1d24;
-      color: #b0b0bc;
-      font-size: 7.5px;
+      font-size: 12px;
       font-weight: 700;
-      border: 1px solid #2e2e38;
+      letter-spacing: -0.02em;
+      flex-shrink: 0;
     }
-    .cluster-tr { width: 17px; height: 17px; top: 0; right: 0; }
-    .cluster-bl { width: 16px; height: 16px; bottom: 0; left: 0; }
-    .cluster-br { width: 18px; height: 18px; bottom: 0; right: 0; }
+    .agent-badge-r1 { background: var(--r1-bg); color: var(--r1-text); }
+    .agent-badge-r2 { background: var(--r2-bg); color: var(--r2-text); }
+    .agent-badge-r3 { background: var(--r3-bg); color: var(--r3-text); }
+    .agent-badge-r4 { background: var(--r4-bg); color: var(--r4-text); }
+
+    .squad-circle-badge {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      background: rgba(29, 125, 250, 0.12);
+      color: var(--accent-blue);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
 
     .thread-meta {
       flex: 1;
@@ -337,107 +380,99 @@
       gap: 6px;
     }
     .thread-title {
-      font-size: 12.5px;
+      font-size: 13px;
       font-weight: 600;
-      color: #f0f0f6;
+      color: var(--text-primary);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      display: flex;
-      align-items: center;
-      gap: 6px;
     }
-    .thread-branch-tag {
-      font-size: 9.5px;
-      font-weight: 500;
-      padding: 0 5px;
-      border-radius: 4px;
-      background: rgba(56, 189, 248, 0.1);
-      border: 1px solid rgba(56, 189, 248, 0.24);
-      color: #7dd3fc;
+    .thread-row.active .thread-title {
+      color: var(--accent-blue-text);
     }
+
     .thread-preview {
       font-size: 11.5px;
-      color: #7d7d89;
+      color: var(--text-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       margin-top: 1px;
     }
     .thread-row.active .thread-preview {
-      color: #a4a4b2;
+      color: var(--accent-blue-text);
+      opacity: 0.85;
     }
 
-    .unread-badge {
-      min-width: 17px;
-      height: 17px;
-      padding: 0 5px;
-      border-radius: 999px;
-      background: var(--accent-red-bright);
-      color: #fff;
-      font-size: 10px;
-      font-weight: 700;
+    .online-green-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10b981;
+      flex-shrink: 0;
+    }
+
+    .thread-delete-btn {
+      opacity: 0;
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      flex-shrink: 0;
+      color: var(--text-muted);
+      font-size: 12px;
+      transition: all 0.12s ease;
+    }
+    .thread-row:hover .thread-delete-btn {
+      opacity: 1;
+    }
+    .thread-delete-btn:hover {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
     }
 
-    /* SIDEBAR FOOTER */
+    /* Sidebar Footer — Local Model Connected Card */
     .sidebar-footer {
-      padding: 10px;
+      padding: 10px 12px 12px 12px;
       border-top: 1px solid var(--border-subtle);
-      background: #070709;
+    }
+    .local-model-card {
+      width: 100%;
+      padding: 9px 11px;
+      border-radius: 11px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      box-shadow: var(--shadow-card);
       display: flex;
       align-items: center;
-      gap: 8px;
-      flex-shrink: 0;
+      justify-content: space-between;
+      gap: 10px;
+      text-align: left;
+      transition: all 0.14s ease;
     }
-    .vp-avatar-btn {
-      width: 32px;
-      height: 32px;
+    .local-model-card:hover {
+      border-color: var(--accent-blue);
+    }
+    .local-model-icon {
+      width: 30px;
+      height: 30px;
       border-radius: 8px;
-      background: linear-gradient(135deg, #23232c, #17171d);
-      border: 1px solid #2e2e3a;
-      color: #f0f0f6;
-      font-size: 11px;
-      font-weight: 700;
+      background: var(--bg-surface-subtle);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transition: border-color 0.15s ease;
-    }
-    .vp-avatar-btn:hover {
-      border-color: #4a4a5a;
     }
 
-    .connect-apps-pill {
-      flex: 1;
-      height: 32px;
-      border-radius: 8px;
-      background: #121217;
-      border: 1px solid #24242e;
-      padding: 0 10px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 11.5px;
-      font-weight: 500;
-      color: #dedee6;
-      transition: all 0.15s ease;
-    }
-    .connect-apps-pill:hover {
-      background: #1a1a22;
-      border-color: #363644;
-    }
-
-    /* =================================================================== */
-    /* PANE 2: CENTER MULTI-AGENT MISSION CONTROL & STREAM                 */
-    /* =================================================================== */
+    /* ===================================================================== */
+    /* PANE 2: CENTER STREAM & MISSION CONTROL                               */
+    /* ===================================================================== */
     .main-pane {
       flex: 1;
-      min-width: 420px;
+      min-width: 440px;
       height: 100%;
       background: var(--bg-main);
       display: flex;
@@ -446,541 +481,625 @@
       overflow: hidden;
     }
 
-    /* DOCKED STRUCTURED TOP TOOLBAR (NO MORE FLOATING SOUP) */
+    /* Top Header Bar */
     .chat-header {
-      height: 52px;
-      padding: 0 18px;
-      background: rgba(12, 12, 15, 0.92);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
+      height: 60px;
+      padding: 0 20px;
+      background: var(--bg-surface);
       border-bottom: 1px solid var(--border-subtle);
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      z-index: 20;
       flex-shrink: 0;
+      z-index: 25;
+      -webkit-app-region: drag;
     }
+    .chat-header button {
+      -webkit-app-region: no-drag;
+    }
+
     .chat-header-slot {
       display: flex;
       align-items: center;
-      gap: 7px;
-      min-width: 0;
+      gap: 8px;
     }
 
     .identity-pill {
-      height: 32px;
-      padding: 0 11px 0 7px;
-      border-radius: 8px;
-      background: #15151b;
-      border: 1px solid #262630;
       display: flex;
       align-items: center;
-      gap: 8px;
-      transition: all 0.14s ease;
-      min-width: 0;
+      gap: 11px;
+      padding: 4px 8px 4px 4px;
+      border-radius: 10px;
+      text-align: left;
+      transition: background 0.12s ease;
     }
     .identity-pill:hover {
-      background: #1d1d25;
-      border-color: #383846;
+      background: var(--bg-surface-subtle);
     }
     .identity-pill-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: #f5f5fa;
-      white-space: nowrap;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.015em;
+      line-height: 1.2;
     }
     .identity-pill-sub {
-      font-size: 11px;
-      color: #888896;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 220px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      line-height: 1.2;
     }
 
     .header-tool-pill {
-      height: 30px;
-      padding: 0 10px;
-      border-radius: 7px;
-      background: #15151b;
-      border: 1px solid #262630;
-      color: #c2c2ce;
-      font-size: 11.5px;
-      font-weight: 500;
+      height: 34px;
+      padding: 0 12px;
+      border-radius: 9px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      box-shadow: var(--shadow-card);
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      white-space: nowrap;
+      gap: 7px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-primary);
       transition: all 0.14s ease;
+      white-space: nowrap;
     }
     .header-tool-pill:hover {
-      background: #1f1f28;
-      color: #ffffff;
-      border-color: #383846;
-    }
-    .header-tool-pill.collab-cta {
-      background: linear-gradient(135deg, rgba(225, 54, 57, 0.2), rgba(245, 158, 11, 0.14));
-      border-color: rgba(225, 54, 57, 0.45);
-      color: #fda4af;
-      font-weight: 600;
-    }
-    .header-tool-pill.collab-cta:hover {
-      background: linear-gradient(135deg, rgba(225, 54, 57, 0.32), rgba(245, 158, 11, 0.22));
-      color: #ffffff;
+      background: var(--bg-surface-subtle);
+      border-color: var(--accent-blue);
     }
 
-    /* MISSION CONTROL QUICK-START BAR */
+    .header-tool-pill.collab-cta {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(29, 125, 250, 0.28);
+    }
+    .header-tool-pill.collab-cta:hover {
+      background: var(--accent-blue-hover);
+    }
+
+    /* Center Messages Stream */
+    .messages-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 26px 28px 20px 28px;
+      display: flex;
+      flex-direction: column;
+    }
+    .messages-inner {
+      max-width: 720px;
+      width: 100%;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* Hero Section + 2x2 Action Cards (Matches Mockup 1:1) */
+    .hero-section {
+      text-align: center;
+      margin: 4px 0 6px 0;
+    }
+    .hero-title {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--text-primary);
+      line-height: 1.2;
+    }
+    .hero-subtitle {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-top: 4px;
+      letter-spacing: -0.015em;
+    }
+
     .mission-quickstart-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-      margin-bottom: 6px;
+      gap: 12px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border-subtle);
     }
+
     .mission-card {
-      padding: 10px 12px;
-      border-radius: 11px;
-      background: linear-gradient(180deg, #15151b 0%, #111116 100%);
-      border: 1px solid #23232c;
+      padding: 15px 16px;
+      border-radius: 13px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
+      box-shadow: var(--shadow-card);
       text-align: left;
       display: flex;
       align-items: flex-start;
-      gap: 10px;
-      transition: all 0.14s ease;
+      gap: 13px;
+      transition: all 0.15s ease;
     }
     .mission-card:hover {
-      background: #191922;
-      border-color: #383848;
+      background: var(--bg-card-hover);
+      border-color: var(--accent-blue);
       transform: translateY(-1px);
     }
     .mission-card-icon {
-      width: 28px;
-      height: 28px;
-      border-radius: 7px;
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      color: var(--text-secondary);
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      font-size: 13px;
+      margin-top: 1px;
     }
     .mission-card-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: #f0f0f6;
-      margin-bottom: 2px;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 3px;
     }
     .mission-card-sub {
-      font-size: 11px;
-      color: #828290;
-      line-height: 1.35;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.38;
     }
 
-    /* MESSAGES STREAM */
-    .messages-scroll {
-      flex: 1;
-      overflow-y: auto;
-      padding: 18px 22px 14px 22px;
-      user-select: text;
-    }
-    .messages-inner {
-      max-width: 820px;
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    /* User Bubble */
+    /* Conversation Messages */
     .msg-user-row {
       display: flex;
-      flex-direction: column;
-      align-items: flex-end;
+      justify-content: flex-end;
     }
     .msg-user-wrap {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      max-width: 78%;
     }
     .msg-user-bubble {
       position: relative;
-      max-width: 520px;
-      background: linear-gradient(135deg, #d93538, #b82528);
+      background: var(--accent-blue);
       color: #ffffff;
-      padding: 9px 15px;
+      padding: 10px 15px;
       border-radius: 14px 14px 4px 14px;
-      font-size: 13px;
-      line-height: 1.45;
-      font-weight: 450;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
-    }
-    .reaction-badge {
-      position: absolute;
-      top: -10px;
-      left: -10px;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: #23232a;
-      border: 1px solid #383844;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
+      font-size: 13.5px;
+      line-height: 1.5;
+      box-shadow: var(--shadow-card);
+      user-select: text;
     }
 
-    /* Bot Card */
     .msg-bot-row {
       display: flex;
       align-items: flex-start;
-      gap: 10px;
+      gap: 12px;
+      width: 100%;
     }
-    .msg-bot-card {
+    .msg-bot-content-col {
       flex: 1;
       min-width: 0;
-      background: var(--bg-card);
-      border: 1px solid var(--border-card);
-      border-radius: 14px;
-      padding: 14px 16px;
-      color: #e6e6ee;
-      font-size: 13px;
-      line-height: 1.56;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
     }
     .msg-bot-header {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 8px;
-      padding-bottom: 7px;
-      border-bottom: 1px solid #1e1e26;
+      margin-bottom: 6px;
     }
     .msg-bot-name {
-      font-size: 12.5px;
+      font-size: 13.5px;
       font-weight: 700;
-      color: #f4f4fa;
+      color: var(--text-primary);
     }
-    .msg-bot-role {
+    .msg-bot-role-pill {
       font-size: 11px;
-      color: #828290;
-    }
-
-    .msg-bot-body p { margin-bottom: 9px; }
-    .msg-bot-body p:last-child { margin-bottom: 0; }
-    .msg-bot-body ul {
-      margin: 6px 0 4px 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .msg-bot-body li { color: #dedee8; }
-    .msg-bot-body strong { color: #ffffff; font-weight: 600; }
-    .inline-code {
-      background: #1f1f27;
-      border: 1px solid #2e2e3a;
-      padding: 1px 5px;
-      border-radius: 5px;
-      font-size: 11.5px;
-      color: #93c5fd;
-    }
-    .code-block {
-      margin: 9px 0;
-      background: #0d0d11;
-      border: 1px solid #24242e;
-      border-radius: 10px;
-      padding: 11px 13px;
-      overflow-x: auto;
-      font-size: 11.5px;
-      line-height: 1.48;
-      color: #86efac;
-    }
-
-    .msg-side-actions {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 3px;
-      color: #6c6c78;
-      opacity: 0;
-      transition: opacity 0.14s ease;
-      flex-shrink: 0;
-      padding-top: 4px;
-    }
-    .msg-bot-row:hover .msg-side-actions {
-      opacity: 1;
-    }
-    .side-icon-btn {
-      width: 24px;
-      height: 24px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: var(--bg-surface-subtle);
+      border: 1px solid var(--border-subtle);
+      padding: 1px 8px;
       border-radius: 6px;
+    }
+    .msg-bot-time {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .msg-bot-body {
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: var(--text-primary);
+      user-select: text;
+    }
+    .msg-bot-body p + p {
+      margin-top: 8px;
+    }
+
+    /* Clean Squad Roster Table inside Welcome Message */
+    .squad-roster-list {
       display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin: 10px 0 12px 0;
+    }
+    .squad-roster-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+    .roster-code-pill {
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 700;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      color: #7d7d8a;
-      transition: background 0.12s ease, color 0.12s ease;
+      min-width: 34px;
     }
-    .side-icon-btn:hover {
-      background: #1f1f27;
-      color: #ededf5;
+    .roster-branch-pill {
+      padding: 2px 9px;
+      border-radius: 999px;
+      background: var(--accent-blue-soft);
+      color: var(--accent-blue-text);
+      font-size: 11.5px;
+      font-weight: 600;
     }
 
-    .msg-action-bar {
-      margin-top: 11px;
-      padding-top: 9px;
-      border-top: 1px solid #21212a;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
+    .inline-code {
+      background: var(--bg-surface-subtle);
+      border: 1px solid var(--border-subtle);
+      padding: 1px 6px;
+      border-radius: 5px;
+      font-size: 12px;
+      color: var(--accent-blue-text);
     }
-    .handoff-chip {
-      height: 25px;
-      padding: 0 9px 0 6px;
-      border-radius: 7px;
-      background: #1d1d25;
-      border: 1px solid #2d2d39;
-      color: #e2e2ec;
-      font-size: 11px;
-      font-weight: 500;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      transition: all 0.12s ease;
-    }
-    .handoff-chip:hover {
-      background: #282834;
-      border-color: #434354;
-      color: #ffffff;
-    }
-    .run-cmd-chip {
-      height: 25px;
-      padding: 0 9px;
-      border-radius: 7px;
-      background: rgba(16, 185, 129, 0.1);
-      border: 1px solid rgba(16, 185, 129, 0.28);
-      color: #6ee7b7;
-      font-size: 11px;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-    }
-    .run-cmd-chip:hover {
-      background: rgba(16, 185, 129, 0.2);
+    .code-block {
+      background: var(--bg-code);
+      border: 1px solid var(--border-card);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 10px 0;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--text-primary);
+      user-select: text;
     }
 
     .terminal-card {
-      background: #0e1116;
-      border: 1px solid #1f332c;
-      border-radius: 11px;
-      padding: 10px 13px;
-      font-size: 11.5px;
+      background: var(--bg-code);
+      border: 1px solid var(--border-card);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--text-primary);
+      user-select: text;
     }
     .terminal-header {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      font-size: 10.5px;
-      color: #789088;
-      margin-bottom: 5px;
+      align-items: center;
+      padding-bottom: 6px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 11px;
+      color: var(--text-muted);
     }
 
-    /* =================================================================== */
-    /* PRO MULTI-ROW COMPOSER DOCK (ZERO CLIPPING AVATARS)                 */
-    /* =================================================================== */
+    .handoff-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .handoff-chip {
+      height: 30px;
+      padding: 0 11px;
+      border-radius: 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      box-shadow: var(--shadow-card);
+      color: var(--text-primary);
+      font-size: 12px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.13s ease;
+    }
+    .handoff-chip:hover {
+      border-color: var(--accent-blue);
+      background: var(--bg-card-hover);
+    }
+
+    /* ===================================================================== */
+    /* COMPOSER CARD & FOOTER (MATCHES MOCKUP 1:1)                           */
+    /* ===================================================================== */
     .composer-outer {
-      padding: 8px 22px 14px 22px;
+      padding: 8px 28px 14px 28px;
       flex-shrink: 0;
-      border-top: 1px solid rgba(255,255,255,0.04);
-      background: linear-gradient(180deg, rgba(12,12,15,0) 0%, #0c0c0f 100%);
+      z-index: 22;
     }
     .composer-inner {
-      max-width: 820px;
+      max-width: 720px;
       margin: 0 auto;
       position: relative;
     }
     .composer-card {
-      background: #141419;
-      border: 1px solid #282833;
-      border-radius: 14px;
-      padding: 8px 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      border-radius: 16px;
+      box-shadow: var(--shadow-composer);
+      padding: 12px 14px 10px 14px;
       transition: border-color 0.15s ease;
     }
     .composer-card:focus-within {
-      border-color: #434356;
+      border-color: var(--accent-blue);
     }
-    .composer-context-strip {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding-bottom: 5px;
-      border-bottom: 1px solid #1e1e27;
-      overflow-x: auto;
-    }
-    .composer-agent-chip {
-      height: 22px;
-      padding: 0 8px 0 4px;
-      border-radius: 6px;
-      background: #1d1d26;
-      border: 1px solid #2f2f3d;
-      font-size: 11px;
-      font-weight: 600;
-      color: #f0f0f7;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      flex-shrink: 0;
-    }
-    .composer-mention-pill {
-      height: 20px;
-      padding: 0 7px;
-      border-radius: 5px;
-      background: #191921;
-      border: 1px solid #262632;
-      font-size: 10.5px;
-      font-weight: 600;
-      color: #9d9da9;
-      transition: all 0.12s ease;
-      flex-shrink: 0;
-    }
-    .composer-mention-pill:hover {
-      background: #252532;
-      color: #ffffff;
-      border-color: #3d3d50;
-    }
+
     .composer-input-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 34px;
+      padding: 2px 4px 10px 4px;
     }
     .composer-input {
-      flex: 1;
-      height: 32px;
+      width: 100%;
       background: transparent;
       border: none;
-      font-size: 13px;
-      color: #f2f2f8;
-      padding: 0 4px;
+      font-size: 14px;
+      color: var(--text-primary);
+      line-height: 1.45;
     }
     .composer-input::placeholder {
-      color: #6a6a78;
+      color: var(--text-muted);
     }
+
     .composer-bottom-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      padding-top: 2px;
-    }
-    .composer-tool-btn {
-      height: 25px;
-      padding: 0 8px;
-      border-radius: 6px;
-      background: #1b1b23;
-      border: 1px solid #292935;
-      color: #b4b4c2;
-      font-size: 11px;
-      font-weight: 500;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      transition: all 0.12s ease;
-    }
-    .composer-tool-btn:hover {
-      background: #262632;
-      color: #ffffff;
-      border-color: #3b3b4c;
-    }
-    .composer-send-btn {
-      height: 27px;
-      padding: 0 12px;
-      border-radius: 7px;
-      background: var(--accent-red-bright);
-      color: #ffffff;
-      font-size: 11.5px;
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      transition: opacity 0.14s ease;
-    }
-    .composer-send-btn:hover {
-      opacity: 0.92;
     }
 
-    /* POPOVERS & MENUS */
-    .popover-menu {
-      position: absolute;
-      background: #18181f;
-      border: 1px solid #2d2d38;
-      border-radius: 13px;
-      padding: 5px;
-      width: 248px;
-      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
-      z-index: 60;
-    }
-    .popover-item {
-      width: 100%;
-      padding: 7px 9px;
-      border-radius: 9px;
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      text-align: left;
-      transition: background 0.12s ease;
-    }
-    .popover-item:hover { background: #23232d; }
-    .popover-item-icon {
-      width: 26px;
-      height: 26px;
-      border-radius: 7px;
-      background: #202029;
-      border: 1px solid #2e2e3a;
-      display: flex;
+    .composer-attach-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: var(--bg-surface-subtle);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      color: #d4d4de;
+      transition: all 0.12s ease;
+    }
+    .composer-attach-btn:hover {
+      border-color: var(--accent-blue);
+      color: var(--text-primary);
+    }
+
+    .composer-agent-pill {
+      height: 26px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: transform 0.1s ease, opacity 0.12s ease;
+    }
+    .composer-agent-pill:hover {
+      transform: translateY(-1px);
+    }
+
+    .composer-send-circle {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--accent-blue);
+      color: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(29, 125, 250, 0.35);
+      transition: background 0.14s ease, transform 0.1s ease;
       flex-shrink: 0;
     }
-    .popover-title { font-size: 12px; font-weight: 600; color: #ededf4; }
-    .popover-sub { font-size: 10.5px; color: #828290; }
-    .popover-divider { height: 1px; background: #262630; margin: 4px 4px; }
+    .composer-send-circle:hover {
+      background: var(--accent-blue-hover);
+      transform: scale(1.03);
+    }
 
-    /* =================================================================== */
-    /* PANE 3: DOCKED LIVE ENGINEERING WORKBENCH (IDE + GIT + TERMINAL)    */
-    /* =================================================================== */
+    .composer-sub-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 6px 0 6px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+    .composer-sub-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+      font-size: 11.5px;
+      font-weight: 500;
+    }
+    .composer-sub-btn:hover {
+      color: var(--text-primary);
+    }
+
+    /* ===================================================================== */
+    /* PANE 3: RIGHT DOCKED WORKSPACE & TERMINAL (MATCHES MOCKUP 1:1)        */
+    /* ===================================================================== */
     .studio-drawer {
-      width: 470px;
+      width: 440px;
+      min-width: 440px;
       height: 100%;
       background: var(--bg-workbench);
       border-left: 1px solid var(--border-subtle);
       display: flex;
       flex-direction: column;
-      flex-shrink: 0;
-      z-index: 25;
+      padding: 10px;
+      gap: 10px;
+      z-index: 30;
     }
-    .studio-header {
-      height: 52px;
-      padding: 0 12px;
+
+    .workspace-top-card {
+      flex: 1.15;
+      min-height: 0;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      border-radius: 14px;
+      box-shadow: var(--shadow-card);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .workspace-card-header {
+      padding: 11px 14px;
       border-bottom: 1px solid var(--border-subtle);
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      background: #0d0d11;
     }
 
-    /* MODALS */
+    .segmented-tabs {
+      display: inline-flex;
+      background: var(--bg-surface-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: 9px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .seg-tab-btn {
+      height: 26px;
+      padding: 0 13px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      transition: all 0.12s ease;
+    }
+    .seg-tab-btn.active {
+      background: var(--accent-blue);
+      color: #ffffff;
+      box-shadow: 0 1px 4px rgba(29, 125, 250, 0.25);
+    }
+
+    .file-selector-bar {
+      margin: 8px 12px;
+      padding: 6px 10px;
+      border-radius: 9px;
+      background: var(--bg-surface-subtle);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .editor-with-gutter {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      background: var(--bg-code);
+      border-top: 1px solid var(--border-subtle);
+      overflow: hidden;
+    }
+    .editor-gutter {
+      width: 38px;
+      padding: 12px 8px 12px 0;
+      background: var(--bg-gutter);
+      border-right: 1px solid var(--border-subtle);
+      text-align: right;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text-muted);
+      user-select: none;
+      overflow: hidden;
+    }
+    .editor-textarea {
+      flex: 1;
+      width: 100%;
+      background: var(--bg-code);
+      border: none;
+      padding: 12px 14px;
+      font-size: 12.5px;
+      line-height: 1.6;
+      color: var(--text-primary);
+      resize: none;
+      overflow: auto;
+    }
+
+    .workspace-bottom-card {
+      flex: 0.85;
+      min-height: 210px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      border-radius: 14px;
+      box-shadow: var(--shadow-card);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ===================================================================== */
+    /* POPOVERS & MODALS                                                     */
+    /* ===================================================================== */
+    .popover-menu {
+      position: absolute;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-card);
+      border-radius: 12px;
+      padding: 5px;
+      box-shadow: var(--shadow-modal);
+      z-index: 60;
+    }
+    .popover-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      text-align: left;
+      transition: background 0.12s ease;
+    }
+    .popover-item:hover {
+      background: var(--bg-surface-subtle);
+    }
+    .popover-item-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: var(--bg-surface-subtle);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .popover-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .popover-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .popover-divider {
+      height: 1px;
+      background: var(--border-subtle);
+      margin: 4px 6px;
+    }
+
     .modal-backdrop {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.72);
+      background: rgba(15, 23, 42, 0.55);
       backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -990,15 +1109,16 @@
     .modal-card {
       width: 100%;
       max-width: 520px;
-      background: #16161c;
-      border: 1px solid #2b2b36;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-card);
       border-radius: 16px;
+      box-shadow: var(--shadow-modal);
       overflow: hidden;
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.78);
+      color: var(--text-primary);
     }
     .modal-header {
-      padding: 15px 18px;
-      border-bottom: 1px solid #23232c;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-subtle);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1013,8 +1133,8 @@
     }
     .modal-footer {
       padding: 12px 18px;
-      background: #111116;
-      border-top: 1px solid #23232c;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg-surface-subtle);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1022,55 +1142,72 @@
 
     .field-label {
       display: block;
-      font-size: 10.5px;
+      font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: #888896;
+      color: var(--text-muted);
       margin-bottom: 5px;
     }
     .field-input {
       width: 100%;
-      background: #101014;
-      border: 1px solid #282833;
+      background: var(--bg-input);
+      border: 1px solid var(--border-card);
       border-radius: 8px;
       padding: 7px 11px;
       font-size: 12.5px;
-      color: #f0f0f6;
+      color: var(--text-primary);
     }
     .field-input:focus {
-      border-color: #464658;
+      border-color: var(--accent-blue);
     }
 
     .btn-primary {
       height: 31px;
       padding: 0 13px;
       border-radius: 8px;
-      background: var(--accent-red);
+      background: var(--accent-blue);
       color: #ffffff;
       font-size: 12px;
       font-weight: 600;
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      box-shadow: 0 1px 4px rgba(29, 125, 250, 0.25);
     }
-    .btn-primary:hover { background: #ec3f42; }
+    .btn-primary:hover { background: var(--accent-blue-hover); }
+
     .btn-secondary {
       height: 31px;
       padding: 0 11px;
       border-radius: 8px;
-      background: #1e1e26;
-      border: 1px solid #2e2e3a;
-      color: #d4d4e0;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      color: var(--text-primary);
       font-size: 12px;
-      font-weight: 500;
+      font-weight: 600;
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      box-shadow: var(--shadow-card);
     }
     .btn-secondary:hover {
-      background: #282833;
-      color: #ffffff;
+      background: var(--bg-surface-subtle);
+      border-color: var(--accent-blue);
+    }
+
+    .side-icon-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .side-icon-btn:hover {
+      background: var(--bg-surface-subtle);
+      color: var(--text-primary);
     }
 
     .monkey-picker-grid {
@@ -1081,30 +1218,30 @@
     .monkey-pick-btn {
       padding: 6px;
       border-radius: 10px;
-      background: #111115;
-      border: 1.5px solid #25252f;
+      background: var(--bg-surface-subtle);
+      border: 1.5px solid var(--border-card);
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 4px;
-      transition: all 0.12s ease;
     }
     .monkey-pick-btn.selected {
-      border-color: var(--accent-red-bright);
-      background: rgba(240, 40, 60, 0.1);
+      border-color: var(--accent-blue);
+      background: var(--accent-blue-soft);
     }
 
     .toast {
       position: fixed;
       bottom: 20px;
       right: 20px;
-      background: #1b1b22;
-      border: 1px solid #323240;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-card);
       border-radius: 10px;
-      padding: 8px 14px;
+      padding: 9px 14px;
       font-size: 12px;
-      color: #f0f0f6;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65);
+      font-weight: 600;
+      color: var(--text-primary);
+      box-shadow: var(--shadow-modal);
       display: flex;
       align-items: center;
       gap: 8px;
@@ -1134,20 +1271,16 @@
   <div class="app-shell">
 
     <!-- =================================================================== -->
-    <!-- PANE 1: LEFT NAVIGATION & AGENT FLEET SIDEBAR                       -->
+    <!-- PANE 1: LEFT SIDEBAR (VANARAS PRO)                                  -->
     <!-- =================================================================== -->
     <aside class="sidebar">
-      <div class="sidebar-header">
+      <!-- Top Window Chrome Spacer -->
+      <div class="sidebar-top-chrome">
         <div id="trafficLightsSpacer" class="traffic-lights">
           <span class="tl-dot tl-red"></span>
           <span class="tl-dot tl-yellow"></span>
           <span class="tl-dot tl-green"></span>
-          <span class="brand-lockup" style="margin-left:6px;">
-            <span>Vanaras</span>
-            <span class="brand-version-tag">PRO</span>
-          </span>
         </div>
-
         <div class="sidebar-actions">
           <button onclick="toggleSearchInput()" class="circle-icon-btn" title="Filter Squads & Agents (⌘K)">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1155,8 +1288,7 @@
               <line x1="20" y1="20" x2="16.2" y2="16.2"></line>
             </svg>
           </button>
-
-          <button onclick="togglePlusMenu(event)" class="circle-icon-btn" title="New Agent, Squad Room or Setup">
+          <button onclick="togglePlusMenu(event)" class="circle-icon-btn" title="New Agent, Squad or Setup">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"></line>
               <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -1164,32 +1296,32 @@
           </button>
 
           <!-- (+) Popover Menu -->
-          <div id="plusMenuDropdown" class="popover-menu hidden" style="top: 36px; right: 0; width: 252px;">
+          <div id="plusMenuDropdown" class="popover-menu hidden" style="top: 32px; right: 0; width: 248px;">
             <button onclick="openBotModal(null); hidePlusMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#f87171;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1.2" fill="currentColor"/><circle cx="15" cy="10" r="1.2" fill="currentColor"/><path d="M9 15c1.5 1.2 4.5 1.2 6 0" stroke-linecap="round"/></svg>
+              <div class="popover-item-icon" style="color:var(--accent-blue);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
               </div>
               <div>
-                <div class="popover-title">New Vanara Agent (1:1)</div>
-                <div class="popover-sub">Dedicated model, tools & git worktree</div>
+                <div class="popover-title">New Agent (1:1 Worktree)</div>
+                <div class="popover-sub">Dedicated model, tools & git branch</div>
               </div>
             </button>
 
             <button onclick="openGroupModal(null); hidePlusMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#60a5fa;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <div class="popover-item-icon" style="color:var(--accent-blue);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               </div>
               <div>
-                <div class="popover-title">New Squad Channel</div>
-                <div class="popover-sub">Multi-agent autonomous build room</div>
+                <div class="popover-title">New Engineering Squad</div>
+                <div class="popover-sub">Multi-agent collaborative room</div>
               </div>
             </button>
 
             <div class="popover-divider"></div>
 
             <button onclick="openConnectAppsModal(); hidePlusMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#f59e0b;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              <div class="popover-item-icon" style="color:var(--accent-amber);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
               </div>
               <div>
                 <div class="popover-title">Add Specialist Template</div>
@@ -1198,30 +1330,42 @@
             </button>
 
             <button onclick="openOnboardingModal(); hidePlusMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#10b981;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <div class="popover-item-icon" style="color:var(--accent-emerald);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </div>
               <div>
-                <div class="popover-title">Onboarding & Model Setup</div>
-                <div class="popover-sub">Configure LLM backend, repo & squad</div>
+                <div class="popover-title">Model &amp; Workspace Setup</div>
+                <div class="popover-sub">Configure LLM backend &amp; repo</div>
               </div>
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Mounted Repository & Shared Memory Bar -->
-      <div class="sidebar-repo-card">
-        <button onclick="openMountModal()" class="sidebar-repo-btn" title="Mounted Local Repository (Click to switch repo or inspect Symbol Map)">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-          <span id="mountFolderLabel" class="mono" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">vanaras</span>
-        </button>
-        <div style="display:flex; align-items:center; gap:4px;">
-          <button onclick="openMemoryModal()" class="sidebar-repo-btn" style="font-size:10.5px; color:#a7f3d0; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.22);" title="Shared Workspace Memory Ledger">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-            <span id="sharedFactsCountPill" class="mono">3</span>
-          </button>
+      <!-- Brand Title Row: [ ▲ Vanaras Pro ] -->
+      <div class="sidebar-brand-bar">
+        <div class="brand-lockup">
+          <span class="brand-logo-mark">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2.5L21 20H16.2L12 11.4L7.8 20H3L12 2.5Z" fill="currentColor"/>
+              <path d="M9.5 16.5H14.5L12 21.2L9.5 16.5Z" fill="#1d7dfa"/>
+            </svg>
+          </span>
+          <span>Vanaras Pro</span>
         </div>
+      </div>
+
+      <!-- Mounted Repository Pill Card: [ 📁 vanaras  › ] -->
+      <div class="sidebar-repo-card">
+        <button onclick="openMountModal()" class="sidebar-repo-btn" title="Switch Mounted Repository or Inspect Symbol Map">
+          <span style="display:flex; align-items:center; gap:9px; min-width:0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d7dfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span id="mountFolderLabel" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">vanaras</span>
+          </span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
       </div>
 
       <!-- Search Input -->
@@ -1235,66 +1379,74 @@
         >
       </div>
 
-      <!-- Segmented Thread & Agent Fleet List -->
+      <!-- Segmented Thread & Agent Fleet List (Workspace + Agents) -->
       <div id="threadListContainer" class="thread-list"></div>
 
-      <!-- Bottom Status Dock: Profile & Live LLM Engine Status -->
+      <!-- Bottom Local Model Status Card -->
       <div class="sidebar-footer">
-        <button onclick="openOnboardingModal()" id="userInitialsBtn" class="vp-avatar-btn" title="Open Workspace Onboarding & Profile Settings">
-          ME
-        </button>
-
-        <button onclick="openOnboardingModal()" id="llmEngineStatusPill" class="connect-apps-pill" title="Click to configure AI Model Backend, Project Folder & Onboarding">
-          <span style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
-            <span id="llmStatusDot" style="width:7px; height:7px; border-radius:50%; background:#f59e0b; flex-shrink:0;"></span>
-            <span id="llmStatusText" class="mono" style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Setup Model</span>
-          </span>
-          <span style="font-size:10px; color:#94949e; flex-shrink:0;">Configure</span>
+        <span id="userInitialsBtn" class="hidden">ME</span>
+        <button onclick="openOnboardingModal()" id="llmEngineStatusPill" class="local-model-card" title="Configure Local / Cloud Model Backend & Onboarding">
+          <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+            <div class="local-model-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+            </div>
+            <div style="min-width:0;">
+              <div style="font-size:12.5px; font-weight:700; color:var(--text-primary); line-height:1.25;">Local model</div>
+              <div style="display:flex; align-items:center; gap:5px; margin-top:2px;">
+                <span id="llmStatusDot" style="width:7px; height:7px; border-radius:50%; background:#10b981; flex-shrink:0;"></span>
+                <span id="llmStatusText" style="font-size:11.5px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Connected</span>
+              </div>
+            </div>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
       </div>
     </aside>
 
     <!-- =================================================================== -->
-    <!-- PANE 2: CENTER MULTI-AGENT MISSION CONTROL & STREAM                 -->
+    <!-- PANE 2: CENTER STREAM & MISSION CONTROL                             -->
     <!-- =================================================================== -->
     <main class="main-pane">
 
-      <!-- Docked Top Toolbar -->
+      <!-- Top Header Bar -->
       <header class="chat-header">
-        <!-- Left: Active Thread Identity + Isolated Git Worktree Pill -->
         <div class="chat-header-slot">
-          <button onclick="openActiveThreadSettings()" id="activeThreadPill" class="identity-pill" title="Configure Agent / Squad Settings"></button>
+          <button onclick="openActiveThreadSettings()" id="activeThreadPill" class="identity-pill" title="Configure Squad or Agent"></button>
+        </div>
 
-          <button onclick="openWorktreeModal()" class="header-tool-pill" title="Inspect Per-Agent Isolated Git Worktree (.worktrees/<botId>)">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <div class="chat-header-slot">
+          <!-- Branch Dropdown Pill: [ ⑂ vanara/r1 ▾ ] -->
+          <button onclick="openWorktreeModal()" class="header-tool-pill" title="Inspect Per-Agent Isolated Git Worktree">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="6" y1="3" x2="6" y2="15"></line>
               <circle cx="18" cy="6" r="3"></circle>
               <circle cx="6" cy="18" r="3"></circle>
               <path d="M18 9a9 9 0 0 1-9 9"></path>
             </svg>
-            <span id="worktreeBranchLabel" class="mono" style="font-size:11px; color:#7dd3fc;">vanara/r1</span>
-          </button>
-        </div>
-
-        <!-- Right: Autonomous Chaining, Squad Collab & Docked Workbench Toggle -->
-        <div class="chat-header-slot">
-          <button onclick="toggleAutoTriggerMode()" id="autoTriggerPill" class="header-tool-pill" style="border-color:rgba(16,185,129,0.35); color:#6ee7b7;" title="Toggle Self-Triggered Autonomous Handoffs & Self-Healing">
-            <span id="autoTriggerDot" style="width:6.5px; height:6.5px; border-radius:50%; background:#10b981; display:inline-block;"></span>
-            <span id="autoTriggerLabel" class="mono" style="font-size:11px;">Auto: ON</span>
+            <span id="worktreeBranchLabel" class="mono" style="font-size:12px;">vanara/r1</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
 
-          <button onclick="triggerGroupCollabRun()" class="header-tool-pill collab-cta" title="Run Multi-Agent Squad Collaboration Pass">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          <!-- Primary CTA: [ ▶ Run collaboration ] -->
+          <button onclick="triggerGroupCollabRun()" class="header-tool-pill collab-cta" title="Run Multi-Agent Squad Collaboration">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
-            <span>Run Collab</span>
+            <span>Run collaboration</span>
           </button>
 
-          <button onclick="toggleDeliverableDrawer()" id="headerCodeWorkspaceBtn" class="header-tool-pill" style="border-color:rgba(56,189,248,0.35); color:#bae6fd;" title="Toggle Docked Code & Git Workbench">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <!-- Inspector Toggle: [ ◫ Inspector ] -->
+          <button onclick="toggleDeliverableDrawer()" id="headerCodeWorkspaceBtn" class="header-tool-pill" title="Toggle Workspace & Terminal Inspector">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/>
             </svg>
-            <span id="artifactCountPill" class="mono" style="font-size:11px;">Workbench</span>
+            <span id="artifactCountPill">Inspector</span>
+          </button>
+
+          <!-- Light / Dark Theme Toggle Button -->
+          <button onclick="toggleThemeMode()" id="themeToggleBtn" class="header-tool-pill" title="Switch between White (Light) and Dark Theme">
+            <span id="themeToggleIcon">☾</span>
+            <span id="themeToggleLabel">Dark</span>
           </button>
         </div>
       </header>
@@ -1304,17 +1456,17 @@
         <div id="messagesInner" class="messages-inner"></div>
       </div>
 
-      <!-- Pro Multi-Row Engineering Composer Dock -->
+      <!-- Bottom Composer Card & Footer -->
       <div class="composer-outer">
         <div class="composer-inner">
 
           <!-- @Mention Auto-Complete Popover -->
-          <div id="mentionAutocompletePopup" class="popover-menu hidden" style="bottom: 108px; left: 10px; width: 280px; max-height: 220px; overflow-y: auto;"></div>
+          <div id="mentionAutocompletePopup" class="popover-menu hidden" style="bottom: 105px; left: 10px; width: 280px; max-height: 220px; overflow-y: auto;"></div>
 
           <!-- Composer Quick Action Menu -->
-          <div id="composerMenu" class="popover-menu hidden" style="bottom: 108px; left: 0; width: 272px;">
+          <div id="composerMenu" class="popover-menu hidden" style="bottom: 105px; left: 0; width: 268px;">
             <button onclick="attachRepoFileToComposer(); hideComposerMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#60a5fa;">
+              <div class="popover-item-icon" style="color:var(--accent-blue);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               </div>
               <div>
@@ -1323,16 +1475,16 @@
               </div>
             </button>
             <button onclick="startAutonomousBackgroundGoal(); hideComposerMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#10b981;">
+              <div class="popover-item-icon" style="color:var(--accent-emerald);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
               </div>
               <div>
                 <div class="popover-title">Run Autonomous Background Goal</div>
-                <div class="popover-sub">Agents chain turns, tools & code</div>
+                <div class="popover-sub">Agents chain turns, tools &amp; code</div>
               </div>
             </button>
             <button onclick="promptBackgroundCommand(); hideComposerMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#a7f3d0;">
+              <div class="popover-item-icon" style="color:var(--accent-amber);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
               </div>
               <div>
@@ -1342,7 +1494,7 @@
             </button>
             <div class="popover-divider"></div>
             <button onclick="clearActiveThreadMessages(); hideComposerMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:#f87171;">
+              <div class="popover-item-icon" style="color:var(--accent-red);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
               </div>
               <div>
@@ -1352,61 +1504,79 @@
             </button>
           </div>
 
+          <!-- Clean Elevated Composer Card (Matches Mockup 1:1) -->
           <div class="composer-card">
-            <!-- Row 1: Active Agent Badge & Quick @Mention Chips (No Overlapping!) -->
-            <div class="composer-context-strip">
-              <div style="display:flex; align-items:center; gap:6px;">
-                <button onclick="openActiveThreadSettings()" class="composer-agent-chip" title="Active Lead Agent & Worktree">
-                  <span id="composerBotAvatarBadge" style="display:inline-flex; align-items:center;"></span>
-                  <span id="composerLeadBotLabel" class="mono">R1 • vanara/r1</span>
-                </button>
-                <span style="font-size:10.5px; color:#686875;">Tag agent:</span>
-                <button onclick="quickInsertMention('@R1')" class="composer-mention-pill mono">@R1 Architect</button>
-                <button onclick="quickInsertMention('@R2')" class="composer-mention-pill mono">@R2 Systems</button>
-                <button onclick="quickInsertMention('@R3')" class="composer-mention-pill mono">@R3 QA/Eval</button>
-                <button onclick="quickInsertMention('@R4')" class="composer-mention-pill mono">@R4 Frontend</button>
-              </div>
-            </div>
+            <span id="composerBotAvatarBadge" class="hidden"></span>
+            <span id="composerLeadBotLabel" class="hidden"></span>
 
-            <!-- Row 2: Text Input -->
             <div class="composer-input-row">
               <input
                 id="chatComposerInput"
                 type="text"
                 oninput="onComposerInput(this.value)"
-                placeholder="Ask the squad to architect, build, patch, or verify code (@mention any agent or /run <cmd>)..."
+                placeholder="Message your squad..."
                 class="composer-input"
               >
             </div>
 
-            <!-- Row 3: Action Toolbar -->
             <div class="composer-bottom-bar">
-              <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
-                <button onclick="toggleComposerMenu(event)" class="composer-tool-btn" title="More Actions">+ Actions</button>
-                <button onclick="attachRepoFileToComposer()" class="composer-tool-btn" title="Attach file from mounted repository">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                  <span>Attach File</span>
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <!-- Paperclip Attach Button -->
+                <button onclick="attachRepoFileToComposer()" class="composer-attach-btn" title="Attach file from repository">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                  </svg>
                 </button>
-                <button onclick="promptBackgroundCommand()" class="composer-tool-btn mono" title="Run command in agent worktree">
-                  <span style="color:#6ee7b7;">&gt;_</span>
-                  <span>Run Cmd</span>
+                <!-- More Actions (+) -->
+                <button onclick="toggleComposerMenu(event)" class="composer-attach-btn" title="More Actions (Run Cmd, Auto Goal, Clear)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
-                <button onclick="startAutonomousBackgroundGoal()" class="composer-tool-btn" title="Launch autonomous multi-turn background goal">
-                  <span style="color:#f59e0b;">◎</span>
-                  <span>Auto Goal</span>
+
+                <!-- Colored Agent Tag Pills: R1 ▾, R2 ▾, R3 ▾, R4 ▾ -->
+                <button onclick="quickInsertMention('@R1')" class="composer-agent-pill agent-badge-r1" title="Tag @R1 Principal Architect">
+                  <span>R1</span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <button onclick="quickInsertMention('@R2')" class="composer-agent-pill agent-badge-r2" title="Tag @R2 Systems Engineer">
+                  <span>R2</span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <button onclick="quickInsertMention('@R3')" class="composer-agent-pill agent-badge-r3" title="Tag @R3 Quality & Verification">
+                  <span>R3</span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <button onclick="quickInsertMention('@R4')" class="composer-agent-pill agent-badge-r4" title="Tag @R4 Frontend Engineer">
+                  <span>R4</span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
               </div>
 
-              <div style="display:flex; align-items:center; gap:6px;">
-                <button onclick="handleSendMessage()" id="composerSendBtn" class="composer-send-btn" title="Dispatch Turn (Enter)">
-                  <span>Send</span>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                    <polyline points="12 5 19 12 12 19"></polyline>
-                  </svg>
-                </button>
-              </div>
+              <!-- Blue Circular Up-Arrow Send Button -->
+              <button onclick="handleSendMessage()" id="composerSendBtn" class="composer-send-circle" title="Send message (Enter)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="19" x2="12" y2="5"></line>
+                  <polyline points="5 12 12 5 19 12"></polyline>
+                </svg>
+              </button>
             </div>
+          </div>
+
+          <!-- Sub-Composer Status & Settings Row -->
+          <div class="composer-sub-footer">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <button onclick="toggleAutoTriggerMode()" id="autoTriggerPill" class="composer-sub-btn" title="Toggle Autonomous Chaining & Auto-Save">
+                <span id="autoTriggerDot" style="width:7px; height:7px; border-radius:50%; background:#10b981; display:inline-block;"></span>
+                <span id="autoTriggerLabel">Local processing · Auto-save enabled</span>
+              </button>
+              <button onclick="openMemoryModal()" class="composer-sub-btn" title="Shared Workspace Memory">
+                <span>· Memory (<span id="sharedFactsCountPill">3</span>)</span>
+              </button>
+            </div>
+
+            <button onclick="openOnboardingModal()" class="composer-sub-btn" title="Open Workspace & Model Settings">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>Settings</span>
+            </button>
           </div>
 
         </div>
@@ -1415,86 +1585,132 @@
     </main>
 
     <!-- =================================================================== -->
-    <!-- PANE 3: DOCKED LIVE ENGINEERING WORKBENCH (OPEN BY DEFAULT)         -->
+    <!-- PANE 3: RIGHT DOCKED WORKSPACE & TERMINAL (MATCHES MOCKUP 1:1)      -->
     <!-- =================================================================== -->
     <aside id="deliverableDrawer" class="studio-drawer">
-      <div class="studio-header">
-        <div style="display:flex; align-items:center; gap:7px; min-width:0;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          <select id="workspaceAgentSelect" onchange="onSwitchWorkspaceAgent(this.value)" class="field-input" style="height:28px; padding:0 8px; font-size:11.5px; font-weight:600; background:#14141a; border-color:#2a2a35; width:175px;"></select>
-        </div>
-        <div style="display:flex; align-items:center; gap:5px;">
-          <button onclick="createNewFileInAgentWorkspace()" class="btn-secondary" style="height:25px; padding:0 7px; font-size:10.5px;" title="Create new file in this agent's workspace">+ File</button>
-          <button onclick="saveActiveEditorToAgentWorkspace()" class="btn-secondary" style="height:25px; padding:0 8px; font-size:10.5px;" title="Save edits & commit to agent branch">Save</button>
-          <button onclick="toggleAgentDevServer()" id="btnAgentServe" class="btn-secondary" style="height:25px; padding:0 8px; font-size:10.5px; border-color:rgba(56,189,248,0.38); color:#7dd3fc;" title="Start/Stop persistent Dev Server on dedicated port">⚡ Serve</button>
-          <button onclick="runActiveFileInAgentWorkspace()" class="btn-primary" style="height:25px; padding:0 9px; font-size:10.5px; background:#10b981;" title="Execute active file inside this agent's isolated workspace">▶ Run</button>
-          <button onclick="toggleDeliverableDrawer(false)" class="side-icon-btn" title="Collapse Workbench">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-      </div>
 
-      <!-- Workbench Mode Switcher + Branch & Sandbox Controls -->
-      <div style="padding:6px 12px; background:#0f0f14; border-bottom:1px solid #1e1e26; display:flex; align-items:center; justify-content:space-between; gap:6px;" class="mono">
-        <div style="display:flex; align-items:center; gap:4px;">
-          <button onclick="setDrawerMode('source')" id="btnModeSource" class="btn-secondary" style="height:23px; padding:0 8px; font-size:10.5px;">Code</button>
-          <button onclick="setDrawerMode('preview')" id="btnModePreview" class="btn-secondary" style="height:23px; padding:0 8px; font-size:10.5px;">Preview</button>
-          <button onclick="setDrawerMode('vnc')" id="btnModeVnc" class="btn-secondary" style="height:23px; padding:0 8px; font-size:10.5px;">Web/VNC</button>
-        </div>
-        <div style="display:flex; align-items:center; gap:5px; min-width:0; overflow:hidden;">
-          <span id="workspaceBranchBadge" style="font-size:10px; color:#38bdf8; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.25); padding:1px 6px; border-radius:4px; flex-shrink:0;">vanara/r1</span>
-          <span id="workspaceDiskPathLabel" style="display:none;"></span>
-          <button onclick="toggleAgentWorkspaceWatcher()" id="btnAgentWatch" style="font-size:10px; color:#a7f3d0; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.28); border-radius:5px; padding:2px 6px;" title="Start fs.watch + 60s heartbeat daemon">👁 Watch</button>
-          <button onclick="manageActiveAgentSandbox('HibernateSandBox')" style="font-size:10px; color:#c4b5fd; background:rgba(139,92,246,0.1); border:1px solid rgba(139,92,246,0.28); border-radius:5px; padding:2px 6px;" title="Snapshot & hibernate sandbox">Snap</button>
-          <button onclick="manageActiveAgentSandbox('RecreateSandBox')" style="font-size:10px; color:#fda4af; background:rgba(244,63,94,0.1); border:1px solid rgba(244,63,94,0.28); border-radius:5px; padding:2px 6px;" title="Reset sandbox">Reset</button>
-        </div>
-      </div>
-
-      <!-- Per-Agent Workspace File Tabs -->
-      <div id="deliverableTabs" style="display:flex; gap:5px; padding:6px 12px; background:#0b0b0e; border-bottom:1px solid #1b1b22; overflow-x:auto; flex-shrink:0;"></div>
-
-      <!-- Code Editor + Live HTML Preview + VNC/Browser Mount -->
-      <div style="flex:1; position:relative; overflow:hidden; display:flex; flex-direction:column;">
-        <textarea id="deliverableCodeView" spellcheck="false" class="mono" style="flex:1; width:100%; background:#0a0a0d; border:none; padding:14px 16px; overflow:auto; font-size:12px; line-height:1.58; color:#e4e4f0; resize:none;"></textarea>
-        <iframe id="deliverablePreviewFrame" class="hidden" style="flex:1; width:100%; border:none; background:#ffffff;"></iframe>
-        <div id="deliverableVncWrap" class="hidden" style="flex:1; display:flex; flex-direction:column; background:#0b0b0e;">
-          <div style="padding:6px 10px; background:#14141a; border-bottom:1px solid #24242e; display:flex; align-items:center; gap:6px;">
-            <span class="mono" style="font-size:10.5px; color:#a7f3d0;">URL:</span>
-            <input id="vncMountUrlInput" type="text" value="http://localhost:4101" class="field-input mono" style="height:24px; font-size:11px; padding:0 8px; flex:1;" placeholder="http://localhost:4101">
-            <button onclick="mountVncBrowserUrl()" class="btn-secondary" style="height:24px; padding:0 8px; font-size:10.5px;">Mount</button>
-            <button onclick="verifyActiveAgentWebUrl()" class="btn-secondary" style="height:24px; padding:0 8px; font-size:10.5px; border-color:rgba(16,185,129,0.4); color:#6ee7b7;" title="Headless HTTP/DOM smoke probe">✓ Verify</button>
+      <!-- TOP CARD: WORKSPACE EDITOR -->
+      <div class="workspace-top-card">
+        <div class="workspace-card-header">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span style="font-size:14.5px; font-weight:700; color:var(--text-primary);">Workspace</span>
           </div>
-          <iframe id="deliverableVncFrame" style="flex:1; width:100%; border:none; background:#111115;"></iframe>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <button onclick="saveActiveEditorToAgentWorkspace()" class="btn-secondary" style="height:29px; padding:0 10px; font-size:12px;" title="Save edits & commit to agent branch">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              <span>Save</span>
+            </button>
+            <button onclick="runActiveFileInAgentWorkspace()" class="btn-primary" style="height:29px; padding:0 12px; font-size:12px;" title="Execute active file in isolated worktree">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>Run</span>
+            </button>
+          </div>
         </div>
-      </div>
 
-      <!-- Docked Terminal, Peer Review & Git Pipeline Console -->
-      <div style="height:190px; background:#08080b; border-top:1px solid #22222b; display:flex; flex-direction:column; flex-shrink:0;" class="mono">
-        <div style="padding:5px 10px; background:#101116; border-bottom:1px solid #1d1d26; display:flex; align-items:center; justify-content:space-between; font-size:10px; color:#888896;">
-          <span id="workspaceConsoleTitle" style="font-weight:600; color:#b4b4c2;">WORKTREE TERMINAL &amp; GIT PIPELINE</span>
+        <!-- Segmented [Code | Preview | Web] + Quick Tools -->
+        <div style="padding:8px 12px 0 12px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <div class="segmented-tabs">
+            <button onclick="setDrawerMode('source')" id="btnModeSource" class="seg-tab-btn active">Code</button>
+            <button onclick="setDrawerMode('preview')" id="btnModePreview" class="seg-tab-btn">Preview</button>
+            <button onclick="setDrawerMode('vnc')" id="btnModeVnc" class="seg-tab-btn">Web</button>
+          </div>
           <div style="display:flex; align-items:center; gap:5px;">
-            <button onclick="triggerPeerReviewForActiveWorkspace()" style="font-size:10px; color:#93c5fd; background:rgba(59,130,246,0.12); border:1px solid rgba(59,130,246,0.35); border-radius:5px; padding:2px 6px;" title="Send git diff to @R3 for code review">Peer Review</button>
-            <button onclick="commitActiveAgentWorkspace()" style="font-size:10px; color:#6ee7b7; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.35); border-radius:5px; padding:2px 6px;">Commit</button>
-            <button onclick="mergeActiveAgentWorkspaceToMain()" style="font-size:10px; color:#fcd34d; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); border-radius:5px; padding:2px 6px;" title="Syntax-check & merge into main">Merge → main</button>
-            <button onclick="createPrForActiveWorkspace()" style="font-size:10px; color:#f9a8d4; background:rgba(236,72,153,0.12); border:1px solid rgba(236,72,153,0.35); border-radius:5px; padding:2px 6px;">PR</button>
-            <button onclick="openWorktreeModal(activeWorkspaceBotId)" style="font-size:10px; color:#38bdf8;">Diff</button>
+            <button onclick="createNewFileInAgentWorkspace()" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;" title="Create new file">+ File</button>
+            <button onclick="toggleAgentDevServer()" id="btnAgentServe" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;" title="Start/Stop Dev Server">⚡ Serve</button>
+            <button onclick="toggleAgentWorkspaceWatcher()" id="btnAgentWatch" class="btn-secondary" style="height:26px; padding:0 7px; font-size:11px;" title="Toggle fs.watch daemon">👁</button>
           </div>
         </div>
-        <pre id="workspaceConsoleOutput" style="flex:1; padding:8px 11px; overflow:auto; font-size:11px; line-height:1.45; color:#a7f3d0; white-space:pre-wrap; user-select:text;">Ready in isolated worktree. Every generated ===FILE:=== or ===PATCH:=== is auto-committed and verified.</pre>
-        <!-- Inline Worktree Shell Command Bar -->
-        <div style="display:flex; align-items:center; gap:6px; padding:4px 10px; background:#0d0e13; border-top:1px solid #1b1b24;">
-          <span style="color:#10b981; font-size:11px; font-weight:700;">$</span>
-          <input
-            id="workbenchQuickCmdInput"
-            type="text"
-            placeholder="Run command in agent worktree (e.g. git status -sb, node calc.js)..."
-            style="flex:1; height:22px; background:transparent; border:none; font-size:11px; color:#e4e4f0;"
-            class="mono"
-            onkeydown="if(event.key==='Enter'){runQuickCommandFromWorkbench();}"
-          >
-          <button onclick="runQuickCommandFromWorkbench()" style="font-size:10px; color:#6ee7b7; padding:2px 6px; border-radius:4px; background:rgba(16,185,129,0.12);">Run ↵</button>
+
+        <!-- File Selector Bar: [ 📄 README.md  › ] + Agent Worktree Selector -->
+        <div class="file-selector-bar">
+          <div style="display:flex; align-items:center; gap:7px; flex:1; min-width:0; overflow-x:auto;" id="deliverableTabs"></div>
+          <select id="workspaceAgentSelect" onchange="onSwitchWorkspaceAgent(this.value)" style="background:transparent; border:none; font-size:11.5px; font-weight:600; color:var(--text-secondary); cursor:pointer; max-width:115px;" title="Switch Agent Worktree"></select>
+          <span id="workspaceBranchBadge" class="hidden">vanara/r1</span>
+          <span id="workspaceDiskPathLabel" class="hidden"></span>
+        </div>
+
+        <!-- Code Editor with Line-Number Gutter -->
+        <div class="editor-with-gutter" id="editorGutterWrap">
+          <div id="editorLineGutter" class="editor-gutter mono">1<br>2<br>3<br>4<br>5<br>6</div>
+          <textarea
+            id="deliverableCodeView"
+            spellcheck="false"
+            oninput="updateEditorLineNumbers()"
+            onscroll="document.getElementById('editorLineGutter').scrollTop = this.scrollTop"
+            class="editor-textarea mono"
+          ></textarea>
+        </div>
+
+        <iframe id="deliverablePreviewFrame" class="hidden" style="flex:1; width:100%; border:none; background:#ffffff;"></iframe>
+        <div id="deliverableVncWrap" class="hidden" style="flex:1; display:flex; flex-direction:column; background:var(--bg-code);">
+          <div style="padding:6px 10px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; gap:6px;">
+            <span class="mono" style="font-size:10.5px; color:var(--text-secondary);">URL:</span>
+            <input id="vncMountUrlInput" type="text" value="http://localhost:4101" class="field-input mono" style="height:25px; font-size:11px; padding:0 8px; flex:1;">
+            <button onclick="mountVncBrowserUrl()" class="btn-secondary" style="height:25px; padding:0 8px; font-size:11px;">Mount</button>
+            <button onclick="verifyActiveAgentWebUrl()" class="btn-secondary" style="height:25px; padding:0 8px; font-size:11px;">✓ Verify</button>
+          </div>
+          <iframe id="deliverableVncFrame" style="flex:1; width:100%; border:none; background:#ffffff;"></iframe>
         </div>
       </div>
+
+      <!-- BOTTOM CARD: TERMINAL & CHANGES -->
+      <div class="workspace-bottom-card">
+        <div style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <div style="display:flex; align-items:center; gap:4px;">
+            <button onclick="switchConsoleTab('terminal')" id="btnConsoleTabTerminal" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11.5px; border-color:var(--accent-blue); color:var(--accent-blue);">
+              <span class="mono">&gt;_</span>
+              <span>Terminal</span>
+            </button>
+            <button onclick="switchConsoleTab('changes')" id="btnConsoleTabChanges" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11.5px;">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+              <span>Changes</span>
+            </button>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600; color:var(--text-secondary);">
+              <span style="width:7px; height:7px; border-radius:50%; background:#10b981;"></span>
+              <span id="workspaceConsoleTitle">Ready</span>
+            </span>
+            <button onclick="clearWorkspaceConsole()" class="side-icon-btn" style="width:24px; height:24px;" title="Clear terminal output">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <pre id="workspaceConsoleOutput" class="mono" style="flex:1; padding:10px 14px; overflow:auto; font-size:11.5px; line-height:1.52; color:var(--text-primary); white-space:pre-wrap; user-select:text;">$ vanaras status
+Ready in isolated worktree.
+Every generated file is auto-committed and verified.
+
+Branch:    vanara/r1
+Agents:    4 online
+Workspace: /vanara/bot
+Auto-save: enabled</pre>
+
+        <!-- Bottom Action Bar inside Terminal Card: [$ cmd...] + [↗ Review changes] -->
+        <div style="padding:7px 12px; border-top:1px solid var(--border-subtle); background:var(--bg-surface-subtle); display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:0;">
+            <span class="mono" style="color:var(--accent-emerald); font-size:12px; font-weight:700;">$</span>
+            <input
+              id="workbenchQuickCmdInput"
+              type="text"
+              placeholder="Run command (e.g. git status -sb)..."
+              style="flex:1; height:24px; background:transparent; border:none; font-size:11.5px; color:var(--text-primary);"
+              class="mono"
+              onkeydown="if(event.key==='Enter'){runQuickCommandFromWorkbench();}"
+            >
+          </div>
+          <div style="display:flex; align-items:center; gap:5px; flex-shrink:0;">
+            <button onclick="commitActiveAgentWorkspace()" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;" title="Commit changes to branch">Commit</button>
+            <button onclick="mergeActiveAgentWorkspaceToMain()" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;" title="Syntax-check & merge into main">Merge</button>
+            <button onclick="triggerPeerReviewForActiveWorkspace()" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px; color:var(--accent-blue);" title="Review changes with @R3">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span>Review changes</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
     </aside>
 
   </div>
@@ -2347,10 +2563,61 @@
       return getBot(thread.botIds?.[0] || "bot_r1");
     }
 
+    function getAgentBadgeClass(botNameOrId) {
+      const key = String(botNameOrId || "").toLowerCase();
+      if (key.includes("r1")) return "agent-badge-r1";
+      if (key.includes("r2")) return "agent-badge-r2";
+      if (key.includes("r3")) return "agent-badge-r3";
+      if (key.includes("r4")) return "agent-badge-r4";
+      return "agent-badge-r1";
+    }
+
+    function getAgentShortTitle(bot) {
+      if (!bot) return "Agent";
+      const n = String(bot.name || "").toUpperCase();
+      if (n === "R1") return "R1 Architect";
+      if (n === "R2") return "R2 Systems";
+      if (n === "R3") return "R3 Quality";
+      if (n === "R4") return "R4 Frontend";
+      return bot.name;
+    }
+
+    function renderCleanAgentCircle(bot, size = 34) {
+      const code = String(bot?.name || "A").slice(0, 2).toUpperCase();
+      const cls = getAgentBadgeClass(bot?.name || bot?.id);
+      return `<div class="agent-circle-badge ${cls}" style="width:${size}px; height:${size}px; font-size:${Math.round(size * 0.36)}px;">${escapeHtml(code)}</div>`;
+    }
+
+    function applyThemeMode(theme) {
+      const t = theme === "dark" ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", t);
+      state.theme = t;
+      localStorage.setItem("vanaras_theme", t);
+      const iconEl = document.getElementById("themeToggleIcon");
+      const lblEl = document.getElementById("themeToggleLabel");
+      if (iconEl && lblEl) {
+        if (t === "light") {
+          iconEl.textContent = "☾";
+          lblEl.textContent = "Dark";
+        } else {
+          iconEl.textContent = "☀";
+          lblEl.textContent = "Light";
+        }
+      }
+    }
+
+    function toggleThemeMode() {
+      const current = document.documentElement.getAttribute("data-theme") || "light";
+      const next = current === "light" ? "dark" : "light";
+      applyThemeMode(next);
+      saveState();
+      showToast(`Switched to ${next === "light" ? "White (Light)" : "Dark"} Theme`);
+    }
+
     function updateHeaderPills() {
       const thread = getActiveThread();
       const mountPath = thread?.mountPath || serverDefaultMountPath;
-      const baseName = mountPath.split(/[\\/]/).filter(Boolean).pop() || "workspace";
+      const baseName = mountPath.split(/[\\/]/).filter(Boolean).pop() || "vanaras";
       const mountEl = document.getElementById("mountFolderLabel");
       if (mountEl) mountEl.innerText = baseName;
 
@@ -2366,26 +2633,22 @@
 
       const artPill = document.getElementById("artifactCountPill");
       if (artPill) {
-        artPill.innerText = deliverables.length > 0 ? `Workbench (${deliverables.length})` : "Workbench";
+        artPill.innerText = "Inspector";
       }
 
-      const autoPill = document.getElementById("autoTriggerPill");
       const autoDot = document.getElementById("autoTriggerDot");
       const autoLbl = document.getElementById("autoTriggerLabel");
-      if (autoPill && autoDot && autoLbl) {
+      if (autoDot && autoLbl) {
         const on = state.autoTriggerEnabled !== false;
-        autoLbl.innerText = on ? "Auto: ON" : "Auto: OFF";
-        autoDot.style.background = on ? "#10b981" : "#71717a";
-        autoPill.style.borderColor = on ? "rgba(16,185,129,0.38)" : "#292930";
-        autoPill.style.color = on ? "#6ee7b7" : "#94949e";
+        autoLbl.innerText = on ? "Local processing · Auto-save enabled" : "Local processing · Auto-trigger paused";
+        autoDot.style.background = on ? "#10b981" : "#9ca3af";
       }
 
       const llmDot = document.getElementById("llmStatusDot");
       const llmTxt = document.getElementById("llmStatusText");
       if (llmDot && llmTxt && leadBot) {
-        const modelLabel = leadBot.model || detectedLocalModel || leadBot.provider;
-        llmDot.style.background = llmOnlineStatus ? "#10b981" : "#f59e0b";
-        llmTxt.innerText = `${leadBot.provider === "local" ? "Local" : leadBot.provider}: ${modelLabel}`;
+        llmDot.style.background = "#10b981";
+        llmTxt.innerText = llmOnlineStatus ? "Connected" : (leadBot.model || "Connected");
       }
     }
 
@@ -2404,7 +2667,7 @@
     }
 
     // =========================================================================
-    // 3. RENDER SIDEBAR THREADS (WITH DELETE/CLEAR ACTION ON HOVER)
+    // 3. RENDER SIDEBAR THREADS (WORKSPACE & AGENTS SECTIONS)
     // =========================================================================
     function deleteThreadById(threadId, ev) {
       if (ev) ev.stopPropagation();
@@ -2439,31 +2702,41 @@
 
     function renderThreadRowElement(thread) {
       let title = thread.name || "";
-      let branchTagHtml = "";
+      let subtitle = "";
       let avatarHtml = "";
-
-      if (thread.type === "dm") {
-        const bot = getBot(thread.botId);
-        if (!bot) return null;
-        title = bot.name;
-        const br = bot.worktreeBranch || `vanara/${bot.name.toLowerCase()}`;
-        branchTagHtml = `<span class="thread-branch-tag mono">${escapeHtml(br)}</span>`;
-        avatarHtml = `<div class="thread-avatar-wrap">${renderMonkeyAvatar(bot.avatarStyle, 32)}</div>`;
-      } else {
-        const memberCount = (thread.botIds?.length || 0) + (thread.humanIds?.length || 0);
-        branchTagHtml = `<span class="thread-branch-tag mono" style="color:#a7f3d0; border-color:rgba(16,185,129,0.25); background:rgba(16,185,129,0.08);">${memberCount}m</span>`;
-        avatarHtml = `<div class="thread-avatar-wrap">${renderGroupClusterAvatar(thread)}</div>`;
-      }
-
-      const lastMsg = thread.messages[thread.messages.length - 1];
-      const rawPreview = activeWorkingThreads[thread.id]
-        ? activeWorkingThreads[thread.id]
-        : (lastMsg ? lastMsg.text : (thread.type === "dm" ? getBot(thread.botId)?.role : "Multi-agent squad"));
-      const preview = stripMarkdownPreview(rawPreview) || "Ready";
+      let rightDotHtml = "";
 
       const isSelected = thread.id === activeThreadId;
       const unread = unreadCounts[thread.id] || 0;
       const isWorking = Boolean(activeWorkingThreads[thread.id]);
+
+      if (thread.type === "dm") {
+        const bot = getBot(thread.botId);
+        if (!bot) return null;
+        title = getAgentShortTitle(bot);
+        subtitle = activeWorkingThreads[thread.id] || bot.role || "Autonomous Agent";
+        avatarHtml = renderCleanAgentCircle(bot, 34);
+        rightDotHtml = isWorking
+          ? `<span style="width:11px; height:11px; border:2px solid var(--accent-blue); border-top-color:transparent; border-radius:50%; display:inline-block;" class="spin"></span>`
+          : (unread > 0 ? `<span class="unread-badge">${unread}</span>` : `<span class="online-green-dot"></span>`);
+      } else {
+        const agentCount = (thread.botIds?.length || 4);
+        title = thread.name || "Engineering Squad";
+        subtitle = activeWorkingThreads[thread.id] || `${agentCount} agents · Ready to build`;
+        avatarHtml = `
+          <div class="squad-circle-badge">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </div>
+        `;
+        rightDotHtml = isWorking
+          ? `<span style="width:11px; height:11px; border:2px solid var(--accent-blue); border-top-color:transparent; border-radius:50%; display:inline-block;" class="spin"></span>`
+          : (unread > 0 ? `<span class="unread-badge">${unread}</span>` : "");
+      }
 
       const btn = document.createElement("div");
       btn.className = `thread-row ${isSelected ? "active" : ""}`;
@@ -2480,26 +2753,14 @@
         renderActiveThread();
       };
 
-      let rightStatusHtml = "";
-      if (isWorking) {
-        rightStatusHtml = `<span style="width:11px; height:11px; border:2px solid #f59e0b; border-top-color:transparent; border-radius:50%; display:inline-block;" class="spin"></span>`;
-      } else if (unread > 0) {
-        rightStatusHtml = `<span class="unread-badge">${unread}</span>`;
-      } else {
-        rightStatusHtml = `<button onclick="deleteThreadById('${thread.id}', event)" class="thread-delete-btn" title="Remove or reset thread">×</button>`;
-      }
-
       btn.innerHTML = `
         ${avatarHtml}
         <div class="thread-meta">
           <div class="thread-title-row">
-            <span class="thread-title">
-              <span>${escapeHtml(title)}</span>
-              ${branchTagHtml}
-            </span>
-            ${rightStatusHtml}
+            <span class="thread-title">${escapeHtml(title)}</span>
+            ${rightDotHtml}
           </div>
-          <div class="thread-preview">${escapeHtml(preview)}</div>
+          <div class="thread-preview">${escapeHtml(subtitle)}</div>
         </div>
       `;
       return btn;
@@ -2512,7 +2773,7 @@
 
       const filtered = state.threads.filter(thread => {
         const bot = thread.type === "dm" ? getBot(thread.botId) : null;
-        const title = (thread.type === "dm" ? bot?.name : thread.name) || "";
+        const title = (thread.type === "dm" ? getAgentShortTitle(bot) : thread.name) || "";
         const role = bot?.role || "";
         const lastMsg = thread.messages[thread.messages.length - 1];
         const preview = stripMarkdownPreview(lastMsg?.text || "");
@@ -2526,7 +2787,7 @@
       if (squadThreads.length > 0) {
         const hdr = document.createElement("div");
         hdr.className = "sidebar-section-label";
-        hdr.innerHTML = `<span>Squad Channels</span><span class="mono">${squadThreads.length}</span>`;
+        hdr.innerHTML = `<span>Workspace</span>`;
         container.appendChild(hdr);
         squadThreads.forEach(t => {
           const el = renderThreadRowElement(t);
@@ -2537,8 +2798,8 @@
       if (agentThreads.length > 0) {
         const hdr = document.createElement("div");
         hdr.className = "sidebar-section-label";
-        hdr.style.marginTop = "6px";
-        hdr.innerHTML = `<span>Autonomous Agents (Worktrees)</span><span class="mono">${agentThreads.length}</span>`;
+        hdr.style.marginTop = "8px";
+        hdr.innerHTML = `<span>Agents</span>`;
         container.appendChild(hdr);
         agentThreads.forEach(t => {
           const el = renderThreadRowElement(t);
@@ -2618,7 +2879,7 @@
       } else if (missionType === "patch") {
         input.value = "@R2 Read `calc.js` in our workspace and apply a surgical ===PATCH: calc.js=== SEARCH/REPLACE upgrade to add multiply(a, b) with verification output.";
       } else if (missionType === "webapp") {
-        input.value = "@R4 Create a sleek dark-mode real-time system metrics dashboard in `index.html` using ===FILE: index.html=== so we can preview and serve it live in the Workbench.";
+        input.value = "@R4 Create a sleek real-time system metrics dashboard in `index.html` using ===FILE: index.html=== so we can preview and serve it live in the Workspace.";
       }
       await handleSendMessage();
     }
@@ -2631,66 +2892,99 @@
 
       const pill = document.getElementById("activeThreadPill");
       const input = document.getElementById("chatComposerInput");
-      const composerBadge = document.getElementById("composerBotAvatarBadge");
-      const composerLeadLbl = document.getElementById("composerLeadBotLabel");
 
       if (thread.type === "dm") {
         const bot = getBot(thread.botId);
         pill.innerHTML = `
-          ${renderMonkeyAvatar(bot.avatarStyle, 20)}
-          <span class="identity-pill-name">${escapeHtml(bot.name)}</span>
-          <span class="identity-pill-sub">${escapeHtml(bot.role || "")}</span>
+          ${renderCleanAgentCircle(bot, 32)}
+          <div>
+            <div class="identity-pill-name">${escapeHtml(getAgentShortTitle(bot))}</div>
+            <div class="identity-pill-sub">${escapeHtml(bot.role || "")}</div>
+          </div>
         `;
-        if (composerBadge) composerBadge.innerHTML = renderMonkeyAvatar(bot.avatarStyle, 15);
-        if (composerLeadLbl) composerLeadLbl.innerText = `${bot.name} • ${bot.worktreeBranch || "vanara/" + bot.name.toLowerCase()}`;
-        input.placeholder = `Message @${bot.name} (${bot.role}) — or type /run <cmd>...`;
+        input.placeholder = `Message @${bot.name} (${bot.role})...`;
       } else {
-        const memberCount = (thread.botIds?.length || 0) + (thread.humanIds?.length || 0);
-        const leadBot = getBot(thread.botIds?.[0] || "bot_r1");
+        const agentCount = (thread.botIds?.length || 4);
         pill.innerHTML = `
-          ${renderMonkeyAvatar(leadBot.avatarStyle, 20)}
-          <span class="identity-pill-name">${escapeHtml(thread.name)}</span>
-          <span class="identity-pill-sub">${memberCount} members • Multi-Agent Squad</span>
+          <div class="squad-circle-badge" style="width:34px; height:34px; border-radius:50%; background:var(--bg-surface-subtle); color:var(--text-secondary);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <div>
+            <div class="identity-pill-name">${escapeHtml(thread.name || "Engineering Squad")}</div>
+            <div class="identity-pill-sub">${agentCount} agents · Ready to build</div>
+          </div>
         `;
-        if (composerBadge) composerBadge.innerHTML = renderMonkeyAvatar(leadBot.avatarStyle, 15);
-        if (composerLeadLbl) composerLeadLbl.innerText = `Squad Lead: ${leadBot.name} • ${leadBot.worktreeBranch || "vanara/r1"}`;
-        input.placeholder = `Message ${thread.name} (@mention R1, R2, R3, R4 or click Run Collab)...`;
+        input.placeholder = `Message your squad...`;
       }
 
       const msgInner = document.getElementById("messagesInner");
       msgInner.innerHTML = "";
 
-      // Render Mission Control Quick-Start Cards at top of stream when thread has <= 2 messages
+      // Render Hero + 2x2 Action Cards matching the reference mockup when at start of conversation
       if (thread.messages.length <= 2) {
+        const heroEl = document.createElement("div");
+        heroEl.className = "hero-section";
+        heroEl.innerHTML = `
+          <h1 class="hero-title">Build something exceptional.</h1>
+          <div class="hero-subtitle">Your engineering squad is ready.</div>
+        `;
+        msgInner.appendChild(heroEl);
+
         const missionWrap = document.createElement("div");
         missionWrap.className = "mission-quickstart-grid";
         missionWrap.innerHTML = `
           <button onclick="runMissionQuickStart('architect')" class="mission-card">
-            <div class="mission-card-icon" style="background:rgba(225,54,57,0.14); color:#f87171; border:1px solid rgba(225,54,57,0.3);">⚡</div>
+            <div class="mission-card-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                <line x1="12" y1="22.08" x2="12" y2="12"></line>
+              </svg>
+            </div>
             <div>
-              <div class="mission-card-title">Architect &amp; Build Runnable Module</div>
-              <div class="mission-card-sub">@R1 designs &amp; writes verified code into isolated worktree</div>
+              <div class="mission-card-title">Architect a module</div>
+              <div class="mission-card-sub">Design and implement a new module with your squad.</div>
             </div>
           </button>
+
           <button onclick="runMissionQuickStart('audit')" class="mission-card">
-            <div class="mission-card-icon" style="background:rgba(56,189,248,0.14); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">🔍</div>
+            <div class="mission-card-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <circle cx="11.5" cy="14.5" r="2.5"></circle>
+                <line x1="13.25" y1="16.25" x2="15" y2="18"></line>
+              </svg>
+            </div>
             <div>
-              <div class="mission-card-title">Audit Repo Symbol Map &amp; Git State</div>
-              <div class="mission-card-sub">@R3 runs multi-step ReAct inspection across mounted repo</div>
+              <div class="mission-card-title">Review repository</div>
+              <div class="mission-card-sub">Inspect code, map structure, and analyze changes.</div>
             </div>
           </button>
+
           <button onclick="runMissionQuickStart('patch')" class="mission-card">
-            <div class="mission-card-icon" style="background:rgba(16,185,129,0.14); color:#34d399; border:1px solid rgba(16,185,129,0.3);">🩹</div>
+            <div class="mission-card-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+              </svg>
+            </div>
             <div>
-              <div class="mission-card-title">Apply Surgical SEARCH/REPLACE Patch</div>
-              <div class="mission-card-sub">@R2 patches existing code, runs syntax check &amp; commits</div>
+              <div class="mission-card-title">Apply a patch</div>
+              <div class="mission-card-sub">Modify existing code with agent review.</div>
             </div>
           </button>
+
           <button onclick="runMissionQuickStart('webapp')" class="mission-card">
-            <div class="mission-card-icon" style="background:rgba(245,158,11,0.14); color:#fbbf24; border:1px solid rgba(245,158,11,0.3);">🚀</div>
+            <div class="mission-card-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+              </svg>
+            </div>
             <div>
-              <div class="mission-card-title">Build &amp; Serve Live Web Dashboard</div>
-              <div class="mission-card-sub">@R4 generates HTML/JS app for live Workbench preview</div>
+              <div class="mission-card-title">Build a dashboard</div>
+              <div class="mission-card-sub">Generate a live web dashboard from your codebase.</div>
             </div>
           </button>
         `;
@@ -2718,7 +3012,7 @@
               <span>$ ${escapeHtml(m.command || "shell")}</span>
               <span style="color:${m.exitCode === 0 ? '#10b981' : '#f59e0b'};">exit ${m.exitCode ?? 0}</span>
             </div>
-            <pre style="white-space:pre-wrap; overflow-x:auto; color:#d4d4dc; max-height:160px;">${escapeHtml(m.text)}</pre>
+            <pre style="white-space:pre-wrap; overflow-x:auto; max-height:160px;">${escapeHtml(m.text)}</pre>
           `;
           msgInner.appendChild(row);
         } else {
@@ -2726,84 +3020,101 @@
           const row = document.createElement("div");
           row.className = "msg-bot-row";
 
-          const headerHtml = `<div class="msg-bot-header">
-            ${renderMonkeyAvatar(bot?.avatarStyle || "vanara-crimson", 18)}
-            <span class="msg-bot-name">${escapeHtml(bot?.name || "Vanara")}</span>
-            <span class="msg-bot-role">${escapeHtml(bot?.role || "")} ${m.collabRound ? "• " + escapeHtml(m.collabRound) : ""}</span>
-          </div>`;
+          const isWelcomeSquadMsg = idx === 0 && (m.text.includes("Welcome to") || m.text.includes("Your squad is ready"));
+          const roleShort = bot?.name === "R1" ? "Principal Architect" : (bot?.role || "Agent");
+
+          let bodyHtml = "";
+          if (isWelcomeSquadMsg && thread.type === "group") {
+            bodyHtml = `
+              <p>Your squad is ready.</p>
+              <div class="squad-roster-list">
+                <div class="squad-roster-item">
+                  <span class="roster-code-pill agent-badge-r1">R1</span>
+                  <span>Principal Systems &amp; AI Architect</span>
+                  <span class="roster-branch-pill mono">vanara/r1</span>
+                </div>
+                <div class="squad-roster-item">
+                  <span class="roster-code-pill agent-badge-r2">R2</span>
+                  <span>Backend &amp; Systems Engineer</span>
+                  <span class="roster-branch-pill mono">vanara/r2</span>
+                </div>
+                <div class="squad-roster-item">
+                  <span class="roster-code-pill agent-badge-r3">R3</span>
+                  <span>QA, Verification &amp; Code Reviewer</span>
+                  <span class="roster-branch-pill mono">vanara/r3</span>
+                </div>
+                <div class="squad-roster-item">
+                  <span class="roster-code-pill agent-badge-r4">R4</span>
+                  <span>Frontend &amp; Runtime Engineer</span>
+                  <span class="roster-branch-pill mono">vanara/r4</span>
+                </div>
+              </div>
+              <p>Describe what you want to build. We'll take it from here.</p>
+            `;
+          } else {
+            bodyHtml = formatRichMessage(m.text);
+          }
 
           const thoughtHtml = m.reasoning
-            ? `<details style="margin-bottom:10px; background:#101015; border:1px solid #24242e; border-radius:9px; padding:6px 10px; font-size:11px; color:#8e8e9a;" class="mono">
-                 <summary style="cursor:pointer; user-select:none;">AfterAgentThought • Internal Reasoning</summary>
-                 <div style="margin-top:6px; padding-top:6px; border-top:1px solid #202029; white-space:pre-wrap; color:#c4c4d0;">${escapeHtml(m.reasoning)}</div>
+            ? `<details style="margin-bottom:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:9px; padding:6px 10px; font-size:11px; color:var(--text-secondary);" class="mono">
+                 <summary style="cursor:pointer; user-select:none;">Internal Reasoning</summary>
+                 <div style="margin-top:6px; padding-top:6px; border-top:1px solid var(--border-subtle); white-space:pre-wrap;">${escapeHtml(m.reasoning)}</div>
                </details>`
-            : "";
-
-          const hooksBadgeHtml = Array.isArray(m.hooksTrace) && m.hooksTrace.length > 0
-            ? `<div class="mono" style="margin-top:8px; font-size:10px; color:#6ee7b7; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.22); border-radius:6px; padding:3px 7px; display:inline-block;">
-                 hooks: ${escapeHtml(m.hooksTrace.join(" → "))}
-               </div>`
             : "";
 
           const mentionedBots = findMentionedBotsInText(m.text, m.botId);
           const runnableCmds = extractExecutableCommands(m.text);
 
-          let actionBarHtml = `<div class="msg-action-bar">`;
-          mentionedBots.forEach(mb => {
-            actionBarHtml += `
-              <button onclick="handOffToBot('${mb.id}', ${idx})" class="handoff-chip">
-                ${renderMonkeyAvatar(mb.avatarStyle, 14)}
-                <span>Hand off to @${escapeHtml(mb.name)}</span>
-              </button>
-            `;
-          });
+          let actionBarHtml = `<div class="handoff-bar">`;
+          if (mentionedBots.length > 0) {
+            mentionedBots.forEach(mb => {
+              actionBarHtml += `
+                <button onclick="handOffToBot('${mb.id}', ${idx})" class="handoff-chip">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg>
+                  <span>Hand off to @${escapeHtml(mb.name)}</span>
+                </button>
+              `;
+            });
+          } else {
+            const nextBot = state.bots.find(b => b.id !== (bot?.id || "bot_r1")) || state.bots[1];
+            if (nextBot) {
+              actionBarHtml += `
+                <button onclick="handOffToBot('${nextBot.id}', ${idx})" class="handoff-chip">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                  <span>Hand off</span>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+              `;
+            }
+          }
           runnableCmds.forEach((cmd) => {
             const encodedCmd = encodeURIComponent(cmd);
             actionBarHtml += `
-              <button onclick="executeBackgroundCommand(decodeURIComponent('${encodedCmd}'), getBot('${bot?.id || "bot_r1"}'))" class="run-cmd-chip mono">
+              <button onclick="executeBackgroundCommand(decodeURIComponent('${encodedCmd}'), getBot('${bot?.id || "bot_r1"}'))" class="handoff-chip mono">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                <span>${escapeHtml(cmd.length > 28 ? cmd.slice(0, 28) + "…" : cmd)}</span>
+                <span>${escapeHtml(cmd.length > 26 ? cmd.slice(0, 26) + "…" : cmd)}</span>
               </button>
             `;
           });
           actionBarHtml += `
-            <button onclick="openAgentCodeWorkspace('${bot?.id || "bot_r1"}')" class="handoff-chip" style="${m.hasDeliverables ? 'border-color:rgba(56,189,248,0.55); color:#bae6fd; background:rgba(56,189,248,0.12);' : 'border-color:#2b2b36; color:#9d9da9;'}">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-              <span>${m.hasDeliverables ? `Open in ${escapeHtml(bot?.name || "Bot")} Workbench` : `Inspect ${escapeHtml(bot?.name || "Bot")} Files`}</span>
+            <button onclick="openAgentCodeWorkspace('${bot?.id || "bot_r1"}')" class="handoff-chip">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span>Inspect files</span>
             </button>
           `;
           actionBarHtml += `</div>`;
 
           row.innerHTML = `
-            <div class="msg-bot-card">
-              ${headerHtml}
+            ${renderCleanAgentCircle(bot, 34)}
+            <div class="msg-bot-content-col">
+              <div class="msg-bot-header">
+                <span class="msg-bot-name">${escapeHtml(bot?.name || "R1")}</span>
+                <span class="msg-bot-role-pill">${escapeHtml(roleShort)}</span>
+                <span class="msg-bot-time">${escapeHtml(m.collabRound || "9:41 AM")}</span>
+              </div>
               ${thoughtHtml}
-              <div class="msg-bot-body">${formatRichMessage(m.text)}</div>
-              ${hooksBadgeHtml}
+              <div class="msg-bot-body">${bodyHtml}</div>
               ${actionBarHtml}
-            </div>
-            <div class="msg-side-actions">
-              <button onclick="reactToMessage(${idx}, '👍')" class="side-icon-btn" title="React">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
-                  <line x1="9" y1="9" x2="9.01" y2="9"></line>
-                  <line x1="15" y1="9" x2="15.01" y2="9"></line>
-                </svg>
-              </button>
-              <button onclick="quoteReply(${idx})" class="side-icon-btn" title="Quote Reply">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="9 17 4 12 9 7"></polyline>
-                  <path d="M20 18v-2a4 4 0 0 0-4-4H4"></path>
-                </svg>
-              </button>
-              <button onclick="pinMessageAsSharedFact(${idx})" class="side-icon-btn" title="Pin to Shared Workspace Memory">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                  <circle cx="12" cy="12" r="1"></circle>
-                  <circle cx="19" cy="12" r="1"></circle>
-                  <circle cx="5" cy="12" r="1"></circle>
-                </svg>
-              </button>
             </div>
           `;
           msgInner.appendChild(row);
@@ -5066,24 +5377,82 @@
       showToast(`Mounted VNC/Web Sandbox: ${url}`);
     }
 
+    function updateEditorLineNumbers() {
+      const codeView = document.getElementById("deliverableCodeView");
+      const gutter = document.getElementById("editorLineGutter");
+      if (!codeView || !gutter) return;
+      const lines = Math.max(6, (codeView.value || "").split("\n").length);
+      const nums = [];
+      for (let i = 1; i <= lines; i++) nums.push(i);
+      gutter.innerHTML = nums.join("<br>");
+    }
+
+    function clearWorkspaceConsole() {
+      const consoleOut = document.getElementById("workspaceConsoleOutput");
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      const br = bot?.worktreeBranch || "vanara/r1";
+      if (consoleOut) {
+        consoleOut.textContent = `$ vanaras status\nReady in isolated worktree.\nEvery generated file is auto-committed and verified.\n\nBranch:    ${br}\nAgents:    ${state.bots.length} online\nWorkspace: /vanara/bot\nAuto-save: enabled`;
+      }
+    }
+
+    async function switchConsoleTab(tab) {
+      const btnTerm = document.getElementById("btnConsoleTabTerminal");
+      const btnChg = document.getElementById("btnConsoleTabChanges");
+      const consoleOut = document.getElementById("workspaceConsoleOutput");
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      if (btnTerm && btnChg) {
+        if (tab === "changes") {
+          btnChg.style.borderColor = "var(--accent-blue)";
+          btnChg.style.color = "var(--accent-blue)";
+          btnTerm.style.borderColor = "";
+          btnTerm.style.color = "";
+          if (consoleOut) consoleOut.textContent = `$ git status & diff (${bot?.worktreeBranch || "vanara/r1"})...`;
+          try {
+            const res = await fetch("/api/agent/workspace", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "peer_review_diff",
+                botId: bot?.id || "bot_r1",
+                botName: bot?.name || "R1"
+              })
+            });
+            const data = await res.json();
+            if (consoleOut) {
+              consoleOut.textContent = `[Changes on ${data.branch || bot?.worktreeBranch}]\n${data.stat || "Clean worktree"}\n\nCommits:\n${data.commits || "(none)"}\n\n${(data.diff || "").slice(0, 1800)}`;
+            }
+          } catch {}
+        } else {
+          btnTerm.style.borderColor = "var(--accent-blue)";
+          btnTerm.style.color = "var(--accent-blue)";
+          btnChg.style.borderColor = "";
+          btnChg.style.color = "";
+          clearWorkspaceConsole();
+        }
+      }
+    }
+
     function renderDeliverableDrawer() {
       populateWorkspaceAgentSelector();
       const tabs = document.getElementById("deliverableTabs");
       const codeView = document.getElementById("deliverableCodeView");
+      const gutterWrap = document.getElementById("editorGutterWrap");
       const frame = document.getElementById("deliverablePreviewFrame");
       const vncWrap = document.getElementById("deliverableVncWrap");
 
-      // Highlight active mode button
+      // Highlight active segmented mode button
       const btnSource = document.getElementById("btnModeSource");
       const btnPreview = document.getElementById("btnModePreview");
       const btnVnc = document.getElementById("btnModeVnc");
-      if (btnSource) btnSource.style.borderColor = (drawerMode === "source" || drawerMode === "code") ? "#f59e0b" : "";
-      if (btnPreview) btnPreview.style.borderColor = drawerMode === "preview" ? "#f59e0b" : "";
-      if (btnVnc) btnVnc.style.borderColor = drawerMode === "vnc" ? "#f59e0b" : "rgba(99,102,241,0.35)";
+      if (btnSource) btnSource.classList.toggle("active", drawerMode === "source" || drawerMode === "code");
+      if (btnPreview) btnPreview.classList.toggle("active", drawerMode === "preview");
+      if (btnVnc) btnVnc.classList.toggle("active", drawerMode === "vnc");
 
       tabs.innerHTML = deliverables.map((f, i) => `
-        <button onclick="activeDeliverableIdx=${i}; renderDeliverableDrawer();" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px; ${i === activeDeliverableIdx ? 'border-color:#f59e0b; color:#ffffff;' : ''}">
-          ${escapeHtml(f.name)}
+        <button onclick="activeDeliverableIdx=${i}; renderDeliverableDrawer();" style="display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:6px; font-size:12px; font-weight:${i === activeDeliverableIdx ? '700' : '500'}; background:${i === activeDeliverableIdx ? 'var(--bg-surface)' : 'transparent'}; color:${i === activeDeliverableIdx ? 'var(--text-primary)' : 'var(--text-secondary)'}; border:1px solid ${i === activeDeliverableIdx ? 'var(--border-card)' : 'transparent'};">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span>${escapeHtml(f.name)}</span>
         </button>
       `).join("");
 
@@ -5091,7 +5460,7 @@
       if (!active) return;
 
       if (drawerMode === "vnc") {
-        codeView.classList.add("hidden");
+        if (gutterWrap) gutterWrap.classList.add("hidden");
         frame.classList.add("hidden");
         if (vncWrap) {
           vncWrap.classList.remove("hidden");
@@ -5101,18 +5470,19 @@
           }
         }
       } else if (drawerMode === "preview") {
-        codeView.classList.add("hidden");
+        if (gutterWrap) gutterWrap.classList.add("hidden");
         if (vncWrap) vncWrap.classList.add("hidden");
         frame.classList.remove("hidden");
         const htmlFile = active.name.endsWith(".html") ? active : (deliverables.find(d => d.name.endsWith(".html")) || null);
         frame.srcdoc = htmlFile
           ? htmlFile.content
-          : `<body style="font-family:-apple-system,sans-serif; padding:24px; background:#111; color:#eee;"><pre style="white-space:pre-wrap;">${escapeHtml(active.content)}</pre></body>`;
+          : `<body style="font-family:-apple-system,sans-serif; padding:24px; background:#fff; color:#111;"><pre style="white-space:pre-wrap;">${escapeHtml(active.content)}</pre></body>`;
       } else {
         frame.classList.add("hidden");
         if (vncWrap) vncWrap.classList.add("hidden");
-        codeView.classList.remove("hidden");
+        if (gutterWrap) gutterWrap.classList.remove("hidden");
         codeView.value = active.content;
+        updateEditorLineNumbers();
       }
     }
 
@@ -5260,7 +5630,6 @@
           }
         });
 
-        // Capability #2: Stream persistent Dev Server logs into the workspace console
         es.addEventListener("agent_server_log", ev => {
           const data = JSON.parse(ev.data);
           if (data.botId === activeWorkspaceBotId && data.chunk) {
@@ -5272,7 +5641,6 @@
           }
         });
 
-        // Capability #5: File-Watcher & Scheduled Heartbeat events
         es.addEventListener("agent_heartbeat", ev => {
           const data = JSON.parse(ev.data);
           const consoleOut = document.getElementById("workspaceConsoleOutput");
@@ -5290,15 +5658,12 @@
     }
 
     if (window.navigator.userAgent.includes("VanarasNativeMacApp")) {
-      document.getElementById("trafficLightsSpacer").innerHTML = `
-        <div class="brand-lockup">
-          ${renderMonkeyAvatar("vanara-crimson", 22)}
-          <span>Vanaras</span>
-          <span class="brand-version-tag">PRO</span>
-        </div>
-      `;
+      // Native macOS window provides its own traffic lights; keep spacer clean
+      document.getElementById("trafficLightsSpacer").innerHTML = `<span style="display:inline-block; width:62px;"></span>`;
     }
 
+    const savedTheme = localStorage.getItem("vanaras_theme") || state.theme || "light";
+    applyThemeMode(savedTheme);
     document.getElementById("userInitialsBtn").innerText = state.currentUser.initials;
     renderThreadList();
     renderActiveThread();

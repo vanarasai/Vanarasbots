@@ -2511,7 +2511,32 @@ Auto-save: enabled</pre>
       }
     });
 
+    function saveApiKeysToLocalStore() {
+      try {
+        const keyMap = JSON.parse(localStorage.getItem("vanaras_api_keys_v1") || "{}");
+        (state.bots || []).forEach(b => {
+          if (b && b.id && b.apiKey) {
+            keyMap[b.id] = b.apiKey;
+            keyMap._default = b.apiKey;
+          }
+        });
+        localStorage.setItem("vanaras_api_keys_v1", JSON.stringify(keyMap));
+      } catch {}
+    }
+
+    function restoreApiKeysFromLocalStore() {
+      try {
+        const keyMap = JSON.parse(localStorage.getItem("vanaras_api_keys_v1") || "{}");
+        (state.bots || []).forEach(b => {
+          if (b && !b.apiKey && (keyMap[b.id] || keyMap._default)) {
+            b.apiKey = keyMap[b.id] || keyMap._default || "";
+          }
+        });
+      } catch {}
+    }
+
     function saveState() {
+      saveApiKeysToLocalStore();
       localStorage.setItem("vanaras_v6_app", JSON.stringify(state));
       fetch("/api/workspace", {
         method: "POST",
@@ -2570,6 +2595,7 @@ Auto-save: enabled</pre>
     }
 
     async function loadDiskWorkspaceOnBoot() {
+      restoreApiKeysFromLocalStore();
       try {
         const res = await fetch("/api/workspace");
         if (res.ok) {
@@ -2582,9 +2608,11 @@ Auto-save: enabled</pre>
             state = data.state;
             if (!Array.isArray(state.sharedFacts)) state.sharedFacts = [...DEFAULT_STATE.sharedFacts];
             if (typeof state.autoTriggerEnabled !== "boolean") state.autoTriggerEnabled = true;
+            restoreApiKeysFromLocalStore();
             hydrateBotAgentFields();
             localStorage.setItem("vanaras_v6_app", JSON.stringify(state));
           } else {
+            restoreApiKeysFromLocalStore();
             state.threads.forEach(t => { t.mountPath = serverDefaultMountPath; });
             saveState();
           }
@@ -4217,6 +4245,7 @@ ${handoffRule}`;
       };
 
       // Capability #3: Real-Time SSE Token & Thought Streaming when onStreamDelta is provided
+      let streamUpstreamError = null;
       if (typeof onStreamDelta === "function") {
         try {
           const streamRes = await fetch("/api/llm/stream", {
@@ -4242,14 +4271,24 @@ ${handoffRule}`;
                 if (!line.startsWith("data:")) continue;
                 const dataStr = line.slice(5).trim();
                 if (!dataStr || dataStr === "[DONE]") continue;
+                let parsed = null;
                 try {
-                  const parsed = JSON.parse(dataStr);
-                  if (parsed.error) throw new Error(parsed.error);
+                  parsed = JSON.parse(dataStr);
+                } catch {}
+                if (parsed) {
+                  if (parsed.error) {
+                    streamUpstreamError = new Error(parsed.error);
+                    break;
+                  }
                   if (parsed.token) fullContent += parsed.token;
                   if (parsed.reasoning) fullReasoning += parsed.reasoning;
                   onStreamDelta(fullContent, fullReasoning);
-                } catch {}
+                }
               }
+              if (streamUpstreamError) break;
+            }
+            if (streamUpstreamError && !fullContent && !fullReasoning) {
+              throw streamUpstreamError;
             }
             const split = extractInlineThinkBlocks(fullContent);
             const combinedReasoning = [fullReasoning.trim(), split.thoughtText].filter(Boolean).join("\n\n").trim();
@@ -4262,22 +4301,54 @@ ${handoffRule}`;
           }
         } catch (err) {
           if (err?.name === "AbortError" || abortSignal?.aborted) throw err;
+          if (err === streamUpstreamError) throw err;
         }
       }
 
-      const res = await fetch("/api/llm/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: abortSignal
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      let data = null;
+      try {
+        const res = await fetch("/api/llm/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: abortSignal
+        });
+        data = await res.json();
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      } catch (chatErr) {
+        if (chatErr?.name === "AbortError" || abortSignal?.aborted) throw chatErr;
+        // Direct CORS fallback for OpenRouter if local proxy is momentarily restarting
+        if (bot.provider === "openrouter" && /Load failed|Failed to fetch|NetworkError/i.test(String(chatErr?.message || ""))) {
+          const cleanUrl = (bot.baseUrl || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
+          const headers = {
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://vanaras.local",
+            "X-Title": "Vanaras Multi-Agent Engineering Workbench"
+          };
+          if (bot.apiKey) headers["Authorization"] = `Bearer ${bot.apiKey}`;
+          const directRes = await fetch(`${cleanUrl}/chat/completions`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model: modelToUse || "openrouter/auto",
+              messages: payload.messages,
+              temperature: payload.temperature,
+              max_tokens: payload.max_tokens
+            }),
+            signal: abortSignal
+          });
+          data = await directRes.json();
+          if (!directRes.ok) {
+            throw new Error(data?.error?.message || data?.error || `OpenRouter HTTP ${directRes.status}`);
+          }
+        } else {
+          throw chatErr;
+        }
+      }
 
       const msg = data.choices?.[0]?.message || {};
       const rawContent = (msg.content || "").trim();
-      const rawReasoning = (msg.reasoning_content || "").trim();
+      const rawReasoning = (msg.reasoning_content || msg.reasoning || "").trim();
       const split = extractInlineThinkBlocks(rawContent);
       const combinedReasoning = [rawReasoning, split.thoughtText].filter(Boolean).join("\n\n").trim();
       if (typeof onStreamDelta === "function") {
@@ -4733,19 +4804,43 @@ ${handoffRule}`;
       const baseUrl = document.getElementById("botBaseUrlInput").value.trim();
       const apiKey = document.getElementById("botApiKeyInput").value.trim();
       try {
-        const res = await fetch("/api/llm/models", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, baseUrl, apiKey })
-        });
-        const data = await res.json();
-        if (res.ok && Array.isArray(data.models) && data.models.length > 0) {
-          document.getElementById("botModelInput").value = data.models[0];
+        let data = null;
+        let ok = false;
+        try {
+          const res = await fetch("/api/llm/models", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider, baseUrl, apiKey })
+          });
+          data = await res.json();
+          ok = res.ok;
+        } catch (proxyErr) {
+          if (provider === "openrouter") {
+            const cleanUrl = (baseUrl || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
+            const headers = {};
+            if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+            const directRes = await fetch(`${cleanUrl}/models`, { headers });
+            const raw = await directRes.json();
+            const list = Array.isArray(raw?.data) ? raw.data.map(m => m.id).filter(id => id && !id.startsWith("~")) : [];
+            data = { models: list };
+            ok = directRes.ok;
+          } else {
+            throw proxyErr;
+          }
+        }
+        if (ok && Array.isArray(data?.models) && data.models.length > 0) {
+          const modelInput = document.getElementById("botModelInput");
+          const currentVal = modelInput.value.trim();
+          if (!currentVal || (!data.models.includes(currentVal) && provider === "local")) {
+            modelInput.value = data.models[0];
+          }
           const dl = document.getElementById("botModelSuggestions");
-          dl.innerHTML = data.models.map(m => `<option value="${escapeHtml(m)}"></option>`).join("");
-          showToast(`Found ${data.models.length} model(s): ${data.models[0]}`);
+          if (dl) {
+            dl.innerHTML = data.models.map(m => `<option value="${escapeHtml(m)}"></option>`).join("");
+          }
+          showToast(`Found ${data.models.length} model(s) — active: ${modelInput.value}`);
         } else {
-          showToast("No models returned from endpoint");
+          showToast(data?.error ? `Endpoint error: ${data.error}` : "No models returned from endpoint");
         }
       } catch (e) {
         showToast(`Probe error: ${e.message}`);
@@ -5248,7 +5343,7 @@ ${handoffRule}`;
 
     async function probeOnboardingModels() {
       const provider = document.getElementById("onboardProviderSelect").value;
-      let baseUrl = document.getElementById("onboardBaseUrlInput").value.trim() || "http://192.168.68.102:1234/v1";
+      let baseUrl = document.getElementById("onboardBaseUrlInput").value.trim() || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : "http://192.168.68.102:1234/v1");
       if (provider === "local" && !baseUrl.endsWith("/v1") && !baseUrl.includes("/v1/")) {
         baseUrl = baseUrl.replace(/\/+$/, "") + "/v1";
         document.getElementById("onboardBaseUrlInput").value = baseUrl;
@@ -5260,26 +5355,76 @@ ${handoffRule}`;
         statusEl.innerText = "Probing model endpoint...";
       }
       try {
-        const res = await fetch("/api/llm/models", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, baseUrl, apiKey })
-        });
-        const data = await res.json();
-        if (res.ok && Array.isArray(data.models) && data.models.length > 0) {
-          detectedLocalModel = data.models[0];
+        let data = null;
+        let ok = false;
+        try {
+          const res = await fetch("/api/llm/models", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider, baseUrl, apiKey })
+          });
+          data = await res.json();
+          ok = res.ok;
+        } catch (proxyErr) {
+          if (provider === "openrouter") {
+            const cleanUrl = (baseUrl || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
+            const headers = {};
+            if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+            const directRes = await fetch(`${cleanUrl}/models`, { headers });
+            const raw = await directRes.json();
+            const list = Array.isArray(raw?.data) ? raw.data.map(m => m.id).filter(id => id && !id.startsWith("~")) : [];
+            data = { models: list };
+            ok = directRes.ok;
+          } else {
+            throw proxyErr;
+          }
+        }
+
+        if (ok && Array.isArray(data?.models) && data.models.length > 0) {
+          if (provider === "local") {
+            detectedLocalModel = data.models[0];
+          }
           llmOnlineStatus = true;
-          document.getElementById("onboardModelInput").value = data.models[0];
+          const modelInput = document.getElementById("onboardModelInput");
+          const currentModel = modelInput.value.trim();
+          const dl = document.getElementById("botModelSuggestions");
+          if (dl) {
+            dl.innerHTML = data.models.map(m => `<option value="${escapeHtml(m)}"></option>`).join("");
+          }
+          if (!currentModel || (provider === "local" && !data.models.includes(currentModel))) {
+            modelInput.value = data.models[0];
+          } else if (provider === "openrouter" && !data.models.includes(currentModel)) {
+            const stripped = currentModel.replace(/-[0-9]+(?:-[0-9]+)*$/, "");
+            if (stripped !== currentModel && data.models.includes(stripped)) {
+              modelInput.value = stripped;
+            } else {
+              const prefixMatch = data.models.find(m => m.startsWith(stripped));
+              if (prefixMatch) modelInput.value = prefixMatch;
+            }
+          }
+          const activeModel = modelInput.value.trim();
+          const exactMatch = data.models.includes(activeModel);
           if (statusEl) {
             statusEl.style.color = "#10b981";
-            statusEl.innerText = `✓ Connected! Detected ${data.models.length} model(s): ${data.models.slice(0, 4).join(", ")}`;
+            if (activeModel !== currentModel && currentModel) {
+              statusEl.innerText = `✓ Connected! Auto-matched "${currentModel}" → "${activeModel}" (${data.models.length} models available).`;
+            } else if (exactMatch || provider === "local") {
+              statusEl.innerText = `✓ Connected! Verified "${activeModel}" (${data.models.length} models available).`;
+            } else {
+              const prefix = activeModel.split("/")[0] || activeModel;
+              const similar = data.models.filter(m => m.toLowerCase().includes(prefix.toLowerCase())).slice(0, 3);
+              const hint = similar.length > 0 ? ` Similar in catalog: ${similar.join(", ")}` : "";
+              statusEl.innerText = `✓ Connected (${data.models.length} models)! Keeping "${activeModel}".${hint}`;
+            }
           }
           updateHeaderPills();
         } else {
           llmOnlineStatus = false;
           if (statusEl) {
-            statusEl.style.color = "#fbbf24";
-            statusEl.innerText = `Endpoint reachable, no model list returned (${data.error || "using manual model ID"}).`;
+            statusEl.style.color = data?.error ? "#f87171" : "#fbbf24";
+            statusEl.innerText = data?.error
+              ? `Connection error: ${data.error}`
+              : `Endpoint reachable, no model list returned (using manual model ID).`;
           }
           updateHeaderPills();
         }

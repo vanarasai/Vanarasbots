@@ -76,6 +76,7 @@
 }
 
 - (void)reloadWebView:(id)sender {
+    [self ensureBackendServerRunning];
     NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"http://localhost:3000/?v=%ld", (long)[[NSDate date] timeIntervalSince1970]]];
     [self.webView loadRequest:[NSURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10.0]];
 }
@@ -141,6 +142,9 @@
 }
 
 - (void)ensureBackendServerRunning {
+    if (self.serverTask && [self.serverTask isRunning]) {
+        return;
+    }
     NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
     NSString *vanarasDir = [bundlePath stringByDeletingLastPathComponent];
     NSString *serverScript = [vanarasDir stringByAppendingPathComponent:@"ui/server.mjs"];
@@ -162,18 +166,31 @@
     }
     if (!nodeBin) return;
 
-    self.serverTask = [[NSTask alloc] init];
-    [self.serverTask setExecutableURL:[NSURL fileURLWithPath:nodeBin]];
-    [self.serverTask setArguments:@[serverScript]];
-    [self.serverTask setCurrentDirectoryURL:[NSURL fileURLWithPath:vanarasDir]];
+    NSTask *task = [[NSTask alloc] init];
+    [task setExecutableURL:[NSURL fileURLWithPath:nodeBin]];
+    [task setArguments:@[serverScript]];
+    [task setCurrentDirectoryURL:[NSURL fileURLWithPath:vanarasDir]];
+    __weak typeof(self) weakSelf = self;
+    [task setTerminationHandler:^(NSTask *terminatedTask) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (strongSelf) {
+                [strongSelf ensureBackendServerRunning];
+            }
+        });
+    }];
+    self.serverTask = task;
     @try {
         [self.serverTask launchAndReturnError:nil];
     } @catch (NSException *exception) {}
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
-    if (self.serverTask && [self.serverTask isRunning]) {
-        [self.serverTask terminate];
+    if (self.serverTask) {
+        [self.serverTask setTerminationHandler:nil];
+        if ([self.serverTask isRunning]) {
+            [self.serverTask terminate];
+        }
     }
 }
 

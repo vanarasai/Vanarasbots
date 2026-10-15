@@ -344,14 +344,16 @@ function isDeliverableRelPathAllowed(relPath) {
   const parts = norm.split("/");
   const top = parts[0];
   if (!top || top.startsWith(".") || RESERVED_ROOT_ENTRIES.has(top)) return false;
+  if (top === "output_test" || top === "test_output" || top === "tmp" || top === "temp") return false;
   if (STARTER_BOILERPLATE_FILES.has(norm) || STARTER_BOILERPLATE_FILES.has(parts[parts.length - 1])) return false;
   for (const seg of parts) {
-    if (!seg || seg.startsWith(".") || seg === "__pycache__" || seg === "node_modules" || seg === "target" || seg === "agent_workspace") {
+    if (!seg || seg.startsWith(".") || seg === "__pycache__" || seg === "node_modules" || seg === "target" || seg === "agent_workspace" || seg === "output_test" || seg === "test_output") {
       return false;
     }
   }
   const baseName = parts[parts.length - 1];
   if (/\.(pyc|pyo|log|tmp)$/i.test(baseName)) return false;
+  if (/^(?:evil\.|test_llm101\.wav$)/i.test(baseName)) return false;
   return true;
 }
 

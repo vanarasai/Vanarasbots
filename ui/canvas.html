@@ -1462,6 +1462,14 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
 
+          <!-- Common Squad Discussion CTA: [ 💬 Discuss ] -->
+          <button onclick="triggerGroupDiscussion()" class="header-tool-pill" title="Start a Common Roundtable Discussion among all squad agents (no handoff/code dump)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span>Discuss</span>
+          </button>
+
           <!-- Primary CTA: [ ▶ Run collaboration ] -->
           <button onclick="triggerGroupCollabRun()" class="header-tool-pill collab-cta" title="Run Multi-Agent Squad Collaboration">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
@@ -1500,6 +1508,15 @@
 
           <!-- Composer Quick Action Menu -->
           <div id="composerMenu" class="popover-menu hidden" style="bottom: 105px; left: 0; width: 268px;">
+            <button onclick="triggerGroupDiscussion(); hideComposerMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:var(--accent-blue);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </div>
+              <div>
+                <div class="popover-title">Start Common Squad Discussion</div>
+                <div class="popover-sub">Roundtable debate &amp; consensus (no handoffs)</div>
+              </div>
+            </button>
             <button onclick="attachRepoFileToComposer(); hideComposerMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:var(--accent-blue);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -4385,6 +4402,20 @@ ${handoffRule}
       showToast("Stopped generation, cleared batch queue & killed background processes");
     }
 
+    function isCommonDiscussionPrompt(text, thread) {
+      const t = String(text || "").trim();
+      if (/^\/(?:discuss|debate|roundtable)\b/i.test(t)) return true;
+      if (!thread || thread.type !== "group") return false;
+      // If user explicitly asks to write/implement/create files right now, use the build/handoff pipeline
+      if (/\b(?:write\s+(?:the\s+)?(?:code|file|script)|implement\s+and\s+save|output\s+===FILE|create\s+(?:the\s+)?files)\b/i.test(t)) {
+        return false;
+      }
+      // If user mentions 2+ agents or asks for a team discussion/brainstorm/opinion
+      const mentioned = (state.bots || []).filter(b => t.toLowerCase().includes(`@${b.name.toLowerCase()}`));
+      if (mentioned.length >= 2 && !/\b(?:build|implement|code)\b/i.test(t)) return true;
+      return /\b(?:discuss|discussion|roundtable|debate|brainstorm|what\s+do\s+you\s+(?:all|guys|team|squad)\s+think|share\s+your\s+(?:thoughts|views|perspectives|opinions)|pros\s+and\s+cons|trade-?offs\s+between)\b/i.test(t);
+    }
+
     async function handleSendMessage() {
       const input = document.getElementById("chatComposerInput");
       const text = input.value.trim();
@@ -4421,7 +4452,14 @@ ${handoffRule}
         showToast(`Batch started: running task 1 of ${batchTasks.length} (${batchTasks.length - 1} queued)`);
       }
 
-      thread.messages.push({ id: "msg_u_" + Date.now(), senderType: "user", text: firstTask });
+      const cleanTopic = firstTask.replace(/^\/(?:discuss|debate|roundtable)\s*/i, "").trim() || firstTask;
+      const runAsDiscussion = isCommonDiscussionPrompt(firstTask, thread);
+
+      thread.messages.push({
+        id: "msg_u_" + Date.now(),
+        senderType: "user",
+        text: /^\/(?:discuss|debate|roundtable)\b/i.test(firstTask) ? `[Squad Discussion] ${cleanTopic}` : firstTask
+      });
       saveState();
       renderThreadList();
       renderActiveThread();
@@ -4438,6 +4476,14 @@ ${handoffRule}
           text: firstTask
         })
       }).catch(() => {});
+
+      if (runAsDiscussion) {
+        const explicitMentions = (state.bots || []).filter(b =>
+          cleanTopic.toLowerCase().includes(`@${b.name.toLowerCase()}`)
+        );
+        await runGroupDiscussionRoundtable(thread, cleanTopic, explicitMentions.length >= 2 ? explicitMentions : null);
+        return;
+      }
 
       const targetBot = resolveInitialTargetBotForPrompt(thread, firstTask);
       if (targetBot) {
@@ -5078,8 +5124,203 @@ ${handoffRule}
     }
 
     // =========================================================================
-    // 8. AUTONOMOUS MULTI-MONKEY COLLABORATION RUNNER
+    // 8. COMMON SQUAD ROUNDTABLE DISCUSSION & MULTI-AGENT COLLABORATION
     // =========================================================================
+    async function triggerGroupDiscussion() {
+      const thread = getActiveThread();
+      if (!thread) return;
+      const input = document.getElementById("chatComposerInput");
+      let topic = input.value.trim();
+
+      if (!topic) {
+        const lastUserMsg = [...thread.messages].reverse().find(m => m.senderType === "user");
+        topic = await askInAppInput({
+          title: "Start Common Squad Discussion (Roundtable)",
+          subtitle: "All squad agents debate trade-offs, challenge assumptions, and reach a shared consensus — no handoffs or code dumps.",
+          defaultValue: lastUserMsg ? lastUserMsg.text.replace(/^\[[^\]]+\]\s*/, "") : "What architecture, trade-offs, and edge cases should we align on before building?",
+          placeholder: "Enter a topic or question for the squad to discuss together...",
+          confirmLabel: "Start Discussion"
+        });
+        if (!topic || !topic.trim()) return;
+      } else {
+        input.value = "";
+      }
+
+      const cleanTopic = topic.replace(/^\/(?:discuss|debate|roundtable)\s*/i, "").trim();
+      thread.messages.push({
+        id: "msg_discuss_topic_" + Date.now(),
+        senderType: "user",
+        text: `[Squad Discussion] ${cleanTopic}`
+      });
+      saveState();
+      renderThreadList();
+      renderActiveThread();
+
+      await runGroupDiscussionRoundtable(thread, cleanTopic, null);
+    }
+
+    async function runGroupDiscussionRoundtable(thread, topic, participantsOverride = null) {
+      if (!thread || !topic) return;
+      const threadId = thread.id;
+      const turnCtx = cancelActiveTurnForThread(thread, false);
+      activeTurnState[threadId] = turnCtx;
+
+      let participants = [];
+      if (Array.isArray(participantsOverride) && participantsOverride.length >= 2) {
+        participants = participantsOverride;
+      } else if (thread.type === "group") {
+        participants = buildDynamicSquadRelay(thread);
+      } else {
+        const primary = getBot(thread.botId);
+        const others = state.bots.filter(b => b.id !== primary.id).slice(0, 2);
+        participants = [primary, ...others];
+      }
+      if (participants.length === 0) participants = [state.bots[0]];
+
+      const rosterStr = participants.map(b => `@${b.name} (${b.role})`).join(", ");
+      const discussionLog = [];
+
+      try {
+        const folderSummary = await ensureFolderSnapshot(thread.mountPath, participants[0]);
+
+        // Phase 1: Every agent in the room shares their specialist perspective & responds to prior speakers
+        for (let i = 0; i < participants.length; i++) {
+          if (turnCtx.aborted) return;
+          const bot = participants[i];
+          activeWorkingThreads[threadId] = `Squad Discussion (${i + 1}/${participants.length}): @${bot.name} speaking...`;
+          renderThreadList();
+          updateComposerStopButton();
+
+          const priorTranscript = discussionLog.length === 0
+            ? "(You are opening the roundtable discussion. Frame the core architectural trade-offs and invite your teammates' perspectives.)"
+            : discussionLog.map(entry => `@${entry.name} (${entry.role}):\n${entry.text}`).join("\n\n---\n\n");
+
+          const sysPrompt = `You are @${bot.name} (${bot.role}) participating in a live COMMON SQUAD ROUNDTABLE DISCUSSION in the Vanaras engineering room.
+Squad participants in this room: ${rosterStr}.
+${bot.instructions || ""}
+${folderSummary ? `\nMOUNTED REPOSITORY CONTEXT:\n${String(folderSummary).slice(0, 6000)}` : ""}
+
+COMMON DISCUSSION RULES (STRICT):
+1. This is an open engineering roundtable conversation among peers — NOT a task handoff pipeline.
+2. Do NOT output ===FILE: ...=== code blocks, do NOT invoke [TOOL: ...] tags, and NEVER emit [HANDOFF: ...] or [SQUAD_COMPLETE].
+3. Speak naturally from your specialty (${bot.role}) in 80–140 words:
+   - Directly reference or challenge specific points made by earlier speakers (@Name) where relevant.
+   - Highlight concrete trade-offs, risks, or design insights from your domain.
+   - Pose 1 sharp question or counterpoint for the room if an important trade-off is still unresolved.`;
+
+          const userPrompt = `DISCUSSION TOPIC:\n${topic}\n\nROOM CONVERSATION SO FAR:\n${priorTranscript}\n\nYour perspective (@${bot.name} — ${bot.role}):`;
+
+          const liveMsg = {
+            id: `msg_disc_${Date.now()}_${i}`,
+            senderType: "bot",
+            botId: bot.id,
+            text: "▍",
+            reasoning: "",
+            thoughtOpen: false,
+            collabRound: `Common Discussion • Speaker ${i + 1}/${participants.length} (${bot.role})`,
+            isStreaming: true
+          };
+          thread.messages.push(liveMsg);
+          if (activeThreadId === threadId) renderActiveThread();
+
+          let lastRenderTs = 0;
+          const res = await queryBotLLM(bot, sysPrompt, userPrompt, 1400, (partialText, partialReason) => {
+            if (turnCtx.aborted) return;
+            const split = extractInlineThinkBlocks(partialText || "", partialReason || "");
+            if (split.thoughtText) liveMsg.reasoning = split.thoughtText;
+            liveMsg.text = split.visibleText || (liveMsg.reasoning ? "⏳ Thinking..." : "▍");
+            const now = Date.now();
+            if (activeThreadId === threadId && now - lastRenderTs > 85) {
+              lastRenderTs = now;
+              updateStreamingMessageDomInPlace(threadId, liveMsg);
+            }
+          }, turnCtx.abortController.signal);
+
+          if (turnCtx.aborted) return;
+          liveMsg.isStreaming = false;
+          const cleanSpeech = stripAllToolDirectives(res.content || "")
+            .replace(/\[HANDOFF:\s*@?[a-zA-Z0-9_-]+\]/gi, "")
+            .replace(/\[SQUAD_COMPLETE\]/gi, "")
+            .trim() || (res.reasoning ? res.reasoning.slice(-600).trim() : "(Shared perspective)");
+
+          liveMsg.text = cleanSpeech;
+          if (res.reasoning) liveMsg.reasoning = res.reasoning;
+          discussionLog.push({ name: bot.name, role: bot.role, text: cleanSpeech });
+
+          saveState();
+          renderThreadList();
+          if (activeThreadId === threadId) renderActiveThread();
+        }
+
+        // Phase 2: Lead Architect / Moderator synthesizes the room's debate into a Shared Consensus
+        if (participants.length >= 2 && !turnCtx.aborted) {
+          const synthesizer = participants[0];
+          activeWorkingThreads[threadId] = `Squad Discussion: @${synthesizer.name} synthesizing consensus...`;
+          renderThreadList();
+
+          const fullDebate = discussionLog.map(entry => `@${entry.name} (${entry.role}):\n${entry.text}`).join("\n\n---\n\n");
+          const synthSys = `You are @${synthesizer.name} (${synthesizer.role}) moderating the Vanaras engineering roundtable.
+Summarize the team's discussion into a crisp **Shared Squad Consensus**:
+- **Agreed Direction**: What the squad aligned on.
+- **Key Trade-offs & Mitigations**: How the points raised by ${participants.slice(1).map(p => "@" + p.name).join(", ")} are resolved.
+- **Recommended Next Step**: Concrete action plan when the user is ready to build.
+Do NOT output ===FILE: ...=== blocks or [HANDOFF: ...] tags. Keep it under 150 words.`;
+          const synthUsr = `DISCUSSION TOPIC:\n${topic}\n\nFULL SQUAD ROUNDTABLE:\n${fullDebate}\n\nWrite the Shared Squad Consensus:`;
+
+          const synthMsg = {
+            id: `msg_disc_synth_${Date.now()}`,
+            senderType: "bot",
+            botId: synthesizer.id,
+            text: "▍",
+            reasoning: "",
+            thoughtOpen: false,
+            collabRound: `Common Discussion • Shared Squad Consensus`,
+            isStreaming: true
+          };
+          thread.messages.push(synthMsg);
+          if (activeThreadId === threadId) renderActiveThread();
+
+          let lastRenderTs = 0;
+          const synthRes = await queryBotLLM(synthesizer, synthSys, synthUsr, 1400, (partialText, partialReason) => {
+            if (turnCtx.aborted) return;
+            const split = extractInlineThinkBlocks(partialText || "", partialReason || "");
+            if (split.thoughtText) synthMsg.reasoning = split.thoughtText;
+            synthMsg.text = split.visibleText || (synthMsg.reasoning ? "⏳ Thinking..." : "▍");
+            const now = Date.now();
+            if (activeThreadId === threadId && now - lastRenderTs > 85) {
+              lastRenderTs = now;
+              updateStreamingMessageDomInPlace(threadId, synthMsg);
+            }
+          }, turnCtx.abortController.signal);
+
+          if (turnCtx.aborted) return;
+          synthMsg.isStreaming = false;
+          synthMsg.text = stripAllToolDirectives(synthRes.content || "")
+            .replace(/\[HANDOFF:\s*@?[a-zA-Z0-9_-]+\]/gi, "")
+            .replace(/\[SQUAD_COMPLETE\]/gi, "")
+            .trim() || (synthRes.reasoning ? synthRes.reasoning.slice(-600).trim() : "(Consensus reached)");
+          if (synthRes.reasoning) synthMsg.reasoning = synthRes.reasoning;
+        }
+      } catch (e) {
+        if (e?.name === "AbortError" || turnCtx.aborted) return;
+        thread.messages.push({
+          id: "msg_disc_err_" + Date.now(),
+          senderType: "bot",
+          botId: participants[0].id,
+          text: `Discussion error: ${e.message}`
+        });
+      } finally {
+        if (activeTurnState[threadId] === turnCtx) {
+          delete activeTurnState[threadId];
+          delete activeWorkingThreads[threadId];
+        }
+        saveState();
+        renderThreadList();
+        updateComposerStopButton();
+        if (activeThreadId === threadId) renderActiveThread();
+      }
+    }
+
     async function triggerGroupCollabRun() {
       const thread = getActiveThread();
       const input = document.getElementById("chatComposerInput");

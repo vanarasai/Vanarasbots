@@ -2426,6 +2426,142 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // 10. Workspace Media & Webpage Streaming Endpoint (GET /api/workspace/media?path=...)
+  if (req.method === "GET" && req.url.startsWith("/api/workspace/media")) {
+    try {
+      const parsedUrl = new URL(req.url, `http://localhost:${PORT}`);
+      let rawPath = decodeURIComponent(parsedUrl.searchParams.get("path") || "").trim();
+      const botId = parsedUrl.searchParams.get("botId") || "";
+      const forceDownload = parsedUrl.searchParams.get("download") === "1";
+
+      rawPath = rawPath.replace(/^file:\/\//i, "").trim();
+      if (!rawPath || rawPath.includes("..")) {
+        return sendJson(res, 400, { ok: false, error: "Invalid media path" });
+      }
+
+      const candidateFiles = [];
+      const addCandidate = (p) => {
+        try {
+          const resolved = path.resolve(p);
+          if ((isPathInside(resolved, ROOT_DIR) || isPathInside(resolved, WORKTREES_DIR)) && fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+            candidateFiles.push({ path: resolved, mtimeMs: fs.statSync(resolved).mtimeMs });
+          }
+        } catch {}
+      };
+
+      if (path.isAbsolute(rawPath)) {
+        addCandidate(rawPath);
+      }
+
+      const cleanRel = rawPath.replace(/^\/+/, "");
+      addCandidate(path.join(ROOT_DIR, cleanRel));
+      addCandidate(path.join(ROOT_DIR, "output", path.basename(cleanRel)));
+      addCandidate(path.join(ROOT_DIR, "output_test", path.basename(cleanRel)));
+
+      if (botId) {
+        try {
+          const wt = ensureAgentWorktree(botId, botId.replace(/^bot_/, "").toUpperCase());
+          addCandidate(path.join(wt.codeDir, cleanRel));
+          addCandidate(path.join(wt.worktreePath, cleanRel));
+          addCandidate(path.join(wt.codeDir, "output", path.basename(cleanRel)));
+          addCandidate(path.join(wt.worktreePath, "output", path.basename(cleanRel)));
+        } catch {}
+      }
+
+      if (fs.existsSync(WORKTREES_DIR)) {
+        try {
+          for (const ent of fs.readdirSync(WORKTREES_DIR, { withFileTypes: true })) {
+            if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
+            const sibWt = path.join(WORKTREES_DIR, ent.name);
+            addCandidate(path.join(sibWt, cleanRel));
+            addCandidate(path.join(sibWt, "output", path.basename(cleanRel)));
+            addCandidate(path.join(sibWt, "output_test", path.basename(cleanRel)));
+            const awDir = path.join(sibWt, "agent_workspace");
+            if (fs.existsSync(awDir)) {
+              for (const sub of fs.readdirSync(awDir, { withFileTypes: true })) {
+                if (sub.isDirectory() && !sub.name.startsWith(".")) {
+                  const subDir = path.join(awDir, sub.name);
+                  addCandidate(path.join(subDir, cleanRel));
+                  addCandidate(path.join(subDir, "output", path.basename(cleanRel)));
+                  addCandidate(path.join(subDir, "output_test", path.basename(cleanRel)));
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (candidateFiles.length === 0) {
+        return sendJson(res, 404, { ok: false, error: `Media file not found: ${rawPath}` });
+      }
+
+      candidateFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
+      const chosenPath = candidateFiles[0].path;
+      const stat = fs.statSync(chosenPath);
+      const ext = path.extname(chosenPath).toLowerCase();
+
+      const mimeMap = {
+        ".wav": "audio/wav",
+        ".mp3": "audio/mpeg",
+        ".ogg": "audio/ogg",
+        ".m4a": "audio/mp4",
+        ".aac": "audio/aac",
+        ".flac": "audio/flac",
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+        ".mov": "video/quicktime",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".html": "text/html; charset=utf-8",
+        ".htm": "text/html; charset=utf-8",
+        ".pdf": "application/pdf",
+        ".json": "application/json; charset=utf-8",
+        ".txt": "text/plain; charset=utf-8"
+      };
+      const contentType = mimeMap[ext] || "application/octet-stream";
+      const baseHeaders = {
+        "Content-Type": contentType,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-cache"
+      };
+      if (forceDownload) {
+        baseHeaders["Content-Disposition"] = `attachment; filename="${path.basename(chosenPath).replace(/"/g, "")}"`;
+      }
+
+      const rangeHeader = req.headers.range;
+      if (rangeHeader && /^bytes=\d*-\d*$/.test(rangeHeader)) {
+        const parts = rangeHeader.replace(/bytes=/, "").split("-");
+        const start = parts[0] ? parseInt(parts[0], 10) : 0;
+        const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+        if (start >= stat.size || end >= stat.size || start > end) {
+          res.writeHead(416, { "Content-Range": `bytes */${stat.size}` });
+          res.end();
+          return;
+        }
+        res.writeHead(206, {
+          ...baseHeaders,
+          "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+          "Content-Length": end - start + 1
+        });
+        fs.createReadStream(chosenPath, { start, end }).pipe(res);
+        return;
+      }
+
+      res.writeHead(200, {
+        ...baseHeaders,
+        "Content-Length": stat.size
+      });
+      fs.createReadStream(chosenPath).pipe(res);
+      return;
+    } catch (e) {
+      return sendJson(res, 500, { ok: false, error: e.message });
+    }
+  }
+
   // Static files
   const reqPath = req.url === "/" ? "/index.html" : decodeURIComponent(req.url.split("?")[0]);
   const targetFile = path.resolve(__dirname, "." + reqPath);

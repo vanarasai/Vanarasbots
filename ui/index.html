@@ -3165,6 +3165,10 @@ Auto-save: enabled</pre>
       if (botBodyEl) {
         botBodyEl.innerHTML = formatRichMessage(liveMsg.text);
       }
+      const mediaDeckEl = row.querySelector(".msg-media-deck");
+      if (mediaDeckEl && !(liveMsg.isStreaming || liveMsg.streaming)) {
+        mediaDeckEl.innerHTML = renderInlineMediaDeck((liveMsg.text || "") + "\n" + (liveMsg.reasoning || ""), liveMsg.botId);
+      }
       const scrollBox = document.getElementById("messagesContainer");
       if (scrollBox) {
         const distFromBottom = scrollBox.scrollHeight - scrollBox.scrollTop - scrollBox.clientHeight;
@@ -3414,6 +3418,7 @@ Auto-save: enabled</pre>
               </div>
               <div class="msg-thought-wrap">${thoughtHtml}</div>
               <div class="msg-bot-body">${bodyHtml}</div>
+              <div class="msg-media-deck">${!isMsgStreaming ? renderInlineMediaDeck((m.text || "") + "\n" + (m.reasoning || ""), m.botId) : ""}</div>
               ${actionBarHtml}
             </div>
           `;
@@ -6536,6 +6541,185 @@ ${handoffRule}
         }
         return `<p>${p.replace(/\n/g, "<br>")}</p>`;
       }).join("");
+    }
+
+    function normalizeWorkspaceMediaPath(rawPath) {
+      let p = String(rawPath || "").trim().replace(/^['"`(<\[]+|['"`)>\].,;:]+$/g, "");
+      p = p.replace(/^\$(?:ROOT|SRC|PWD| WORKSPACE)\/?/i, "");
+      p = p.replace(/^file:\/\//i, "");
+      p = p.replace(/^.*?\/\.worktrees\/bot_[^/]+\/(?:agent_workspace\/[^/]+\/)?/i, "");
+      p = p.replace(/^.*?\/vanaras\//i, "");
+      p = p.replace(/^\.\//, "").replace(/^\/+/, "");
+      return p;
+    }
+
+    function toggleInlineWebPreview(btnEl) {
+      const card = btnEl.closest(".inline-media-card");
+      if (!card) return;
+      const body = card.querySelector(".inline-webpage-body");
+      if (!body) return;
+      const isHidden = body.style.display === "none";
+      body.style.display = isHidden ? "block" : "none";
+      btnEl.textContent = isHidden ? "Hide Preview" : "Show Preview";
+    }
+
+    function renderInlineMediaDeck(rawText, botId = "") {
+      if (!rawText) return "";
+      const text = String(rawText);
+      const cards = [];
+      const seenKeys = new Set();
+
+      // 1. Audio files (.wav, .mp3, .ogg, .m4a, .aac, .flac)
+      const audioRx = /(?:['"`(\s]|^)((?:\/[a-zA-Z0-9_./-]+|\$[A-Z_]+\/[a-zA-Z0-9_./-]+|[a-zA-Z0-9_./-]+)?[a-zA-Z0-9_.-]+\.(?:wav|mp3|ogg|m4a|aac|flac))\b/gi;
+      let m;
+      while ((m = audioRx.exec(text)) !== null) {
+        const cleanRel = normalizeWorkspaceMediaPath(m[1]);
+        const baseName = cleanRel.split("/").pop().toLowerCase();
+        if (!cleanRel || baseName.startsWith(".") || seenKeys.has(`audio:${baseName}`)) continue;
+        seenKeys.add(`audio:${baseName}`);
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        const dlUrl = `${mediaUrl}&download=1`;
+        cards.push(`
+          <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+              <div style="display:flex; align-items:center; gap:7px; min-width:0;">
+                <span style="display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; font-size:10px; font-weight:700; background:rgba(16,185,129,0.14); color:#10b981;">AUDIO</span>
+                <span class="mono" style="font-size:12px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(cleanRel)}</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                <a href="${dlUrl}" download style="font-size:11px; font-weight:600; color:var(--text-secondary); text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface);">Download</a>
+              </div>
+            </div>
+            <audio controls preload="metadata" style="width:100%; height:36px; display:block;" src="${mediaUrl}" onerror="this.closest('.inline-media-card').style.display='none'"></audio>
+          </div>
+        `);
+      }
+
+      // 2. Video files (.mp4, .webm, .mov)
+      const videoRx = /(?:['"`(\s]|^)((?:\/[a-zA-Z0-9_./-]+|\$[A-Z_]+\/[a-zA-Z0-9_./-]+|[a-zA-Z0-9_./-]+)?[a-zA-Z0-9_.-]+\.(?:mp4|webm|mov))\b/gi;
+      while ((m = videoRx.exec(text)) !== null) {
+        const cleanRel = normalizeWorkspaceMediaPath(m[1]);
+        const baseName = cleanRel.split("/").pop().toLowerCase();
+        if (!cleanRel || baseName.startsWith(".") || seenKeys.has(`video:${baseName}`)) continue;
+        seenKeys.add(`video:${baseName}`);
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        const dlUrl = `${mediaUrl}&download=1`;
+        cards.push(`
+          <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+              <div style="display:flex; align-items:center; gap:7px; min-width:0;">
+                <span style="display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; font-size:10px; font-weight:700; background:rgba(59,130,246,0.14); color:#3b82f6;">VIDEO</span>
+                <span class="mono" style="font-size:12px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(cleanRel)}</span>
+              </div>
+              <a href="${dlUrl}" download style="font-size:11px; font-weight:600; color:var(--text-secondary); text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface);">Download</a>
+            </div>
+            <video controls playsinline preload="metadata" style="width:100%; max-height:340px; border-radius:8px; background:#090d16; display:block;" src="${mediaUrl}" onerror="this.closest('.inline-media-card').style.display='none'"></video>
+          </div>
+        `);
+      }
+
+      // 3. Image files (.png, .jpg, .jpeg, .gif, .webp, .svg)
+      const imgRx = /(?:['"`(\s]|^)((?:\/[a-zA-Z0-9_./-]+|\$[A-Z_]+\/[a-zA-Z0-9_./-]+|[a-zA-Z0-9_./-]+)?[a-zA-Z0-9_.-]+\.(?:png|jpg|jpeg|gif|webp|svg))\b/gi;
+      while ((m = imgRx.exec(text)) !== null) {
+        const cleanRel = normalizeWorkspaceMediaPath(m[1]);
+        const baseName = cleanRel.split("/").pop().toLowerCase();
+        if (!cleanRel || baseName.startsWith(".") || cleanRel.startsWith("ui/") || seenKeys.has(`img:${baseName}`)) continue;
+        seenKeys.add(`img:${baseName}`);
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        const dlUrl = `${mediaUrl}&download=1`;
+        cards.push(`
+          <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+              <div style="display:flex; align-items:center; gap:7px; min-width:0;">
+                <span style="display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; font-size:10px; font-weight:700; background:rgba(168,85,247,0.14); color:#a855f7;">IMAGE</span>
+                <span class="mono" style="font-size:12px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(cleanRel)}</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <a href="${mediaUrl}" target="_blank" style="font-size:11px; font-weight:600; color:var(--text-secondary); text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface);">Open</a>
+                <a href="${dlUrl}" download style="font-size:11px; font-weight:600; color:var(--text-secondary); text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface);">Download</a>
+              </div>
+            </div>
+            <img src="${mediaUrl}" alt="${escapeHtml(cleanRel)}" loading="lazy" onclick="window.open('${mediaUrl}', '_blank')" style="max-width:100%; max-height:340px; border-radius:8px; display:block; cursor:zoom-in;" onerror="this.closest('.inline-media-card').style.display='none'" />
+          </div>
+        `);
+      }
+
+      // 4. Inline Webpage Preview for fenced ```html ... ``` blocks, .html files, or live localhost URLs
+      const htmlFenceRx = /```html\n([\s\S]*?)```/gi;
+      let fenceIdx = 0;
+      while ((m = htmlFenceRx.exec(text)) !== null) {
+        const htmlSrc = m[1].trim();
+        if (htmlSrc.length < 24) continue;
+        fenceIdx++;
+        const srcDocAttr = escapeHtml(htmlSrc);
+        cards.push(`
+          <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+              <div style="display:flex; align-items:center; gap:7px;">
+                <span style="display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; font-size:10px; font-weight:700; background:rgba(245,158,11,0.14); color:#f59e0b;">WEBPAGE ARTIFACT</span>
+                <span class="mono" style="font-size:12px; font-weight:600; color:var(--text-primary);">Inline HTML Preview #${fenceIdx}</span>
+              </div>
+              <button onclick="toggleInlineWebPreview(this)" style="font-size:11px; font-weight:600; color:var(--text-secondary); padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface); cursor:pointer;">Hide Preview</button>
+            </div>
+            <div class="inline-webpage-body">
+              <iframe sandbox="allow-scripts allow-forms" srcdoc="${srcDocAttr}" style="width:100%; height:320px; border:1px solid var(--border-subtle); border-radius:8px; background:#ffffff; display:block;"></iframe>
+            </div>
+          </div>
+        `);
+      }
+
+      const webUrlRx = /\b(https?:\/\/(?:localhost|127\.0\.0\.1):(\d+)(?:\/[^\s"'`<>)]*)?)/gi;
+      while ((m = webUrlRx.exec(text)) !== null) {
+        const fullUrl = m[1];
+        const port = m[2];
+        if (port === "3000" || port === "1234" || seenKeys.has(`url:${fullUrl}`)) continue;
+        seenKeys.add(`url:${fullUrl}`);
+        cards.push(`
+          <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+              <div style="display:flex; align-items:center; gap:7px; min-width:0;">
+                <span style="display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; font-size:10px; font-weight:700; background:rgba(245,158,11,0.14); color:#f59e0b;">LIVE WEBPAGE</span>
+                <span class="mono" style="font-size:12px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(fullUrl)}</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button onclick="toggleInlineWebPreview(this)" style="font-size:11px; font-weight:600; color:var(--text-secondary); padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface); cursor:pointer;">Hide Preview</button>
+                <a href="${escapeHtml(fullUrl)}" target="_blank" style="font-size:11px; font-weight:600; color:var(--text-secondary); text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface);">Open</a>
+              </div>
+            </div>
+            <div class="inline-webpage-body">
+              <iframe sandbox="allow-scripts allow-forms allow-same-origin" src="${escapeHtml(fullUrl)}" style="width:100%; height:320px; border:1px solid var(--border-subtle); border-radius:8px; background:#ffffff; display:block;"></iframe>
+            </div>
+          </div>
+        `);
+      }
+
+      const htmlFileRx = /(?:['"`(\s]|^)((?:\/[a-zA-Z0-9_./-]+|\$[A-Z_]+\/[a-zA-Z0-9_./-]+|[a-zA-Z0-9_./-]+)?[a-zA-Z0-9_.-]+\.html?)\b/gi;
+      while ((m = htmlFileRx.exec(text)) !== null) {
+        const cleanRel = normalizeWorkspaceMediaPath(m[1]);
+        const baseName = cleanRel.split("/").pop().toLowerCase();
+        if (!cleanRel || cleanRel === "ui/index.html" || cleanRel === "ui/canvas.html" || baseName === "index.html" || baseName === "canvas.html" || seenKeys.has(`html:${baseName}`)) continue;
+        seenKeys.add(`html:${baseName}`);
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        cards.push(`
+          <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+              <div style="display:flex; align-items:center; gap:7px; min-width:0;">
+                <span style="display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; font-size:10px; font-weight:700; background:rgba(245,158,11,0.14); color:#f59e0b;">WEBPAGE</span>
+                <span class="mono" style="font-size:12px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(cleanRel)}</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button onclick="toggleInlineWebPreview(this)" style="font-size:11px; font-weight:600; color:var(--text-secondary); padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface); cursor:pointer;">Hide Preview</button>
+                <a href="${mediaUrl}" target="_blank" style="font-size:11px; font-weight:600; color:var(--text-secondary); text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface);">Open</a>
+              </div>
+            </div>
+            <div class="inline-webpage-body">
+              <iframe sandbox="allow-scripts allow-forms allow-same-origin" src="${mediaUrl}" style="width:100%; height:320px; border:1px solid var(--border-subtle); border-radius:8px; background:#ffffff; display:block;"></iframe>
+            </div>
+          </div>
+        `);
+      }
+
+      return cards.join("");
     }
 
     function showToast(msg) {

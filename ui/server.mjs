@@ -636,10 +636,20 @@ function inspectMountedDirectory(targetPath, codeDir = "") {
 
     // Include live source files from the agent's workspace so the agent never stops with "Let me first inspect the current state of my workspace"
     const wsDir = codeDir && fs.existsSync(codeDir) ? codeDir : resolved;
-    const wsFiles = listAgentCodeFiles(wsDir).filter(f => !/^test_r3_/i.test(f.name));
+    const wsFiles = listAgentCodeFiles(wsDir)
+      .filter(f => !/^test_r3_/i.test(f.name))
+      .sort((a, b) => {
+        const aIsTest = /(?:^|\/)test_|_test\./i.test(a.name) ? 1 : 0;
+        const bIsTest = /(?:^|\/)test_|_test\./i.test(b.name) ? 1 : 0;
+        if (aIsTest !== bIsTest) return aIsTest - bIsTest;
+        const aIsCode = /\.(py|js|mjs|ts|rs|go|html)$/i.test(a.name) ? 0 : 1;
+        const bIsCode = /\.(py|js|mjs|ts|rs|go|html)$/i.test(b.name) ? 0 : 1;
+        if (aIsCode !== bIsCode) return aIsCode - bIsCode;
+        return (b.updatedAt || 0) - (a.updatedAt || 0);
+      });
     const wsDigest = wsFiles.length > 0
       ? `--- CURRENT WORKSPACE SOURCE FILES (ALREADY LOADED IN CONTEXT — DO NOT STOP TO INSPECT) ---\n` +
-        wsFiles.slice(0, 6).map(f => `=== ${f.name} (${f.size}B) ===\n${String(f.content || "").slice(0, 2200)}`).join("\n\n")
+        wsFiles.slice(0, 8).map(f => `=== ${f.name} (${f.size}B) ===\n${String(f.content || "").slice(0, 6500)}`).join("\n\n")
       : "";
 
     const symbolMap = extractRepositorySymbolMap(resolved);
@@ -785,6 +795,19 @@ const server = http.createServer(async (req, res) => {
           }
           if (matched) {
             fs.writeFileSync(targetDest, updatedContent, "utf8");
+            if (isPathInside(destInCodeDir, wt.codeDir) && targetDest !== destInCodeDir) {
+              try {
+                fs.mkdirSync(path.dirname(destInCodeDir), { recursive: true });
+                fs.writeFileSync(destInCodeDir, updatedContent, "utf8");
+              } catch {}
+            }
+            const topSegment = cleanRel.split("/")[0];
+            if (topSegment && !RESERVED_ROOT_ENTRIES.has(topSegment) && isPathInside(destInWorktree, wt.worktreePath) && targetDest !== destInWorktree) {
+              try {
+                fs.mkdirSync(path.dirname(destInWorktree), { recursive: true });
+                fs.writeFileSync(destInWorktree, updatedContent, "utf8");
+              } catch {}
+            }
             appliedPatches.push({ file: cleanRel, matched: true });
           } else {
             appliedPatches.push({ file: cleanRel, matched: false, reason: "SEARCH block not found in target file" });
@@ -1110,7 +1133,7 @@ const server = http.createServer(async (req, res) => {
         const syntaxNotes = [];
 
         // Multi-file pre-flight syntax verification across all .py and .js/.mjs files in wt.codeDir
-        const allCodeFiles = listAgentCodeFiles(wt.codeDir);
+        const allCodeFiles = listAgentCodeFiles(wt.codeDir).filter(cf => !/^test_r3_/i.test(cf.name) || cf.name === cleanFile);
         for (const cf of allCodeFiles) {
           const absCf = path.join(wt.codeDir, cf.name);
           if (/\.py$/i.test(cf.name)) {
@@ -1340,7 +1363,7 @@ const server = http.createServer(async (req, res) => {
           });
         }
 
-        const text = fs.readFileSync(existingTarget, "utf8").slice(0, 4000);
+        const text = fs.readFileSync(existingTarget, "utf8").slice(0, 12000);
         return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, codeDir: wt.codeDir, branch: wt.branch, output: text });
       }
 
@@ -1366,6 +1389,16 @@ const server = http.createServer(async (req, res) => {
         fs.mkdirSync(path.dirname(target), { recursive: true });
         fs.writeFileSync(target, bodyContent, "utf8");
         const cleanRel = path.relative(wt.codeDir, target);
+        const topSegment = cleanRel.split("/")[0];
+        if (topSegment && !RESERVED_ROOT_ENTRIES.has(topSegment)) {
+          const wtDest = path.resolve(wt.worktreePath, cleanRel);
+          if (isPathInside(wtDest, wt.worktreePath)) {
+            try {
+              fs.mkdirSync(path.dirname(wtDest), { recursive: true });
+              fs.writeFileSync(wtDest, bodyContent, "utf8");
+            } catch {}
+          }
+        }
         const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
         await safeGitCommitAsync(wt.worktreePath, `feat(${slug}): write ${cleanRel} in agent workspace`, 5000);
         const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);

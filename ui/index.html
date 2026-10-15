@@ -3083,16 +3083,67 @@ Auto-save: enabled</pre>
       });
     }
 
-    function findExplicitHandoffBots(text, excludeBotId) {
-      if (!text) return [];
-      return state.bots.filter(b => {
-        if (b.id === excludeBotId) return false;
-        const escaped = b.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const explicitTagRx = new RegExp(`\\[HANDOFF:\\s*@?${escaped}\\]`, "i");
-        const handoffPhraseRx = new RegExp(`(?:hand(?:ing)?\\s+off\\s+to|over\\s+to|passing\\s+to|assign(?:ed|ing)?\\s+to|next:\\s*)\\s*@?${escaped}\\b`, "i");
-        const roleAssignRx = new RegExp(`(?:^|\\n)\\s*(?:[-*]|\\d+\\.)?\\s*\\*{0,2}@${escaped}\\*{0,2}\\s*(?:\\([^)]*\\))?\\s*:`, "i");
-        return explicitTagRx.test(text) || handoffPhraseRx.test(text) || roleAssignRx.test(text);
-      });
+    function findExplicitHandoffBots(text, excludeBotId, reasoningText = "", allowedBots = null, allowRoleBullets = false) {
+      const candidatePool = (Array.isArray(allowedBots) && allowedBots.length > 0 ? allowedBots : state.bots)
+        .filter(b => b && b.id !== excludeBotId);
+      if (candidatePool.length === 0) return [];
+
+      const findBotByToken = (rawToken) => {
+        const clean = String(rawToken || "").trim().replace(/^@/, "").toLowerCase();
+        if (!clean) return null;
+        return candidatePool.find(b =>
+          String(b.name || "").toLowerCase() === clean ||
+          String(b.id || "").toLowerCase() === clean ||
+          String(b.id || "").toLowerCase() === `bot_${clean}`
+        ) || null;
+      };
+
+      const vis = String(text || "");
+      const rsn = String(reasoningText || "");
+
+      // 1. Highest priority: explicit [HANDOFF: @Name] tags in visible text (preferring the last concluding handoff tag)
+      const tagMatches = [];
+      const globalTagRx = /\[HANDOFF:\s*@?([a-zA-Z0-9_-]+)\]/gi;
+      let m;
+      while ((m = globalTagRx.exec(vis)) !== null) {
+        const matchedBot = findBotByToken(m[1]);
+        if (matchedBot) tagMatches.push(matchedBot);
+      }
+      if (tagMatches.length > 0) {
+        return [tagMatches[tagMatches.length - 1], ...tagMatches.slice(0, -1).reverse()].filter((b, i, arr) => arr.indexOf(b) === i);
+      }
+
+      // 2. Fallback to explicit [HANDOFF: @Name] tags at the tail of reasoningText if visible text had none
+      if (rsn) {
+        const rsnTail = rsn.slice(-1200);
+        while ((m = globalTagRx.exec(rsnTail)) !== null) {
+          const matchedBot = findBotByToken(m[1]);
+          if (matchedBot) tagMatches.push(matchedBot);
+        }
+        if (tagMatches.length > 0) {
+          return [tagMatches[tagMatches.length - 1], ...tagMatches.slice(0, -1).reverse()].filter((b, i, arr) => arr.indexOf(b) === i);
+        }
+      }
+
+      // 3. Natural handoff phrases in visible text ONLY (never in reasoning bullets)
+      const phraseMatches = [];
+      const globalPhraseRx = /(?:hand(?:ing)?\s+off\s+to|over\s+to|passing\s+to|next:\s*)\s*@?([a-zA-Z0-9_-]+)\b/gi;
+      while ((m = globalPhraseRx.exec(vis)) !== null) {
+        const matchedBot = findBotByToken(m[1]);
+        if (matchedBot && !phraseMatches.includes(matchedBot)) phraseMatches.push(matchedBot);
+      }
+      if (phraseMatches.length > 0) return phraseMatches;
+
+      // 4. Role assignment bullets in visible text ONLY on initial Architect/Lead planning turn
+      if (allowRoleBullets && vis) {
+        return candidatePool.filter(b => {
+          const escaped = b.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const roleAssignRx = new RegExp(`(?:^|\\n)\\s*(?:[-*•]|\\d+\\.)?\\s*\\*{0,2}@${escaped}\\*{0,2}\\s*(?:\\([^)]*\\))?\\s*:`, "i");
+          return roleAssignRx.test(vis);
+        });
+      }
+
+      return [];
     }
 
     function extractExecutableCommands(text) {
@@ -3599,7 +3650,7 @@ Auto-save: enabled</pre>
       const wtBranch = bot.worktreeBranch || `vanara/${bot.name.toLowerCase()}`;
       const wtPath = agentWorktrees[bot.id]?.worktreeDir || `.worktrees/${bot.id}`;
       const folderContextBlock = folderSummary
-        ? `\n\nMOUNTED WORKSPACE & LIVE SOURCE FILES:\n${String(folderSummary).slice(0, 7500)}`
+        ? `\n\nMOUNTED WORKSPACE & LIVE SOURCE FILES:\n${String(folderSummary).slice(0, 18000)}`
         : "";
       const worktreeBlock = `\n\nISOLATED GIT WORKTREE:\n- Branch: ${wtBranch} (${wtPath})${folderContextBlock}`;
       const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"]).join(", ");
@@ -3900,9 +3951,9 @@ ${handoffRule}
               senderType: "terminal",
               command: `[${bot.name} worktree] read ${targetReadPath}`,
               exitCode: res.ok && data.ok !== false ? 0 : 1,
-              text: readOut.slice(0, 1200)
+              text: readOut.slice(0, 1600)
             });
-            observationsOut.push({ tool: `fs_read(${targetReadPath})`, output: readOut.slice(0, 1800) });
+            observationsOut.push({ tool: `fs_read(${targetReadPath})`, output: readOut.slice(0, 8000) });
             executedTools.push(`fs_read: ${targetReadPath}`);
             hooksTrace.push(`PostToolUse(fs_read)`);
           } else if (normalizedTool === "fs_write" && arg1 && arg2) {
@@ -3938,7 +3989,7 @@ ${handoffRule}
                 text: gitOut
               });
               if (normalizedTool === "git_status" || normalizedTool === "git_diff") {
-                observationsOut.push({ tool: normalizedTool, output: gitOut.slice(0, 1800) });
+                observationsOut.push({ tool: normalizedTool, output: gitOut.slice(0, 3500) });
               }
               executedTools.push(normalizedTool);
               hooksTrace.push(`PostToolUse(${normalizedTool})`);
@@ -3953,14 +4004,19 @@ ${handoffRule}
       // or stated in its reasoning that it wants to inspect files/tools, but omitted a literal [TOOL: ...] tag,
       // automatically read the agent's workspace files and inject them into observationsOut so the ReAct loop continues!
       const cleanVisibleStub = stripAllToolDirectives(replyText || "");
-      const hasFileBlocks = parseDeliverableBlocks(replyText || "").length > 0 || parseSurgicalPatches(replyText || "").length > 0;
+      const hasFileBlocks =
+        parseDeliverableBlocks(replyText || "").length > 0 ||
+        parseSurgicalPatches(replyText || "").length > 0 ||
+        parseDeliverableBlocks(reasoningText || "", { strictExplicitOnly: true }).length > 0;
+      const hasExplicitHandoffOrComplete = /\[(?:HANDOFF:\s*@?[a-zA-Z0-9_-]+|SQUAD_COMPLETE)\]/i.test(cleanVisibleStub);
       const looksLikeInspectStub =
         !hasFileBlocks &&
         observationsOut.length === 0 &&
-        cleanVisibleStub.length < 360 &&
+        cleanVisibleStub.length < 480 &&
+        !hasExplicitHandoffOrComplete &&
         (
-          /\b(let me (?:first |start by )?(?:inspect|check|read|review|verify)|inspect(?:ing)? (?:the |my )?(?:current |actual )?(?:state|workspace|repo|files|worktree)|check(?:ing)? (?:my |the )?(?:worktree|workspace|repo|state|files)|pull(?:ing)? (?:in )?the squad|start with tool calls|i'll perform the qa|i'll fix the .* let me)\b/i.test(cleanVisibleStub) ||
-          /\b(let me (?:first |start by )?(?:inspect|check|read)|start with tool calls|inspect the (?:actual |current )?(?:files|state|workspace)|read the current)\b/i.test(reasoningText || "")
+          /\b(let me|i'll|i will|going to|first|start by|inspect|check|read|look at|review|verify|pull|examine)\b/i.test(cleanVisibleStub) ||
+          /\b(let me (?:first |start by )?(?:inspect|check|read|look at)|start with tool calls|inspect the (?:actual |current )?(?:files|state|workspace)|read the current)\b/i.test(reasoningText || "")
         );
 
       if (looksLikeInspectStub) {
@@ -3976,24 +4032,24 @@ ${handoffRule}
             })
           });
           const wsData = await wsRes.json();
-          if (wsRes.ok && Array.isArray(wsData.files) && wsData.files.length > 0) {
-            const relevantFiles = wsData.files.filter(f => !/^test_r3_/i.test(f.name)).slice(0, 6);
-            const fileSummaries = relevantFiles
-              .map(f => `=== ${f.name} (${f.size}B) ===\n${String(f.content || "").slice(0, 2200)}`)
-              .join("\n\n");
-            insertTerminalBeforeStreaming(thread, {
-              senderType: "terminal",
-              command: `[${bot.name} ${bot.worktreeBranch || "worktree"}] auto-inspect workspace (${relevantFiles.length} files loaded)`,
-              exitCode: 0,
-              text: relevantFiles.map(f => `${f.name} (${f.size}B)`).join(", ")
-            });
-            observationsOut.push({
-              tool: "workspace_files_snapshot",
-              output: fileSummaries
-            });
-            executedTools.push("workspace_files_snapshot");
-            hooksTrace.push("PostToolUse(workspace_inspect)");
-          }
+          const relevantFiles = (wsRes.ok && Array.isArray(wsData.files))
+            ? wsData.files.filter(f => !/^test_r3_/i.test(f.name)).slice(0, 8)
+            : [];
+          const fileSummaries = relevantFiles.length > 0
+            ? relevantFiles.map(f => `=== ${f.name} (${f.size}B) ===\n${String(f.content || "").slice(0, 6500)}`).join("\n\n")
+            : "(Workspace currently has no source files — create the required module files now using ===FILE: <filename>===)";
+          insertTerminalBeforeStreaming(thread, {
+            senderType: "terminal",
+            command: `[${bot.name} ${bot.worktreeBranch || "worktree"}] auto-inspect workspace (${relevantFiles.length} files loaded)`,
+            exitCode: 0,
+            text: relevantFiles.length > 0 ? relevantFiles.map(f => `${f.name} (${f.size}B)`).join(", ") : "(empty workspace — ready for new files)"
+          });
+          observationsOut.push({
+            tool: "workspace_files_snapshot",
+            output: fileSummaries
+          });
+          executedTools.push("workspace_files_snapshot");
+          hooksTrace.push("PostToolUse(workspace_inspect)");
         } catch {}
       }
 
@@ -4365,8 +4421,13 @@ ${handoffRule}
           }
         }
 
-        const extracted = parseDeliverableBlocks(postThoughtContent);
-        const extractedPatches = parseSurgicalPatches(postThoughtContent);
+        let extracted = parseDeliverableBlocks(postThoughtContent);
+        let extractedPatches = parseSurgicalPatches(postThoughtContent);
+        // Rescue explicit ===FILE: ...=== or ===PATCH: ...=== blocks if the model emitted them inside reasoning while visible text only had a short summary
+        if (extracted.length === 0 && extractedPatches.length === 0 && combinedReasoning) {
+          extracted = parseDeliverableBlocks(combinedReasoning, { strictExplicitOnly: true });
+          extractedPatches = parseSurgicalPatches(combinedReasoning);
+        }
         let hasDeliverables = false;
         let autoVerifyFailedFile = null;
         let autoVerifyErrorOutput = "";
@@ -4379,31 +4440,12 @@ ${handoffRule}
           hasDeliverables = true;
           if (extracted.length > 0) {
             await saveFilesToAgentWorkspace(targetBot, extracted);
-            // In a group squad room, sync generated module files across squad worktrees so @R2, @R4, and @R3 can import & test each other's modules
-            if (targetThread.type === "group") {
-              const peerBots = (targetThread.botIds || [])
-                .map(id => getBot(id))
-                .filter(b => b && b.id !== targetBot.id);
-              for (const peer of peerBots) {
-                fetch("/api/agent/workspace", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    action: "save_files",
-                    botId: peer.id,
-                    botName: peer.name,
-                    customWorkspacePath: peer.workspacePath || "",
-                    files: extracted
-                  })
-                }).catch(() => {});
-              }
-            }
           }
           // Automatically verify/run the primary entrypoint or test file (.py, .js, .mjs, .sh, .rs) in the agent's workspace
           const candidateList = extracted.length > 0 ? extracted : extractedPatches;
           const runnableCandidates = candidateList.filter(f => /\.(py|js|mjs|sh|rs)$/i.test(f.name));
           const runnableFile =
-            runnableCandidates.find(f => /(?:^|\/)(?:test_[^/]+|[^/]+_test|main|app|index|server|solution)\.(?:py|js|mjs|sh|rs)$/i.test(f.name)) ||
+            runnableCandidates.find(f => /(?:^|\/)(?:test_[^/]+|[^/]+_test|main|app|index|server)\.(?:py|js|mjs|sh|rs)$/i.test(f.name)) ||
             runnableCandidates[0];
           if (runnableFile && (targetBot.tools || []).includes("shell_exec")) {
             try {
@@ -4453,7 +4495,6 @@ ${handoffRule}
 
         if (turnCtx.aborted) return;
 
-        const isSquadComplete = /\[SQUAD_COMPLETE\]/i.test(postThoughtContent);
         const cleanDisplay = stripAllToolDirectives(postThoughtContent)
           .replace(/\[REMEMBER:\s*[^\]]+\]/gi, "")
           .replace(/\[HANDOFF:\s*@?[a-zA-Z0-9_-]+\]/gi, "")
@@ -4478,14 +4519,33 @@ ${handoffRule}
         const reviewerBot = getSquadReviewerBot(targetThread);
         const isCurrentBotReviewer = Boolean(targetThread.type === "group" && reviewerBot && targetBot.id === reviewerBot.id && relayBots.length > 1);
         const combinedReviewText = `${postThoughtContent || ""}\n${combinedReasoning || ""}`;
-        const reviewerFoundBugs = isCurrentBotReviewer && !isSquadComplete && (
-          Boolean(autoVerifyFailedFile) ||
-          /(?:❌\s*FAIL|CRITICAL\s+FAILURES|BUG\s*#\d+|Status:\s*❌|\b(?:stub|mock|test\s+tone|suspicious|placeholder|fake\s+audio|not\s+real\s+tts|only\s+~?0\.\d+\s*s)\b)/i.test(combinedReviewText)
+        const handoffBots = findExplicitHandoffBots(
+          postThoughtContent,
+          targetBot.id,
+          combinedReasoning,
+          relayBots,
+          chainDepth === 0
         );
+        const hasAffirmativeSquadComplete =
+          /\[SQUAD_COMPLETE\]/i.test(postThoughtContent) &&
+          !/(?:not|cannot|can't|won't|don't|do\s+not|never|until|before|without|instead\s+of)[^\n]{0,45}\[SQUAD_COMPLETE\]/i.test(postThoughtContent);
+        const reviewerFoundBugs = isCurrentBotReviewer && (
+          Boolean(autoVerifyFailedFile) ||
+          /(?:❌\s*FAIL|CRITICAL\s+FAILURES|BUG\s*#\d+|Status:\s*❌|CHANGES\s+REQUESTED|\b(?:stub|mock|test\s+tone|suspicious|placeholder|fake\s+audio|not\s+real\s+tts|only\s+~?0\.\d+\s*s)\b)/i.test(combinedReviewText)
+        );
+        const isSquadComplete = Boolean(
+          isCurrentBotReviewer &&
+          hasAffirmativeSquadComplete &&
+          !reviewerFoundBugs &&
+          !autoVerifyFailedFile &&
+          handoffBots.length === 0
+        );
+
+        const maxRelayDepth = Math.max(16, relayBots.length * 4);
 
         // Self-Healing Loop: If a builder agent's generated module failed syntax/runtime verification, self-trigger that builder to fix it.
         // (If the Peer Reviewer's test suite failed, that means the test caught a bug in a teammate's module — route to the specialist below!)
-        if (autoVerifyFailedFile && !isCurrentBotReviewer && state.autoTriggerEnabled !== false && chainDepth < 6) {
+        if (autoVerifyFailedFile && !isCurrentBotReviewer && state.autoTriggerEnabled !== false && chainDepth < maxRelayDepth) {
           nextAutoBot = targetBot;
           nextAutoPrompt = `[PostToolUseFailure Auto-Heal] Executing '${autoVerifyFailedFile}' in your workspace exited with an error:\n\`\`\`\n${autoVerifyErrorOutput.slice(0, 800)}\n\`\`\`\nFix '${autoVerifyFailedFile}' and output a surgical ===PATCH: ${autoVerifyFailedFile}=== or corrected ===FILE: ${autoVerifyFailedFile}=== block so the build passes.`;
         } else if (
@@ -4496,9 +4556,7 @@ ${handoffRule}
         ) {
           // Strict Group-Only Dynamic Squad Discussion, Revision & Peer Review Relay:
           // Adapts automatically to any role changes, custom agent names, or N agents in the squad!
-          const maxRelayDepth = Math.max(8, relayBots.length + 4);
           if (chainDepth < maxRelayDepth) {
-            const handoffBots = findExplicitHandoffBots(`${postThoughtContent}\n${combinedReasoning}`, targetBot.id);
             if (isCurrentBotReviewer) {
               if (!isSquadComplete || reviewerFoundBugs || handoffBots.length > 0) {
                 // Route back to the explicitly tagged specialist, or default to the primary backend/implementation specialist in the relay
@@ -4942,60 +5000,63 @@ ${handoffRule}
       } catch {}
     }
 
-    function parseDeliverableBlocks(rawText) {
+    function isValidDeliverableFileName(rawName) {
+      const clean = String(rawName || "").trim().replace(/^['"`*]+|['"`*:]+$/g, "");
+      if (!clean || clean.length > 120) return false;
+      if (/[<>|?*\s]|\.{2,}/.test(clean)) return false;
+      if (!/^[a-zA-Z0-9_./-]+\.[a-zA-Z0-9]{1,8}$/.test(clean)) return false;
+      const base = clean.split("/").pop().toLowerCase();
+      if (base === "filename.ext" || base === "relative_filename" || base === "solution.py" || base === "calc.js") return false;
+      return true;
+    }
+
+    function isNonPlaceholderFileContent(content) {
+      const trimmed = String(content || "").trim();
+      if (!trimmed || trimmed.length < 12) return false;
+      if (/^(?:<full source code>|<file contents>|\.{3}|…)$/i.test(trimmed)) return false;
+      return true;
+    }
+
+    function parseDeliverableBlocks(rawText, { strictExplicitOnly = false } = {}) {
+      if (!rawText) return [];
       const files = [];
-      const regex = /===FILE:\s*([^\n=]+)===\s*\n([\s\S]*?)(?:===END_FILE===|(?====FILE:)|$)/gi;
+      const addFileIfValid = (rawName, rawContent) => {
+        const name = String(rawName || "").trim().replace(/^['"`*]+|['"`*:]+$/g, "");
+        if (!isValidDeliverableFileName(name)) return;
+        let content = String(rawContent || "").trim();
+        const fence = content.match(/^```[a-zA-Z0-9_.-]*\n([\s\S]*?)```$/);
+        if (fence) content = fence[1].trim();
+        if (!isNonPlaceholderFileContent(content)) return;
+        const existingIdx = files.findIndex(f => f.name === name);
+        if (existingIdx >= 0) {
+          if (content.length >= files[existingIdx].content.length) {
+            files[existingIdx].content = content;
+          }
+        } else {
+          files.push({ name, content });
+        }
+      };
+
+      const regex = strictExplicitOnly
+        ? /===FILE:\s*([^\n=]+)===\s*\n([\s\S]*?)===END_FILE===/gi
+        : /===FILE:\s*([^\n=]+)===\s*\n([\s\S]*?)(?:===END_FILE===|(?====FILE:)|$)/gi;
       let m;
       while ((m = regex.exec(rawText)) !== null) {
-        const name = m[1].trim();
-        let content = m[2].trim();
-        const fence = content.match(/^```[a-zA-Z0-9_-]*\n([\s\S]*?)```$/);
-        if (fence) content = fence[1].trim();
-        if (name && content) files.push({ name, content });
+        addFileIfValid(m[1], m[2]);
       }
+
       // Also support local models that emit [TOOL: fs_write] <filename> or [TOOL: fs_write | <filename>] followed by a code fence
       const toolWriteFenceRx = /\[TOOL:\s*(?:fs_write|write_file)(?:\s*\|\s*([^\]|\n]+))?\](?:[ \t]*:?[ \t]*([^\n\[`]+))?\s*\n```[a-zA-Z0-9_.-]*\n([\s\S]*?)```/gi;
       while ((m = toolWriteFenceRx.exec(rawText)) !== null) {
-        const name = (m[1] || m[2] || "").trim();
-        const content = (m[3] || "").trim();
-        if (name && content && !files.some(f => f.name === name)) {
-          files.push({ name, content });
-        }
+        addFileIfValid(m[1] || m[2], m[3]);
       }
-      // Also support models that emit "File 1: path/to/file.py" or "### 1. `path/to/file.py`" followed by a code fence
-      const labeledFileFenceRx = /(?:^|\n)(?:File\s+\d+\s*:\s*|###?\s*(?:\d+\.\s*)?)\s*[`*]*([a-zA-Z0-9_./-]+\.[a-zA-Z0-9]+)[`*]*[ \t]*\n```[a-zA-Z0-9_.-]*\n([\s\S]*?)```/gi;
+
+      if (strictExplicitOnly) return files;
+
+      // Also support models that emit "File 1: path/to/file.py", "### `path/to/file.py`", or "**path/to/file.py**:" followed by a code fence
+      const labeledFileFenceRx = /(?:^|\n)(?:File\s+\d+\s*:\s*|###?\s*(?:\d+\.\s*)?|\*\*)?[`*]*([a-zA-Z0-9_./-]+\.(?:py|js|mjs|ts|rs|go|html|css|json|txt|sh|md))[`*:]*[ \t]*\n```[a-zA-Z0-9_.-]*\n([\s\S]*?)```/gi;
       while ((m = labeledFileFenceRx.exec(rawText)) !== null) {
-        const name = (m[1] || "").trim();
-        const content = (m[2] || "").trim();
-        if (name && content && !files.some(f => f.name === name)) {
-          files.push({ name, content });
-        }
-      }
-      if (files.length === 0 && parseSurgicalPatches(rawText).length === 0) {
-        const runnableLangMap = {
-          html: "index.html",
-          python: "solution.py",
-          py: "solution.py",
-          javascript: "app.mjs",
-          js: "app.mjs",
-          mjs: "app.mjs",
-          rust: "src/main.rs",
-          rs: "src/main.rs",
-          glsl: "shader.glsl",
-          css: "styles.css"
-        };
-        const codeRegex = /```([a-zA-Z0-9_.-]+)\n([\s\S]*?)```/g;
-        let cIdx = 1;
-        while ((m = codeRegex.exec(rawText)) !== null) {
-          const lang = m[1].toLowerCase();
-          const body = m[2].trim();
-          const lineCount = body.split("\n").length;
-          // Only treat unassigned code fences as deliverable source files when they are runnable languages with >= 5 lines
-          if (!runnableLangMap[lang] || lineCount < 5) continue;
-          const fileName = cIdx === 1 ? runnableLangMap[lang] : `module-${cIdx}.${lang === "python" ? "py" : lang === "javascript" ? "mjs" : lang}`;
-          files.push({ name: fileName, content: body });
-          cIdx++;
-        }
+        addFileIfValid(m[1], m[2]);
       }
       return files;
     }

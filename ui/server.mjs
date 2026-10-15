@@ -241,6 +241,83 @@ function saveAgentMemory(botId, memories) {
   } catch {}
 }
 
+function getAgentSkillFile(botId) {
+  const slug = sanitizeSlug(botId, "bot");
+  const dir = path.join(AGENTS_STATE_DIR, slug);
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, "SKILL.md");
+}
+
+function defaultAgentSkillMarkdown(botId = "bot_r1", botName = "R1", role = "Systems Architect") {
+  return `---
+name: ${sanitizeSlug(botName || botId)}-skill
+description: Operational SKILL.md playbook and domain standards for @${botName} (${role})
+---
+
+# @${botName} (${role}) — Agent Skill Playbook
+
+## Core Responsibilities
+- Deliver complete, runnable, syntax-verified code inside isolated worktree \`vanara/${sanitizeSlug(botName || botId)}\`.
+- Never emit placeholder stubs, empty pass blocks, or synthetic test-tones when real synthesis is required.
+- Use \`===FILE: <path>===\` for complete modules and \`===PATCH: <path>===\` for surgical edits.
+`;
+}
+
+function loadAgentSkill(botId, botName = "", role = "") {
+  try {
+    const file = getAgentSkillFile(botId);
+    if (fs.existsSync(file)) {
+      return fs.readFileSync(file, "utf8");
+    }
+    const seed = defaultAgentSkillMarkdown(botId, botName || botId.replace(/^bot_/, "").toUpperCase(), role);
+    fs.writeFileSync(file, seed, "utf8");
+    return seed;
+  } catch {
+    return "";
+  }
+}
+
+function saveAgentSkill(botId, skillMarkdown = "") {
+  try {
+    const file = getAgentSkillFile(botId);
+    fs.writeFileSync(file, String(skillMarkdown || ""), "utf8");
+    return file;
+  } catch {
+    return "";
+  }
+}
+
+function discoverWorkspaceSkillFiles() {
+  const found = [];
+  const candidateRoots = [
+    path.join(ROOT_DIR, ".agents", "skills"),
+    path.join(ROOT_DIR, "skills"),
+    path.join(REPO_ROOT, ".agents", "skills"),
+    path.join(REPO_ROOT, "skills")
+  ];
+  const seenPaths = new Set();
+  for (const base of candidateRoots) {
+    if (!fs.existsSync(base)) continue;
+    try {
+      for (const ent of fs.readdirSync(base, { withFileTypes: true })) {
+        if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
+        const skillPath = path.join(base, ent.name, "SKILL.md");
+        if (fs.existsSync(skillPath) && !seenPaths.has(skillPath)) {
+          seenPaths.add(skillPath);
+          const content = fs.readFileSync(skillPath, "utf8").slice(0, 12000);
+          found.push({
+            id: ent.name,
+            name: ent.name,
+            path: skillPath,
+            content
+          });
+        }
+      }
+    } catch {}
+  }
+  return found;
+}
+
 // ============================================================================
 // PER-AGENT ISOLATED GIT WORKTREE & CODE WORKSPACE MANAGER (.worktrees/<botId>)
 // ============================================================================
@@ -504,6 +581,7 @@ function callStdioMcpServer({ commandLine, cwd, method = "tools/list", params = 
 
     const child = spawn(bin, args, {
       cwd: cwd || ROOT_DIR,
+      env: process.env,
       shell: process.platform === "win32"
     });
 
@@ -1301,6 +1379,34 @@ const server = http.createServer(async (req, res) => {
         saveAgentMemory(botId, current);
       }
       return sendJson(res, 200, { botId, memories: current });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // 2C-bis. Per-Agent SKILL.md & Harness Configuration Store (/api/agent/skill)
+  if (req.method === "POST" && req.url === "/api/agent/skill") {
+    try {
+      const { botId = "bot_r1", botName = "R1", role = "", action = "get", skillMarkdown = "" } = await readJsonBody(req);
+      const templates = discoverWorkspaceSkillFiles();
+      if (action === "set") {
+        const savedPath = saveAgentSkill(botId, skillMarkdown);
+        return sendJson(res, 200, {
+          ok: true,
+          botId,
+          skillFile: savedPath,
+          skillMarkdown: String(skillMarkdown || ""),
+          templates
+        });
+      }
+      const loaded = loadAgentSkill(botId, botName, role);
+      return sendJson(res, 200, {
+        ok: true,
+        botId,
+        skillFile: getAgentSkillFile(botId),
+        skillMarkdown: loaded,
+        templates
+      });
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
     }

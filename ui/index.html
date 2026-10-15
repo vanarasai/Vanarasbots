@@ -1616,10 +1616,16 @@
               </button>
             </div>
 
-            <button onclick="openOnboardingModal()" class="composer-sub-btn" title="Open Workspace & Model Settings">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-              <span>Settings</span>
-            </button>
+            <div style="display:flex; align-items:center; gap:12px;">
+              <button onclick="openBotModal(getActiveLeadBot()?.id || 'bot_r1')" class="composer-sub-btn" title="Open Dedicated Agent Studio (Per-Agent Model, SKILL.md, MCP & Execution Harness)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M15 8h2M15 12h2M7 16h10"/></svg>
+                <span>Agent Studio</span>
+              </button>
+              <button onclick="openOnboardingModal()" class="composer-sub-btn" title="Open Common Workspace & App Settings">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span>Workspace Settings</span>
+              </button>
+            </div>
           </div>
 
         </div>
@@ -1759,132 +1765,210 @@ Auto-save: enabled</pre>
   </div>
 
   <!-- ===================================================================== -->
-  <!-- MODAL 1: CUSTOMIZE VANARA BOT (BRAIN, PRIVATE MEMORY, TOOLS/MCP)      -->
+  <!-- MODAL 1: DEDICATED AGENT STUDIO (MODEL, SKILL.MD, MCP & HARNESS)       -->
   <!-- ===================================================================== -->
   <div id="botModal" class="modal-backdrop hidden">
-    <div class="modal-card" style="max-width:580px;">
-      <div class="modal-header">
-        <div>
-          <div id="botModalTitle" style="font-size:15px; font-weight:600;">Customize Vanara Bot</div>
-          <div style="font-size:11.5px; color:#888894;">Configure persona, model, private memory, per-agent tools/MCP & isolated git worktree</div>
+    <div class="modal-card" style="max-width:720px;">
+      <div class="modal-header" style="flex-direction:column; align-items:stretch; gap:10px; padding-bottom:12px;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div>
+            <div id="botModalTitle" style="font-size:15.5px; font-weight:700;">Agent Studio — Configure @R1</div>
+            <div style="font-size:11.5px; color:var(--text-muted);">Dedicated per-agent Model, SKILL.md playbook, MCP server &amp; Execution Harness</div>
+          </div>
+          <button onclick="closeBotModal()" class="side-icon-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
-        <button onclick="closeBotModal()" class="side-icon-btn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+
+        <!-- Quick Agent Switcher Bar -->
+        <div id="botModalAgentSwitcher" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding-top:2px;"></div>
+
+        <!-- 4 Clean Studio Tabs: Model | SKILL.md | MCP | Harness -->
+        <div style="display:flex; gap:6px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">
+          <button type="button" id="agentTabBtn_model" onclick="switchAgentStudioTab('model')" class="btn-secondary" style="height:28px; padding:0 12px; font-size:11.5px; font-weight:600;">1. Brain &amp; Model</button>
+          <button type="button" id="agentTabBtn_skill" onclick="switchAgentStudioTab('skill')" class="btn-secondary" style="height:28px; padding:0 12px; font-size:11.5px; font-weight:600;">2. SKILL.md</button>
+          <button type="button" id="agentTabBtn_mcp" onclick="switchAgentStudioTab('mcp')" class="btn-secondary" style="height:28px; padding:0 12px; font-size:11.5px; font-weight:600;">3. MCP Server</button>
+          <button type="button" id="agentTabBtn_harness" onclick="switchAgentStudioTab('harness')" class="btn-secondary" style="height:28px; padding:0 12px; font-size:11.5px; font-weight:600;">4. Harness &amp; Memory</button>
+        </div>
       </div>
 
-      <div class="modal-body">
+      <div class="modal-body" style="max-height:62vh; overflow-y:auto;">
         <input type="hidden" id="botEditId">
 
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-          <div>
-            <label class="field-label">Bot Name (@Handle)</label>
-            <input id="botNameInput" type="text" placeholder="e.g. R1, Hanu, Sugriva" class="field-input">
-          </div>
-          <div>
-            <label class="field-label">Specialty / Role</label>
-            <input id="botRoleInput" type="text" placeholder="e.g. Systems Architect" class="field-input">
-          </div>
-        </div>
-
-        <div>
-          <label class="field-label">Choose Vanara Monkey Avatar</label>
-          <div id="avatarPickerGrid" class="monkey-picker-grid"></div>
-        </div>
-
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-          <div>
-            <label class="field-label">Model Provider</label>
-            <select id="botProviderSelect" onchange="onBotProviderChange()" class="field-input">
-              <option value="local">Local URL (LM Studio / Ollama / vLLM)</option>
-              <option value="openrouter">OpenRouter (Multi-Model Cloud)</option>
-              <option value="gemini">Google Gemini</option>
-              <option value="openai">OpenAI</option>
-              <option value="claude">Anthropic Claude</option>
-              <option value="qwen">Qwen / DashScope</option>
-            </select>
-          </div>
-          <div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-              <label class="field-label" style="margin-bottom:0;">Model ID</label>
-              <button onclick="fetchModelsForBotModal()" style="font-size:11px; color:#60a5fa;">Probe Live Models</button>
-            </div>
-            <input id="botModelInput" list="botModelSuggestions" type="text" placeholder="bonsai-27b-mlx" class="field-input mono">
-            <datalist id="botModelSuggestions">
-              <option value="bonsai-27b-mlx"></option>
-              <option value="google/gemma-4-12b"></option>
-              <option value="gemini-2.5-pro"></option>
-              <option value="claude-3-7-sonnet-latest"></option>
-              <option value="gpt-4.1"></option>
-              <option value="qwen-max"></option>
-            </datalist>
-          </div>
-        </div>
-
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-          <div>
-            <label class="field-label">Base URL</label>
-            <input id="botBaseUrlInput" type="text" placeholder="http://192.168.68.102:1234/v1" class="field-input mono">
-          </div>
-          <div>
-            <label class="field-label">API Key (Kept in RAM only)</label>
-            <input id="botApiKeyInput" type="password" placeholder="Optional for Local URL" class="field-input mono">
-          </div>
-        </div>
-
-        <div>
-          <label class="field-label">System Instructions</label>
-          <textarea id="botInstructionsInput" rows="2" placeholder="Define how this Vanara thinks, critiques, and builds..." class="field-input"></textarea>
-        </div>
-
-        <!-- UPGRADE 2: PER-AGENT PERSISTENT MEMORY -->
-        <div style="padding:12px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <label class="field-label" style="margin-bottom:0; color:var(--accent-emerald);">Per-Agent Private Memory (Saved on Disk)</label>
-            <span style="font-size:10.5px; color:var(--text-muted);" class="mono">Auto-learns via [REMEMBER: ...]</span>
-          </div>
-          <div style="display:flex; gap:6px; margin-bottom:8px;">
-            <input id="botNewMemoryInput" type="text" placeholder="Add private memory for this Vanara..." class="field-input" style="height:30px; font-size:12px;">
-            <button type="button" onclick="addPrivateMemoryInBotModal()" class="btn-secondary" style="height:30px; padding:0 12px; font-size:11.5px; flex-shrink:0;">+ Add</button>
-          </div>
-          <div id="botPrivateMemoryList" style="display:flex; flex-direction:column; gap:5px; max-height:110px; overflow-y:auto;"></div>
-        </div>
-
-        <!-- UPGRADE 3: PER-AGENT TOOLS & MCP SERVER POLICIES -->
-        <div style="padding:12px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <label class="field-label" style="margin-bottom:0; color:var(--accent-blue);">Per-Agent Tools, MCP & PreToolUse Blacklist</label>
-            <button type="button" onclick="openWorktreeFromBotModal()" style="font-size:11px; color:var(--accent-blue); font-weight:600;">Inspect Bot Worktree →</button>
-          </div>
-          <div id="botToolsChecklist" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:10px;"></div>
-          <div style="display:flex; flex-direction:column; gap:8px;">
+        <!-- TAB 1: BRAIN & MODEL -->
+        <div id="agentTabPane_model" style="display:flex; flex-direction:column; gap:14px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
             <div>
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <span style="font-size:11px; color:var(--text-secondary);">Custom MCP Server Command (stdio JSON-RPC 2.0 / mcpBoxServers)</span>
-                <button type="button" onclick="probeMcpServerInModal()" style="font-size:11px; color:var(--accent-blue); font-weight:600;">Probe MCP Tools</button>
+              <label class="field-label">Agent Handle (@Name)</label>
+              <input id="botNameInput" type="text" placeholder="e.g. R1, Hanu, Sugriva" class="field-input">
+            </div>
+            <div>
+              <label class="field-label">Specialty / Engineering Role</label>
+              <input id="botRoleInput" type="text" placeholder="e.g. Principal Systems Architect" class="field-input">
+            </div>
+          </div>
+
+          <div>
+            <label class="field-label">Choose Vanara Avatar</label>
+            <div id="avatarPickerGrid" class="monkey-picker-grid"></div>
+          </div>
+
+          <div style="padding:12px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:11px; font-weight:700; color:var(--accent-blue); text-transform:uppercase; letter-spacing:0.05em;">Dedicated Model for This Agent</span>
+              <button type="button" onclick="fetchModelsForBotModal()" class="btn-secondary" style="height:25px; padding:0 10px; font-size:11px; color:var(--accent-blue);">⚡ Probe Live Models</button>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div>
+                <label class="field-label">Model Provider</label>
+                <select id="botProviderSelect" onchange="onBotProviderChange()" class="field-input">
+                  <option value="local">Local URL (LM Studio / Ollama / vLLM)</option>
+                  <option value="openrouter">OpenRouter (Multi-Model Cloud)</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="claude">Anthropic Claude</option>
+                  <option value="qwen">Qwen / DashScope</option>
+                </select>
               </div>
+              <div>
+                <label class="field-label">Model ID</label>
+                <input id="botModelInput" list="botModelSuggestions" type="text" placeholder="qwen/qwen3.5-9b" class="field-input mono">
+                <datalist id="botModelSuggestions">
+                  <option value="qwen/qwen3.5-9b"></option>
+                  <option value="anthropic/claude-3.7-sonnet"></option>
+                  <option value="gemini-2.5-pro"></option>
+                  <option value="claude-3-7-sonnet-latest"></option>
+                  <option value="gpt-4.1"></option>
+                  <option value="qwen-max"></option>
+                </datalist>
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div>
+                <label class="field-label">Base URL</label>
+                <input id="botBaseUrlInput" type="text" placeholder="http://192.168.68.102:1234/v1" class="field-input mono">
+              </div>
+              <div>
+                <label class="field-label">Agent API Key (Optional for Local)</label>
+                <input id="botApiKeyInput" type="password" placeholder="Uses provider key or custom key" class="field-input mono">
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label class="field-label">Core System Instructions</label>
+            <textarea id="botInstructionsInput" rows="3" placeholder="Define how this agent designs, implements, or reviews code..." class="field-input"></textarea>
+          </div>
+        </div>
+
+        <!-- TAB 2: SKILL.MD PLAYBOOK -->
+        <div id="agentTabPane_skill" class="hidden" style="display:flex; flex-direction:column; gap:12px;">
+          <div style="padding:12px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+              <div>
+                <div style="font-size:12px; font-weight:700; color:var(--text-primary);">Per-Agent `SKILL.md` Playbook</div>
+                <div id="botSkillFilePathLabel" class="mono" style="font-size:10.5px; color:var(--text-muted);">ui/.vanaras-agents/bot_r1/SKILL.md</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <select id="botSkillTemplateSelect" class="field-input" style="height:28px; font-size:11px; width:210px;">
+                  <option value="">Import workspace SKILL.md...</option>
+                </select>
+                <button type="button" onclick="importSelectedSkillTemplateInModal()" class="btn-secondary" style="height:28px; padding:0 10px; font-size:11px;">Load Skill</button>
+              </div>
+            </div>
+            <textarea id="botSkillMarkdownInput" rows="11" class="field-input mono" style="font-size:11.5px; line-height:1.45;" placeholder="---&#10;name: agent-skill&#10;description: Domain skill instructions&#10;---&#10;&#10;# Agent Skill Instructions..."></textarea>
+            <div style="font-size:11px; color:var(--text-muted);">Saved to disk per agent and automatically injected into this agent's system prompt when active.</div>
+          </div>
+        </div>
+
+        <!-- TAB 3: MCP SERVER & TOOL POLICIES -->
+        <div id="agentTabPane_mcp" class="hidden" style="display:flex; flex-direction:column; gap:12px;">
+          <div style="padding:12px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-size:12px; font-weight:700; color:var(--accent-blue);">MCP Stdio Server Connection (JSON-RPC 2.0)</div>
+                <div style="font-size:11px; color:var(--text-muted);">Connect any Model Context Protocol stdio server to this agent</div>
+              </div>
+              <button type="button" onclick="probeMcpServerInModal()" class="btn-secondary" style="height:28px; padding:0 12px; font-size:11px; color:var(--accent-blue); border-color:var(--accent-blue);">⚡ Probe MCP Tools</button>
+            </div>
+            <div>
+              <label class="field-label">MCP Server Command (stdio)</label>
               <input id="botMcpCommandInput" type="text" placeholder="e.g. npx -y @modelcontextprotocol/server-filesystem ." class="field-input mono" style="font-size:12px;">
-              <div id="botMcpProbeStatus" class="mono" style="font-size:10.5px; color:var(--text-muted); margin-top:5px;"></div>
+              <div id="botMcpProbeStatus" class="mono" style="font-size:11px; color:var(--text-muted); margin-top:6px;">No MCP server probed yet.</div>
             </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div>
+              <label class="field-label">MCP Custom Instructions (`BeforeSubmitPrompt` Hook)</label>
+              <input id="botMcpInstructionsInput" type="text" placeholder="Optional instructions injected when using MCP tools..." class="field-input" style="font-size:12px;">
+            </div>
+            <div>
+              <label class="field-label">`PreToolUse` Disabled Tools Blacklist (`mcpDisabledTools`)</label>
+              <input id="botMcpDisabledToolsInput" type="text" placeholder="e.g. rm_rf, drop_table" class="field-input mono" style="font-size:12px;">
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: EXECUTION HARNESS & MEMORY -->
+        <div id="agentTabPane_harness" class="hidden" style="display:flex; flex-direction:column; gap:12px;">
+          <div style="padding:12px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
               <div>
-                <span style="font-size:10.5px; color:var(--text-secondary); display:block; margin-bottom:3px;">MCP Custom Instructions (mcpCustomInstructions)</span>
-                <input id="botMcpInstructionsInput" type="text" placeholder="Injected on BeforeSubmitPrompt..." class="field-input" style="height:28px; font-size:11.5px;">
+                <div style="font-size:12px; font-weight:700; color:var(--text-primary);">Agent Execution Harness &amp; Sandbox</div>
+                <div style="font-size:11px; color:var(--text-muted);">Control ReAct tool loop depth, pre-flight verification, worktree isolation &amp; tool permissions</div>
+              </div>
+              <button type="button" onclick="openWorktreeFromBotModal()" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px; color:var(--accent-blue);">Inspect Git Worktree →</button>
+            </div>
+
+            <div>
+              <label class="field-label">Allowed Harness Tools (`PreToolUse` Policy)</label>
+              <div id="botToolsChecklist" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;"></div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; padding-top:4px;">
+              <div>
+                <label class="field-label">Max ReAct Tool Steps / Turn</label>
+                <select id="botHarnessMaxStepsInput" class="field-input mono" style="height:32px; font-size:12px;">
+                  <option value="1">1 step (Fast single-shot)</option>
+                  <option value="2">2 steps</option>
+                  <option value="3" selected>3 steps (Recommended)</option>
+                  <option value="5">5 steps (Deep autonomous)</option>
+                </select>
               </div>
               <div>
-                <span style="font-size:10.5px; color:var(--text-secondary); display:block; margin-bottom:3px;">Disabled Tools Blacklist (mcpDisabledTools)</span>
-                <input id="botMcpDisabledToolsInput" type="text" placeholder="e.g. rm_rf, drop_table" class="field-input mono" style="height:28px; font-size:11.5px;">
+                <label class="field-label">Pre-Flight Code Verification (`run_file`)</label>
+                <select id="botHarnessAutoVerifyInput" class="field-input" style="height:32px; font-size:12px;">
+                  <option value="true" selected>Enabled (Auto syntax check + self-heal)</option>
+                  <option value="false">Disabled (Save files without auto-running)</option>
+                </select>
               </div>
             </div>
+
+            <div style="padding:8px 10px; border-radius:8px; background:var(--bg-surface); border:1px solid var(--border-card); font-size:11px; color:var(--text-secondary);" class="mono">
+              Active Harness Hooks: BeforeSubmitPrompt ✓ · AfterAgentThought ✓ · PreToolUse ✓ · PostToolUse ✓ · PreCompact ✓
+            </div>
+          </div>
+
+          <!-- PER-AGENT PERSISTENT MEMORY -->
+          <div style="padding:12px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <label class="field-label" style="margin-bottom:0; color:var(--accent-emerald);">Per-Agent Private Disk Memory (`memory.json`)</label>
+              <span style="font-size:10.5px; color:var(--text-muted);" class="mono">Auto-learns via [REMEMBER: ...]</span>
+            </div>
+            <div style="display:flex; gap:6px; margin-bottom:8px;">
+              <input id="botNewMemoryInput" type="text" placeholder="Add private memory for this agent..." class="field-input" style="height:30px; font-size:12px;">
+              <button type="button" onclick="addPrivateMemoryInBotModal()" class="btn-secondary" style="height:30px; padding:0 12px; font-size:11.5px; flex-shrink:0;">+ Add</button>
+            </div>
+            <div id="botPrivateMemoryList" style="display:flex; flex-direction:column; gap:5px; max-height:110px; overflow-y:auto;"></div>
           </div>
         </div>
       </div>
 
       <div class="modal-footer">
-        <button id="deleteBotBtn" onclick="deleteBotFromModal()" style="color:var(--accent-red); font-size:12px; font-weight:600;" class="hidden">Delete Bot</button>
+        <button id="deleteBotBtn" onclick="deleteBotFromModal()" style="color:var(--accent-red); font-size:12px; font-weight:600;" class="hidden">Delete Agent</button>
         <div style="display:flex; gap:8px; margin-left:auto;">
           <button onclick="closeBotModal()" class="btn-secondary">Cancel</button>
-          <button onclick="saveBotFromModal()" class="btn-primary">Save Vanara</button>
+          <button onclick="saveBotFromModal()" class="btn-primary">Save Agent Configuration</button>
         </div>
       </div>
     </div>
@@ -2048,16 +2132,16 @@ Auto-save: enabled</pre>
   </div>
 
   <!-- ===================================================================== -->
-  <!-- MODAL 7: FIRST-RUN ONBOARDING & WORKSPACE MODEL SETUP WIZARD          -->
+  <!-- MODAL 7: COMMON WORKSPACE & APP SETTINGS (DECONGESTED)                -->
   <!-- ===================================================================== -->
   <div id="onboardingModal" class="modal-backdrop hidden">
-    <div class="modal-card" style="max-width:600px;">
+    <div class="modal-card" style="max-width:540px;">
       <div class="modal-header">
         <div style="display:flex; align-items:center; gap:10px;">
           <img src="avatars/monkey-01-coral.png" alt="Vanaras" style="width:32px; height:32px; border-radius:50%; background:#f0283c;">
           <div>
-            <div style="font-size:15.5px; font-weight:700;">Welcome to Vanaras Pro — Engineering Setup</div>
-            <div style="font-size:11.5px; color:var(--text-muted);">Configure your identity, project repository, AI model backend & engineering squad</div>
+            <div style="font-size:15.5px; font-weight:700;">Workspace &amp; App Settings</div>
+            <div style="font-size:11.5px; color:var(--text-muted);">Common workspace folder, default LLM backend &amp; global app preferences</div>
           </div>
         </div>
         <button onclick="closeOnboardingModal()" class="side-icon-btn" title="Close">
@@ -2066,9 +2150,9 @@ Auto-save: enabled</pre>
       </div>
 
       <div class="modal-body" style="gap:14px;">
-        <!-- Step 1: Identity & Mounted Repo -->
+        <!-- Section 1: Workspace Identity & Mounted Repository -->
         <div style="padding:12px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
-          <div style="font-size:11px; font-weight:700; color:var(--accent-blue); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Step 1 • Your Identity & Local Project Folder</div>
+          <div style="font-size:11px; font-weight:700; color:var(--accent-blue); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Workspace Identity &amp; Repository</div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:8px;">
             <div>
               <label class="field-label">Your Display Name</label>
@@ -2080,16 +2164,16 @@ Auto-save: enabled</pre>
             </div>
           </div>
           <div>
-            <label class="field-label">Local Repository / Project Path</label>
+            <label class="field-label">Mounted Local Repository Path</label>
             <input id="onboardMountPathInput" type="text" placeholder="/Users/lakshmipriyasridharan/AI/REA/vanaras" class="field-input mono" style="font-size:11.5px;">
           </div>
         </div>
 
-        <!-- Step 2: AI Model Connection & Live Verification -->
+        <!-- Section 2: Default Workspace AI Backend -->
         <div style="padding:12px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <span style="font-size:11px; font-weight:700; color:var(--accent-emerald); text-transform:uppercase; letter-spacing:0.05em;">Step 2 • Default AI Model Backend (Applied to Squad)</span>
-            <button type="button" onclick="probeOnboardingModels()" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px; border-color:var(--accent-emerald); color:var(--accent-emerald);">⚡ Test & Detect Models</button>
+            <span style="font-size:11px; font-weight:700; color:var(--accent-emerald); text-transform:uppercase; letter-spacing:0.05em;">Default Workspace AI Model</span>
+            <button type="button" onclick="probeOnboardingModels()" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px; border-color:var(--accent-emerald); color:var(--accent-emerald);">⚡ Test &amp; Detect Models</button>
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
             <div>
@@ -2104,8 +2188,8 @@ Auto-save: enabled</pre>
               </select>
             </div>
             <div>
-              <label class="field-label">Model ID</label>
-              <input id="onboardModelInput" list="botModelSuggestions" type="text" placeholder="bonsai-27b-mlx" class="field-input mono">
+              <label class="field-label">Default Model ID</label>
+              <input id="onboardModelInput" list="botModelSuggestions" type="text" placeholder="qwen/qwen3.5-9b" class="field-input mono">
             </div>
           </div>
           <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:10px;">
@@ -2118,21 +2202,28 @@ Auto-save: enabled</pre>
               <input id="onboardApiKeyInput" type="password" placeholder="sk-..." class="field-input mono" style="font-size:11.5px;">
             </div>
           </div>
-          <div id="onboardProbeStatus" class="mono" style="margin-top:8px; font-size:11px; color:var(--text-muted);">Click "⚡ Test & Detect Models" to verify your LLM server connection.</div>
+          <label style="display:flex; align-items:center; gap:7px; margin-top:10px; font-size:11.5px; color:var(--text-secondary); cursor:pointer;">
+            <input type="checkbox" id="onboardApplyAllAgentsCheckbox">
+            <span>Also overwrite agents that have custom per-agent models configured</span>
+          </label>
+          <div id="onboardProbeStatus" class="mono" style="margin-top:6px; font-size:11px; color:var(--text-muted);">Click "⚡ Test &amp; Detect Models" to verify your LLM server connection.</div>
         </div>
 
-        <!-- Step 3: Active Engineering Squad -->
-        <div style="padding:12px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
-          <div style="font-size:11px; font-weight:700; color:var(--accent-amber); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Step 3 • Your Vanara Engineering Squad (Each with Isolated Git Worktree)</div>
-          <div id="onboardSquadPreview" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+        <!-- Section 3: Shortcut to Dedicated Agent Studio -->
+        <div style="padding:11px 14px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <div>
+            <div style="font-size:12px; font-weight:700; color:var(--text-primary);">Per-Agent Models, SKILL.md, MCP &amp; Harness</div>
+            <div style="font-size:11px; color:var(--text-muted);">Configure individual agents in the dedicated Agent Studio panel</div>
+          </div>
+          <button type="button" onclick="closeOnboardingModal(); openBotModal(getActiveLeadBot()?.id || 'bot_r1');" class="btn-secondary" style="height:30px; padding:0 12px; font-size:11.5px; font-weight:600; color:var(--accent-blue); flex-shrink:0;">Open Agent Studio →</button>
         </div>
       </div>
 
       <div class="modal-footer" style="justify-content:space-between;">
-        <button type="button" onclick="completeOnboarding(true)" class="btn-secondary" style="font-size:11.5px; color:var(--accent-red);" title="Clear all existing chats and start with clean engineering threads">Reset to Clean Threads</button>
+        <button type="button" onclick="completeOnboarding(true)" class="btn-secondary" style="font-size:11.5px; color:var(--accent-red);" title="Clear all existing chats and start with clean engineering threads">Reset Threads</button>
         <div style="display:flex; gap:8px;">
           <button type="button" onclick="closeOnboardingModal()" class="btn-secondary">Cancel</button>
-          <button type="button" onclick="completeOnboarding(false)" class="btn-primary">Save & Launch Workspace</button>
+          <button type="button" onclick="completeOnboarding(false)" class="btn-primary">Save Workspace Settings</button>
         </div>
       </div>
     </div>
@@ -2234,6 +2325,7 @@ Auto-save: enabled</pre>
       { id: "git_status", label: "Git Status" },
       { id: "git_diff", label: "Git Diff" },
       { id: "git_commit", label: "Git Commit" },
+      { id: "mcp_call", label: "MCP Tool Call" },
       { id: "handoff", label: "Bot Handoff" }
     ];
 
@@ -2426,8 +2518,11 @@ Auto-save: enabled</pre>
       (state.bots || []).forEach(b => {
         const def = DEFAULT_STATE.bots.find(d => d.id === b.id);
         if (!Array.isArray(b.memories)) b.memories = def?.memories ? [...def.memories] : [];
-        if (!Array.isArray(b.tools)) b.tools = def?.tools ? [...def.tools] : ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "handoff"];
+        if (!Array.isArray(b.tools)) b.tools = def?.tools ? [...def.tools] : ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "mcp_call", "handoff"];
         if (typeof b.mcpCommand !== "string") b.mcpCommand = "";
+        if (typeof b.skillMarkdown !== "string") b.skillMarkdown = "";
+        if (typeof b.maxReactSteps !== "number" || b.maxReactSteps < 1) b.maxReactSteps = 3;
+        if (typeof b.autoVerifyCode !== "boolean") b.autoVerifyCode = true;
         if (!b.worktreeBranch) b.worktreeBranch = `vanara/${(b.name || b.id).toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`;
         if (b.provider === "local" && (b.model === "bonsai-27b-mlx" || b.model === "google/gemma-4-12b")) {
           b.model = "qwen/qwen3.5-9b";
@@ -2672,6 +2767,37 @@ Auto-save: enabled</pre>
       return bot.memories || [];
     }
 
+    let discoveredSkillTemplates = [];
+
+    async function syncAgentSkillOnServer(bot, action = "get", extra = {}) {
+      if (!bot) return "";
+      try {
+        const res = await fetch("/api/agent/skill", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            botId: bot.id,
+            botName: bot.name,
+            botRole: bot.role,
+            action,
+            ...extra
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.templates)) {
+            discoveredSkillTemplates = data.templates;
+          }
+          if (typeof data.skillMarkdown === "string") {
+            bot.skillMarkdown = data.skillMarkdown;
+            bot.skillFile = data.skillFile || "";
+          }
+          return data;
+        }
+      } catch {}
+      return { skillMarkdown: bot.skillMarkdown || "", templates: discoveredSkillTemplates };
+    }
+
     async function loadDiskWorkspaceOnBoot() {
       restoreApiKeysFromLocalStore();
       try {
@@ -2704,6 +2830,7 @@ Auto-save: enabled</pre>
       renderActiveThread();
       for (const bot of state.bots) {
         syncAgentMemoryOnServer(bot, "get");
+        syncAgentSkillOnServer(bot, "get");
       }
       const lead = getActiveLeadBot();
       if (lead) {
@@ -3671,6 +3798,9 @@ Auto-save: enabled</pre>
     // 7. SEND MESSAGE, PER-AGENT MEMORY/TOOLS/WORKTREE & SELF-TRIGGERED LOOP
     // =========================================================================
     function buildGroundedSystemPrompt(bot, thread, folderSummary) {
+      const skillBlock = (bot.skillMarkdown && String(bot.skillMarkdown).trim())
+        ? `\n\nAGENT SKILL.md PLAYBOOK (${bot.name}):\n${String(bot.skillMarkdown).trim().slice(0, 4500)}`
+        : "";
       const privateMemories = Array.isArray(bot.memories) && bot.memories.length > 0
         ? `\n\nPRIVATE MEMORY (${bot.name}):\n` + bot.memories.map((m, i) => `${i + 1}. ${m}`).join("\n")
         : "";
@@ -3683,8 +3813,10 @@ Auto-save: enabled</pre>
         ? `\n\nMOUNTED WORKSPACE & LIVE SOURCE FILES:\n${String(folderSummary).slice(0, 18000)}`
         : "";
       const worktreeBlock = `\n\nISOLATED GIT WORKTREE:\n- Branch: ${wtBranch} (${wtPath})${folderContextBlock}`;
-      const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"]).join(", ");
-      const mcpLine = bot.mcpCommand ? `\n- Connected MCP Server: ${bot.mcpCommand}` : "";
+      const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "mcp_call", "handoff"]).join(", ");
+      const mcpLine = bot.mcpCommand
+        ? `\n- Connected MCP Server: ${bot.mcpCommand} (Invoke MCP tools via [TOOL: mcp_call | <toolName> | <jsonArgs>])`
+        : "";
       const isDm = thread?.type === "dm";
       const relayBots = buildDynamicSquadRelay(thread);
       const reviewerBot = getSquadReviewerBot(thread);
@@ -3748,7 +3880,7 @@ ${handoffRule}
       const teamContext = isDm
         ? ""
         : `\n\nSquad teammates in this room (in relay order): ${relayBots.map(b => `@${b.name} (${b.role})`).join(" → ")}.${squadRoleDirective}`;
-      return `You are ${bot.name} (${bot.role}) in the Vanaras software engineering workspace.\n${bot.instructions || ""}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${teamContext}\nBe concise, high-signal, and only write code or invoke tools when the user's task calls for it.`;
+      return `You are ${bot.name} (${bot.role}) in the Vanaras software engineering workspace.\n${bot.instructions || ""}${skillBlock}${privateMemories}${factsBlock}${worktreeBlock}${toolsProtocolBlock}${teamContext}\nBe concise, high-signal, and only write code or invoke tools when the user's task calls for it.`;
     }
 
     function extractInlineThinkBlocks(rawText, rawReasoning = "") {
@@ -4035,6 +4167,35 @@ ${handoffRule}
               executedTools.push(normalizedTool);
               hooksTrace.push(`PostToolUse(${normalizedTool})`);
             }
+          } else if (normalizedTool === "mcp_call" && arg1) {
+            let parsedArgs = {};
+            if (arg2) {
+              try { parsedArgs = JSON.parse(arg2); } catch { parsedArgs = { input: arg2 }; }
+            }
+            const res = await fetch("/api/agent/tool", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "mcp_call",
+                botId: bot.id,
+                botName: bot.name,
+                mcpCommand: bot.mcpCommand || "",
+                toolName: arg1,
+                toolArgs: parsedArgs
+              })
+            });
+            const data = await res.json();
+            const mcpOut = data.output || data.error || JSON.stringify(data.result || {});
+            const exitCode = res.ok && data.ok !== false ? 0 : 1;
+            insertTerminalBeforeStreaming(thread, {
+              senderType: "terminal",
+              command: `[${bot.name} MCP] ${arg1}(${arg2 || "{}"})`,
+              exitCode,
+              text: String(mcpOut).slice(0, 1600)
+            });
+            observationsOut.push({ tool: `mcp_call(${arg1})`, output: String(mcpOut).slice(0, 3500) });
+            executedTools.push(`mcp_call: ${arg1}`);
+            hooksTrace.push(`PostToolUse(mcp_call:${arg1})`);
           }
         } catch {
           hooksTrace.push(`PostToolUseFailure(${normalizedTool})`);
@@ -4413,12 +4574,13 @@ ${handoffRule}
           }
         };
 
-        // Capability #1: Multi-Step ReAct Tool Loop inside a single turn (up to 3 internal inspect/run -> observe rounds)
+        // Capability #1: Multi-Step ReAct Tool Loop inside a single turn (configurable per-agent via targetBot.maxReactSteps)
         let reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 8192, onStreamProgress, turnController.signal);
         if (turnCtx.aborted) return;
         let accumulatedReasoning = [reply.reasoning || "", liveMsg.reasoning || ""].filter(Boolean)[0] || "";
+        const maxSteps = Math.max(1, Math.min(6, Number(targetBot.maxReactSteps) || 3));
 
-        for (let reactStep = 0; reactStep < 3; reactStep++) {
+        for (let reactStep = 0; reactStep < maxSteps; reactStep++) {
           if (turnCtx.aborted) return;
           const stepHook = await invokeAgentLifecycleHook("AfterAgentThoughtRequest", {
             botId: targetBot.id,
@@ -4514,13 +4676,13 @@ ${handoffRule}
           if (extracted.length > 0) {
             await saveFilesToAgentWorkspace(targetBot, extracted);
           }
-          // Automatically verify/run the primary entrypoint or test file (.py, .js, .mjs, .sh, .rs) in the agent's workspace
+          // Automatically verify/run the primary entrypoint or test file (.py, .js, .mjs, .sh, .rs) in the agent's workspace if autoVerifyCode !== false
           const candidateList = extracted.length > 0 ? extracted : extractedPatches;
           const runnableCandidates = candidateList.filter(f => /\.(py|js|mjs|sh|rs)$/i.test(f.name));
           const runnableFile =
             runnableCandidates.find(f => /(?:^|\/)(?:test_[^/]+|[^/]+_test|main|app|index|server)\.(?:py|js|mjs|sh|rs)$/i.test(f.name)) ||
             runnableCandidates[0];
-          if (runnableFile && (targetBot.tools || []).includes("shell_exec")) {
+          if (runnableFile && targetBot.autoVerifyCode !== false && (targetBot.tools || []).includes("shell_exec")) {
             try {
               const runRes = await fetch("/api/agent/workspace", {
                 method: "POST",
@@ -5260,13 +5422,73 @@ ${handoffRule}
       }
     }
 
-    function openBotModal(botId) {
+    let activeAgentStudioTab = "model";
+
+    function switchAgentStudioTab(tabId) {
+      activeAgentStudioTab = tabId || "model";
+      const tabs = ["model", "skill", "mcp", "harness"];
+      tabs.forEach(t => {
+        const pane = document.getElementById(`agentTabPane_${t}`);
+        const btn = document.getElementById(`agentTabBtn_${t}`);
+        if (pane) pane.classList.toggle("hidden", t !== activeAgentStudioTab);
+        if (btn) {
+          btn.style.background = t === activeAgentStudioTab ? "var(--accent-blue-soft)" : "";
+          btn.style.borderColor = t === activeAgentStudioTab ? "var(--accent-blue)" : "";
+          btn.style.color = t === activeAgentStudioTab ? "var(--accent-blue-text)" : "";
+        }
+      });
+    }
+
+    function renderBotModalAgentSwitcher(selectedBotId) {
+      const bar = document.getElementById("botModalAgentSwitcher");
+      if (!bar) return;
+      const pills = (state.bots || []).map(b => {
+        const active = b.id === selectedBotId;
+        const shortMdl = (b.model || detectedLocalModel || "local").split("/").pop();
+        return `
+          <button type="button" onclick="openBotModal('${b.id}', activeAgentStudioTab)" class="btn-secondary" style="height:26px; padding:0 9px; font-size:11px; gap:5px; ${active ? 'background:var(--accent-blue-soft); border-color:var(--accent-blue); color:var(--accent-blue-text); font-weight:700;' : ''}">
+            <span>@${escapeHtml(b.name)}</span>
+            <span class="mono" style="font-size:9.5px; opacity:0.8;">${escapeHtml(shortMdl)}</span>
+          </button>
+        `;
+      }).join("");
+      bar.innerHTML = `${pills}
+        <button type="button" onclick="openBotModal(null, 'model')" class="btn-secondary" style="height:26px; padding:0 9px; font-size:11px; color:var(--accent-emerald); ${!selectedBotId ? 'border-color:var(--accent-emerald); font-weight:700;' : ''}">+ New Agent</button>
+      `;
+    }
+
+    function populateSkillTemplateDropdownInModal() {
+      const sel = document.getElementById("botSkillTemplateSelect");
+      if (!sel) return;
+      sel.innerHTML = `<option value="">Import workspace SKILL.md...</option>` +
+        (discoveredSkillTemplates || []).map((tpl, idx) =>
+          `<option value="${idx}">${escapeHtml(tpl.name)} (${escapeHtml(tpl.path)})</option>`
+        ).join("");
+    }
+
+    function importSelectedSkillTemplateInModal() {
+      const sel = document.getElementById("botSkillTemplateSelect");
+      const textarea = document.getElementById("botSkillMarkdownInput");
+      if (!sel || !textarea) return;
+      const idx = Number(sel.value);
+      const tpl = (discoveredSkillTemplates || [])[idx];
+      if (!tpl || !tpl.content) {
+        showToast("Select a workspace SKILL.md template from the dropdown first");
+        return;
+      }
+      textarea.value = tpl.content;
+      showToast(`Loaded skill template: ${tpl.name}`);
+    }
+
+    async function openBotModal(botId, initialTab = null) {
       const modal = document.getElementById("botModal");
       const deleteBtn = document.getElementById("deleteBotBtn");
-      document.getElementById("botMcpProbeStatus").innerText = "";
+      document.getElementById("botMcpProbeStatus").innerText = "No MCP server probed yet.";
+      document.getElementById("botMcpProbeStatus").style.color = "var(--text-muted)";
+
       if (botId) {
         const bot = getBot(botId);
-        document.getElementById("botModalTitle").innerText = `Customize ${bot.name}`;
+        document.getElementById("botModalTitle").innerText = `Agent Studio — @${bot.name} (${bot.role})`;
         document.getElementById("botEditId").value = bot.id;
         document.getElementById("botNameInput").value = bot.name;
         document.getElementById("botRoleInput").value = bot.role;
@@ -5278,13 +5500,33 @@ ${handoffRule}
         document.getElementById("botMcpCommandInput").value = bot.mcpCommand || "";
         document.getElementById("botMcpInstructionsInput").value = bot.mcpCustomInstructions || "";
         document.getElementById("botMcpDisabledToolsInput").value = (bot.mcpDisabledTools || []).join(", ");
+
+        const maxStepsEl = document.getElementById("botHarnessMaxStepsInput");
+        if (maxStepsEl) maxStepsEl.value = String(bot.maxReactSteps || 3);
+        const autoVerifyEl = document.getElementById("botHarnessAutoVerifyInput");
+        if (autoVerifyEl) autoVerifyEl.value = bot.autoVerifyCode === false ? "false" : "true";
+
+        const skillLabel = document.getElementById("botSkillFilePathLabel");
+        if (skillLabel) skillLabel.innerText = `ui/.vanaras-agents/${bot.id}/SKILL.md`;
+        const skillInput = document.getElementById("botSkillMarkdownInput");
+        if (skillInput) skillInput.value = bot.skillMarkdown || "";
+
         selectedAvatarStyleInModal = bot.avatarStyle || "vanara-crimson";
         modalPrivateMemories = [...(bot.memories || [])];
         renderBotPrivateMemoryListInModal();
         renderBotToolsChecklistInModal(bot.tools || AVAILABLE_AGENT_TOOLS.map(t => t.id));
         deleteBtn.classList.toggle("hidden", state.bots.length <= 1);
+        renderBotModalAgentSwitcher(bot.id);
+
+        // Fetch latest SKILL.md and discovered templates from disk
+        syncAgentSkillOnServer(bot, "get").then(data => {
+          populateSkillTemplateDropdownInModal();
+          if (skillInput && !skillInput.value && data?.skillMarkdown) {
+            skillInput.value = data.skillMarkdown;
+          }
+        });
       } else {
-        document.getElementById("botModalTitle").innerText = "New Vanara Agent (1:1 Worktree)";
+        document.getElementById("botModalTitle").innerText = "Agent Studio — New Vanara Agent (1:1 Worktree)";
         document.getElementById("botEditId").value = "";
         document.getElementById("botNameInput").value = "";
         document.getElementById("botRoleInput").value = "";
@@ -5296,12 +5538,23 @@ ${handoffRule}
         document.getElementById("botMcpCommandInput").value = "";
         document.getElementById("botMcpInstructionsInput").value = "";
         document.getElementById("botMcpDisabledToolsInput").value = "";
+        const maxStepsEl = document.getElementById("botHarnessMaxStepsInput");
+        if (maxStepsEl) maxStepsEl.value = "3";
+        const autoVerifyEl = document.getElementById("botHarnessAutoVerifyInput");
+        if (autoVerifyEl) autoVerifyEl.value = "true";
+        const skillLabel = document.getElementById("botSkillFilePathLabel");
+        if (skillLabel) skillLabel.innerText = "ui/.vanaras-agents/<new_bot>/SKILL.md";
+        const skillInput = document.getElementById("botSkillMarkdownInput");
+        if (skillInput) skillInput.value = "";
+        populateSkillTemplateDropdownInModal();
         selectedAvatarStyleInModal = MONKEY_STYLES[state.bots.length % MONKEY_STYLES.length].id;
         modalPrivateMemories = [];
         renderBotPrivateMemoryListInModal();
         renderBotToolsChecklistInModal(AVAILABLE_AGENT_TOOLS.map(t => t.id));
         deleteBtn.classList.add("hidden");
+        renderBotModalAgentSwitcher(null);
       }
+      switchAgentStudioTab(initialTab || activeAgentStudioTab || "model");
       renderAvatarPicker();
       modal.classList.remove("hidden");
     }
@@ -5398,10 +5651,13 @@ ${handoffRule}
       const baseUrl = document.getElementById("botBaseUrlInput").value.trim();
       const apiKey = document.getElementById("botApiKeyInput").value.trim();
       const instructions = document.getElementById("botInstructionsInput").value.trim();
+      const skillMarkdown = (document.getElementById("botSkillMarkdownInput")?.value || "").trim();
       const mcpCommand = document.getElementById("botMcpCommandInput").value.trim();
       const mcpCustomInstructions = document.getElementById("botMcpInstructionsInput").value.trim();
       const mcpDisabledTools = document.getElementById("botMcpDisabledToolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
       const selectedTools = Array.from(document.querySelectorAll(".bot-tool-cb:checked")).map(cb => cb.value);
+      const maxReactSteps = Math.max(1, Math.min(6, Number(document.getElementById("botHarnessMaxStepsInput")?.value) || 3));
+      const autoVerifyCode = document.getElementById("botHarnessAutoVerifyInput")?.value !== "false";
 
       let targetBotRef = null;
       if (editId) {
@@ -5415,12 +5671,15 @@ ${handoffRule}
           apiKey,
           customModelConfigured: true,
           instructions,
+          skillMarkdown,
           avatarStyle: selectedAvatarStyleInModal,
           memories: [...modalPrivateMemories],
           tools: selectedTools,
           mcpCommand,
           mcpCustomInstructions,
           mcpDisabledTools,
+          maxReactSteps,
+          autoVerifyCode,
           worktreeBranch: `vanara/${name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`
         });
         targetBotRef = bot;
@@ -5437,11 +5696,14 @@ ${handoffRule}
           model,
           customModelConfigured: true,
           instructions,
+          skillMarkdown,
           memories: [...modalPrivateMemories],
           tools: selectedTools,
           mcpCommand,
           mcpCustomInstructions,
           mcpDisabledTools,
+          maxReactSteps,
+          autoVerifyCode,
           worktreeBranch: `vanara/${name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`
         };
         state.bots.push(targetBotRef);
@@ -5467,6 +5729,7 @@ ${handoffRule}
 
       if (targetBotRef) {
         syncAgentMemoryOnServer(targetBotRef, "set", { memories: targetBotRef.memories });
+        syncAgentSkillOnServer(targetBotRef, "set", { skillMarkdown: targetBotRef.skillMarkdown });
         ensureAgentWorktreeOnServer(targetBotRef);
       }
 
@@ -5475,7 +5738,7 @@ ${handoffRule}
       renderThreadList();
       renderActiveThread();
       populateWorkspaceAgentSelector();
-      showToast(`Saved ${name} (${provider}/${model}, memory, tools & worktree synced)`);
+      showToast(`Saved @${name} (Model, SKILL.md, MCP & Harness synced)`);
     }
 
     function deleteBotFromModal() {
@@ -5858,25 +6121,8 @@ ${handoffRule}
       document.getElementById("onboardBaseUrlInput").value = leadBot.baseUrl || "http://192.168.68.102:1234/v1";
       document.getElementById("onboardApiKeyInput").value = leadBot.apiKey || "";
       document.getElementById("onboardModelInput").value = leadBot.model || detectedLocalModel;
-
-      const squadEl = document.getElementById("onboardSquadPreview");
-      if (squadEl) {
-        squadEl.innerHTML = state.bots.map(b => {
-          const shortMdl = (b.model || detectedLocalModel || "local").split("/").pop();
-          return `
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 10px; border-radius:9px; background:var(--bg-surface); border:1px solid var(--border-card);">
-            <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-              ${renderCleanAgentCircle(b, 26)}
-              <div style="min-width:0;">
-                <div style="font-size:12px; font-weight:700; color:var(--text-primary);">@${escapeHtml(b.name)} <span class="mono" style="font-size:9.5px; font-weight:500; color:var(--accent-blue-text); background:var(--accent-blue-soft); padding:1px 5px; border-radius:4px;">${escapeHtml(b.provider || "local")}/${escapeHtml(shortMdl)}</span></div>
-                <div style="font-size:10.5px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(b.role)}</div>
-              </div>
-            </div>
-            <button type="button" onclick="closeOnboardingModal(); openBotModal('${b.id}')" class="btn-secondary" style="height:22px; padding:0 7px; font-size:10px; flex-shrink:0;">Edit Model</button>
-          </div>
-        `;
-        }).join("");
-      }
+      const applyAllCb = document.getElementById("onboardApplyAllAgentsCheckbox");
+      if (applyAllCb) applyAllCb.checked = false;
       modal.classList.remove("hidden");
     }
 
@@ -6015,6 +6261,7 @@ ${handoffRule}
       const baseUrl = document.getElementById("onboardBaseUrlInput").value.trim();
       const apiKey = document.getElementById("onboardApiKeyInput").value.trim();
       const model = document.getElementById("onboardModelInput").value.trim() || detectedLocalModel;
+      const forceApplyAll = Boolean(document.getElementById("onboardApplyAllAgentsCheckbox")?.checked);
 
       const initials = userName.split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 2) || "EN";
       state.currentUser = { id: "user_1", name: userName, role: userRole, initials };
@@ -6027,7 +6274,7 @@ ${handoffRule}
       const prevDefaultModel = prevLead.model;
 
       state.bots.forEach((b, idx) => {
-        const hasSeparateCustomModel = !resetThreads && idx > 0 && (
+        const hasSeparateCustomModel = !resetThreads && !forceApplyAll && idx > 0 && (
           b.customModelConfigured ||
           (b.provider && b.provider !== prevDefaultProvider) ||
           (b.model && b.model !== prevDefaultModel)
@@ -6037,6 +6284,7 @@ ${handoffRule}
           b.baseUrl = baseUrl;
           b.apiKey = apiKey;
           b.model = model;
+          if (forceApplyAll) b.customModelConfigured = false;
         }
       });
 
@@ -6055,7 +6303,7 @@ ${handoffRule}
       renderThreadList();
       renderActiveThread();
       await probeLocalModel();
-      showToast(resetThreads ? "Workspace reset to clean engineering threads!" : `Workspace configured for ${userName}`);
+      showToast(resetThreads ? "Workspace reset to clean engineering threads!" : `Workspace settings saved for ${userName}`);
     }
 
     async function attachRepoFileToComposer() {

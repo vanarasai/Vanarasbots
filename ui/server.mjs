@@ -769,7 +769,13 @@ function inspectMountedDirectory(targetPath, codeDir = "") {
       });
     const wsDigest = wsFiles.length > 0
       ? `--- CURRENT WORKSPACE SOURCE FILES (ALREADY LOADED IN CONTEXT — DO NOT STOP TO INSPECT) ---\n` +
-        wsFiles.slice(0, 8).map(f => `=== ${f.name} (${f.size}B) ===\n${String(f.content || "").slice(0, 6500)}`).join("\n\n")
+        wsFiles.slice(0, 8).map(f => {
+          const raw = String(f.content || "");
+          const body = raw.length > 18000
+            ? `${raw.slice(0, 18000)}\n# [Context preview capped at 18000/${f.size}B — full file on disk is intact]`
+            : raw;
+          return `=== ${f.name} (${f.size}B) ===\n${body}`;
+        }).join("\n\n")
       : "";
 
     const symbolMap = extractRepositorySymbolMap(resolved);

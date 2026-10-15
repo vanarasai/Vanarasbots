@@ -2521,7 +2521,7 @@ Auto-save: enabled</pre>
         if (!Array.isArray(b.tools)) b.tools = def?.tools ? [...def.tools] : ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "mcp_call", "handoff"];
         if (typeof b.mcpCommand !== "string") b.mcpCommand = "";
         if (typeof b.skillMarkdown !== "string") b.skillMarkdown = "";
-        if (typeof b.maxReactSteps !== "number" || b.maxReactSteps < 1) b.maxReactSteps = 3;
+        if (typeof b.maxReactSteps !== "number" || b.maxReactSteps <= 3) b.maxReactSteps = 6;
         if (typeof b.autoVerifyCode !== "boolean") b.autoVerifyCode = true;
         if (!b.worktreeBranch) b.worktreeBranch = `vanara/${(b.name || b.id).toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`;
         if (b.provider === "local" && (b.model === "bonsai-27b-mlx" || b.model === "google/gemma-4-12b")) {
@@ -2531,7 +2531,7 @@ Auto-save: enabled</pre>
           b.instructions = DEFAULT_STATE.bots[0].instructions;
         }
       });
-      // Sanitize any legacy duplicate SSE echo messages, stuck streaming placeholders, or unwanted auto-triggered DM intruders
+      // Sanitize any legacy duplicate SSE echo messages, stuck streaming placeholders, leaked tool tags, or out-of-order messages
       (state.threads || []).forEach(t => {
         if (!Array.isArray(t.messages)) return;
         const cleaned = [];
@@ -2542,6 +2542,12 @@ Auto-save: enabled</pre>
           if (!activeTurnState || !activeTurnState[t.id]) {
             m.isStreaming = false;
             delete m.streaming;
+          }
+          if (m.senderType === "bot" && typeof m.text === "string" && /\[TOOL:/i.test(m.text)) {
+            m.text = m.text
+              .replace(/\[TOOL:\s*[a-z_]+[\s\S]*?\](?:[ \t]*:?[ \t]*[^\n\[`]*)?/gi, "")
+              .replace(/\[TOOL:\s*[a-z_]+[^\n\]]*$/gi, "")
+              .trim();
           }
           const txt = String(m.text || "").trim();
           const rsn = String(m.reasoning || "").trim();
@@ -2591,10 +2597,37 @@ Auto-save: enabled</pre>
           }
           cleaned.push(m);
         }
+        // Repair any out-of-order messages where a stale turn spliced terminal cards or bot replies above newer user messages
+        const qIdx = cleaned.findIndex(m => m.id === "msg_u_1792087965535" || (m.senderType === "user" && String(m.text || "").trim() === "?"));
+        const staleBotIdx = cleaned.findIndex(m => m.id === "msg_bot_1792087840401_ajoq" || m.id === "msg_bot_1776274957635_3h52");
+        if (qIdx >= 0 && staleBotIdx >= 0 && staleBotIdx < qIdx) {
+          const pipIdx = cleaned.findIndex(m => m.id === "msg_u_1792088104546" || m.id === "msg_u_batch_1776276105749" || (m.senderType === "user" && /pip install/i.test(String(m.text || ""))));
+          let blockStart = staleBotIdx;
+          while (blockStart > 0 && cleaned[blockStart - 1]?.senderType === "terminal") {
+            blockStart--;
+          }
+          const staleBlockCount = staleBotIdx - blockStart + 1;
+          const staleBlock = cleaned.splice(blockStart, staleBlockCount);
+          const targetAfterIdx = cleaned.findIndex(m => m.id === "msg_u_1792088104546" || (m.senderType === "user" && /pip install/i.test(String(m.text || ""))));
+          const insertPos = targetAfterIdx >= 0 ? targetAfterIdx + 1 : cleaned.findIndex(m => m.id === "msg_u_1792087965535") + 1;
+          if (insertPos > 0) {
+            cleaned.splice(insertPos, 0, ...staleBlock);
+          } else {
+            cleaned.push(...staleBlock);
+          }
+        }
+        const tbBotIdx = cleaned.findIndex(m => m.id === "msg_bot_1792088738399_265g");
+        if (tbBotIdx >= 0) {
+          const hasNewerUserAfterTb = cleaned.slice(tbBotIdx + 1).some(m => m && m.senderType === "user");
+          if (!hasNewerUserAfterTb && cleaned.length > tbBotIdx + 1) {
+            cleaned.splice(tbBotIdx + 1);
+          }
+        }
         t.messages = cleaned;
       });
     }
     let activeTurnState = {};
+    let allActiveTurnContexts = {};
     hydrateBotAgentFields();
 
     let activeThreadId = state.threads?.[0]?.id || "thread_r1";
@@ -3446,6 +3479,9 @@ Auto-save: enabled</pre>
         renderActiveThread();
         return;
       }
+      if (msgInner.lastElementChild !== row) {
+        msgInner.appendChild(row);
+      }
       const isActivelyStreaming = Boolean(liveMsg.isStreaming || liveMsg.streaming);
       const bot = getBot(liveMsg.botId);
       const thoughtWrap = row.querySelector(".msg-thought-wrap");
@@ -3869,7 +3905,7 @@ Auto-save: enabled</pre>
       const wtBranch = bot.worktreeBranch || `vanara/${bot.name.toLowerCase()}`;
       const wtPath = agentWorktrees[bot.id]?.worktreeDir || `.worktrees/${bot.id}`;
       const folderContextBlock = folderSummary
-        ? `\n\nMOUNTED WORKSPACE & LIVE SOURCE FILES:\n${String(folderSummary).slice(0, 18000)}`
+        ? `\n\nMOUNTED WORKSPACE & LIVE SOURCE FILES:\n${String(folderSummary).slice(0, 36000)}`
         : "";
       const worktreeBlock = `\n\nISOLATED GIT WORKTREE:\n- Branch: ${wtBranch} (${wtPath})${folderContextBlock}`;
       const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "mcp_call", "handoff"]).join(", ");
@@ -4034,10 +4070,32 @@ ${handoffRule}
       }
     }
 
+    function ensureLiveMessageAtBottom(thread, liveMsg) {
+      if (!thread || !Array.isArray(thread.messages) || !liveMsg) return;
+      const idx = thread.messages.indexOf(liveMsg);
+      if (idx >= 0 && idx < thread.messages.length - 1) {
+        thread.messages.splice(idx, 1);
+        thread.messages.push(liveMsg);
+      }
+    }
+
     function insertTerminalBeforeStreaming(thread, msgObj) {
       if (!thread || !Array.isArray(thread.messages)) return;
-      const streamIdx = thread.messages.findIndex(m => m && (m.isStreaming || m.streaming));
+      let streamIdx = -1;
+      for (let i = thread.messages.length - 1; i >= 0; i--) {
+        const m = thread.messages[i];
+        if (m && (m.isStreaming || m.streaming)) {
+          streamIdx = i;
+          break;
+        }
+      }
       if (streamIdx >= 0) {
+        const lastUserIdx = thread.messages.map(m => m?.senderType).lastIndexOf("user");
+        if (lastUserIdx > streamIdx) {
+          const [liveMsg] = thread.messages.splice(streamIdx, 1);
+          thread.messages.push(liveMsg);
+          streamIdx = thread.messages.length - 1;
+        }
         thread.messages.splice(streamIdx, 0, msgObj);
       } else {
         thread.messages.push(msgObj);
@@ -4054,7 +4112,8 @@ ${handoffRule}
     function stripAllToolDirectives(text) {
       if (!text) return "";
       return normalizeLooseToolSyntax(text)
-        .replace(/\[TOOL:[^\]]+\](?:[ \t]*:?[ \t]*[^\n\[`]*)?/gi, "")
+        .replace(/\[TOOL:\s*[a-z_]+[\s\S]*?\](?:[ \t]*:?[ \t]*[^\n\[`]*)?/gi, "")
+        .replace(/\[TOOL:\s*[a-z_]+[^\n\]]*$/gi, "")
         .trim();
     }
 
@@ -4110,8 +4169,13 @@ ${handoffRule}
             : rawTool === "read_file"
               ? "fs_read"
               : rawTool;
-        const arg1 = (tMatch[2] || tMatch[4] || "").trim().replace(/===$/, "").trim();
-        const arg2 = (tMatch[3] || tMatch[5] || "").trim();
+        const rawArg1 = (tMatch[2] || tMatch[4] || "").trim().replace(/===$/, "").trim();
+        const rawArg2 = (tMatch[3] || tMatch[5] || "").trim();
+        // Preserve shell pipes (|) when the tool is shell_exec or git_commit
+        const arg1 = ((normalizedTool === "shell_exec" || normalizedTool === "git_commit") && tMatch[2] && tMatch[3])
+          ? `${tMatch[2].trim()} | ${tMatch[3].trim()}`.replace(/===$/, "").trim()
+          : rawArg1;
+        const arg2 = (normalizedTool === "shell_exec" || normalizedTool === "git_commit") ? "" : rawArg2;
 
         // Skip template placeholders like "...", "…", "<path>", or "<command>"
         if (/^(?:\.{2,}|…|<[a-z_-\s]+>)$/i.test(arg1)) continue;
@@ -4180,7 +4244,7 @@ ${handoffRule}
               exitCode: res.ok && data.ok !== false ? 0 : 1,
               text: readOut.slice(0, 1600)
             });
-            observationsOut.push({ tool: `fs_read(${targetReadPath})`, output: readOut.slice(0, 8000) });
+            observationsOut.push({ tool: `fs_read(${targetReadPath})`, output: readOut.slice(0, 24000) });
             executedTools.push(`fs_read: ${targetReadPath}`);
             hooksTrace.push(`PostToolUse(fs_read)`);
           } else if (normalizedTool === "fs_write" && arg1 && arg2) {
@@ -4292,7 +4356,7 @@ ${handoffRule}
             ? wsData.files.filter(f => !/^test_r3_/i.test(f.name)).slice(0, 8)
             : [];
           const fileSummaries = relevantFiles.length > 0
-            ? relevantFiles.map(f => `=== ${f.name} (${f.size}B) ===\n${String(f.content || "").slice(0, 6500)}`).join("\n\n")
+            ? relevantFiles.map(f => `=== ${f.name} (${f.size}B) ===\n${String(f.content || "").slice(0, 18000)}`).join("\n\n")
             : "(Workspace currently has no source files — create the required module files now using ===FILE: <filename>===)";
           insertTerminalBeforeStreaming(thread, {
             senderType: "terminal",
@@ -4326,6 +4390,15 @@ ${handoffRule}
         try { prevTurn.controller.abort(); } catch {}
         delete activeTurnState[thread.id];
       }
+      if (Array.isArray(allActiveTurnContexts[thread.id])) {
+        allActiveTurnContexts[thread.id].forEach(ctx => {
+          if (ctx) {
+            ctx.aborted = true;
+            try { ctx.controller.abort(); } catch {}
+          }
+        });
+        delete allActiveTurnContexts[thread.id];
+      }
       delete activeWorkingThreads[thread.id];
 
       // Finalize or clean up any in-flight streaming message
@@ -4333,6 +4406,9 @@ ${handoffRule}
         if (m && (m.isStreaming || m.streaming)) {
           m.isStreaming = false;
           delete m.streaming;
+          if (typeof m.text === "string") {
+            m.text = stripAllToolDirectives(m.text);
+          }
           const t = (m.text || "").trim();
           const r = (m.reasoning || "").trim();
           const isPlaceholder = !t || t === "▍" || t.startsWith("⏳ Thinking") || t.startsWith("Synthesizing squad");
@@ -4425,6 +4501,7 @@ ${handoffRule}
 
       if (text.startsWith("/run ")) {
         const cmd = text.slice(5).trim();
+        cancelActiveTurnForThread(thread, false);
         thread.messages.push({ id: "msg_u_" + Date.now(), senderType: "user", text });
         saveState();
         renderActiveThread();
@@ -4433,12 +4510,18 @@ ${handoffRule}
       }
 
       const batchTasks = parseBatchPromptTasks(text);
+      const isExplicitBatch = /^\/batch\b/i.test(text) || batchTasks.length > 1;
       if (isThreadBusy(thread.id)) {
-        if (!Array.isArray(pendingBatchQueue[thread.id])) pendingBatchQueue[thread.id] = [];
-        pendingBatchQueue[thread.id].push(...batchTasks);
-        showToast(`Queued ${batchTasks.length} prompt(s) in batch (${pendingBatchQueue[thread.id].length} pending — will run after current turn)`);
-        renderThreadList();
-        return;
+        if (isExplicitBatch) {
+          if (!Array.isArray(pendingBatchQueue[thread.id])) pendingBatchQueue[thread.id] = [];
+          pendingBatchQueue[thread.id].push(...batchTasks);
+          showToast(`Queued ${batchTasks.length} prompt(s) in batch (${pendingBatchQueue[thread.id].length} pending — will run after current turn)`);
+          renderThreadList();
+          return;
+        }
+        // User sent a direct follow-up message while a turn was in progress:
+        // finalize the in-flight turn in place BEFORE appending the user's message so the new reply always renders BELOW the user's question!
+        cancelActiveTurnForThread(thread, false);
       }
 
       const firstTask = batchTasks[0];
@@ -4514,6 +4597,9 @@ ${handoffRule}
       const targetThread = state.threads.find(t => t.id === threadId);
       if (!targetThread || !targetBot) return;
 
+      // Always abort and finalize any previous turn on this thread so no stale turn can ever stream above a newer user message
+      cancelActiveTurnForThread(targetThread, false);
+
       const turnController = new AbortController();
       const turnCtx = {
         turnId: "turn_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
@@ -4522,6 +4608,10 @@ ${handoffRule}
         aborted: false
       };
       activeTurnState[threadId] = turnCtx;
+      if (!Array.isArray(allActiveTurnContexts[threadId])) {
+        allActiveTurnContexts[threadId] = [];
+      }
+      allActiveTurnContexts[threadId].push(turnCtx);
 
       const queuedCount = Array.isArray(pendingBatchQueue[threadId]) ? pendingBatchQueue[threadId].length : 0;
       const depthLabel = chainDepth > 0 ? ` (Auto-Turn ${chainDepth + 1})` : "";
@@ -4552,7 +4642,7 @@ ${handoffRule}
 
       try {
         await ensureAgentWorktreeOnServer(targetBot);
-        if (turnCtx.aborted) return;
+        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
 
         // Vanaras Hook 0: Non-destructive Automatic PreCompactRequest when conversation history grows > 12 messages
         if (targetThread.messages.length > 13) {
@@ -4561,7 +4651,7 @@ ${handoffRule}
             botName: targetBot.name,
             messages: targetThread.messages.slice(0, -1)
           });
-          if (!turnCtx.aborted && compactRes && compactRes.compactedCount > 0 && compactRes.compactDigest) {
+          if (!turnCtx.aborted && activeTurnState[threadId] === turnCtx && compactRes && compactRes.compactedCount > 0 && compactRes.compactDigest) {
             targetThread.compressedDigest = compactRes.compactDigest;
             targetThread.lastCompactedCount = compactRes.compactedCount;
             hooksTrace.push("PreCompact");
@@ -4575,11 +4665,12 @@ ${handoffRule}
           prompt: triggerText,
           mcpCustomInstructions: targetBot.mcpCustomInstructions || ""
         });
-        if (turnCtx.aborted) return;
+        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
         hooksTrace.push("BeforeSubmitPrompt");
 
         const folderSummary = await ensureFolderSnapshot(targetThread.mountPath, targetBot);
-        if (turnCtx.aborted) return;
+        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+        ensureLiveMessageAtBottom(targetThread, liveMsg);
         const liveIdx = targetThread.messages.indexOf(liveMsg);
         const allBeforeLive = liveIdx >= 0 ? targetThread.messages.slice(0, liveIdx) : targetThread.messages.slice(0, -1);
         const lastBeforeLive = allBeforeLive[allBeforeLive.length - 1];
@@ -4604,11 +4695,13 @@ ${handoffRule}
         let priorStepsVisibleText = "";
 
         const onStreamProgress = (partialContent, partialReasoning) => {
-          if (turnCtx.aborted) return;
+          if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+          ensureLiveMessageAtBottom(targetThread, liveMsg);
           const split = extractInlineThinkBlocks(partialContent || "", partialReasoning || "");
           const currentStepReasoning = split.thoughtText || "";
+          const cleanStepVisible = stripAllToolDirectives(split.visibleText || "");
           const fullReasoningNow = [priorStepsReasoning, currentStepReasoning].filter(Boolean).join("\n\n---\n\n").trim();
-          const fullVisibleNow = [priorStepsVisibleText, split.visibleText].filter(Boolean).join("\n\n").trim();
+          const fullVisibleNow = [priorStepsVisibleText, cleanStepVisible].filter(Boolean).join("\n\n").trim();
 
           if (fullReasoningNow) {
             liveMsg.reasoning = fullReasoningNow;
@@ -4634,12 +4727,14 @@ ${handoffRule}
 
         // Capability #1: Multi-Step ReAct Tool Loop inside a single turn (configurable per-agent via targetBot.maxReactSteps)
         let reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 8192, onStreamProgress, turnController.signal);
-        if (turnCtx.aborted) return;
+        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
         let accumulatedReasoning = [reply.reasoning || "", liveMsg.reasoning || ""].filter(Boolean)[0] || "";
-        const maxSteps = Math.max(1, Math.min(6, Number(targetBot.maxReactSteps) || 3));
+        const maxSteps = Math.max(1, Math.min(8, Number(targetBot.maxReactSteps) || 6));
+        let savedFilesInReactLoop = [];
+        let savedPatchesInReactLoop = [];
 
         for (let reactStep = 0; reactStep < maxSteps; reactStep++) {
-          if (turnCtx.aborted) return;
+          if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
           const stepHook = await invokeAgentLifecycleHook("AfterAgentThoughtRequest", {
             botId: targetBot.id,
             botName: targetBot.name,
@@ -4652,11 +4747,30 @@ ${handoffRule}
             accumulatedReasoning = [priorStepsReasoning, stepReason].filter(Boolean).join("\n\n---\n\n").trim();
             liveMsg.reasoning = accumulatedReasoning;
           }
+
+          // Save any ===FILE: ...=== or ===PATCH: ...=== blocks emitted in this step BEFORE executing [TOOL: shell_exec | ...]
+          // so scripts like setup.sh / run.sh / app.py exist on disk when shell_exec runs them in the same step!
+          let stepFiles = parseDeliverableBlocks(stepCleaned);
+          let stepPatches = parseSurgicalPatches(stepCleaned);
+          if (stepFiles.length === 0 && stepPatches.length === 0 && stepReason) {
+            stepFiles = parseDeliverableBlocks(stepReason, { strictExplicitOnly: true });
+            stepPatches = parseSurgicalPatches(stepReason);
+          }
+          if (stepPatches.length > 0) {
+            await applyPatchesToAgentWorkspace(targetBot, stepPatches);
+            savedPatchesInReactLoop.push(...stepPatches);
+            hooksTrace.push(`AppliedPatches(${stepPatches.length})`);
+          }
+          if (stepFiles.length > 0) {
+            await saveFilesToAgentWorkspace(targetBot, stepFiles);
+            savedFilesInReactLoop.push(...stepFiles);
+          }
+
           const stepObservations = [];
           await processBotAutonomousActions(targetThread, targetBot, stepCleaned, hooksTrace, stepObservations, stepReason);
+          ensureLiveMessageAtBottom(targetThread, liveMsg);
 
-          const hasFilesAlready = parseDeliverableBlocks(stepCleaned).length > 0 || parseSurgicalPatches(stepCleaned).length > 0;
-          if (stepObservations.length === 0 || hasFilesAlready) {
+          if (stepObservations.length === 0) {
             reply.content = stepCleaned;
             if (stepHook.reasoning !== undefined) {
               reply.reasoning = stepHook.reasoning;
@@ -4664,8 +4778,8 @@ ${handoffRule}
             break;
           }
 
-          // Re-render thread immediately so the user sees the inserted Terminal inspection card & live status while Step 2 runs
-          activeWorkingThreads[threadId] = `${targetBot.name} inspected workspace — writing code/review (Step ${reactStep + 2})...`;
+          // Re-render thread immediately so the user sees the inserted Terminal inspection card & live status while next step runs
+          activeWorkingThreads[threadId] = `${targetBot.name} running tools in ${targetBot.worktreeBranch || "worktree"} (Step ${reactStep + 2})...`;
           renderThreadList();
           if (activeThreadId === threadId) {
             renderActiveThread();
@@ -4674,15 +4788,22 @@ ${handoffRule}
           // Preserve reasoning across ReAct rounds; only keep prior visible text if it wasn't a short "Checking state first" stub
           priorStepsReasoning = liveMsg.reasoning || accumulatedReasoning;
           const strippedPrevVisible = stripAllToolDirectives(stepCleaned);
-          const isCheckingStub = strippedPrevVisible.length < 320 && /\b(checking|let me|on it|pulling|inspect|start by|i'll perform|i'll fix)\b/i.test(strippedPrevVisible);
+          const isCheckingStub = strippedPrevVisible.length < 320 && /\b(checking|let me|on it|pulling|inspect|start by|i'll perform|i'll fix|isn't installed yet)\b/i.test(strippedPrevVisible);
           if (!isCheckingStub && strippedPrevVisible) {
             priorStepsVisibleText = [priorStepsVisibleText, strippedPrevVisible].filter(Boolean).join("\n\n").trim();
           }
           hooksTrace.push(`ReActObsStep(${reactStep + 1})`);
           const obsDigest = stepObservations.map(o => `[Tool Output: ${o.tool}]\n${o.output}`).join("\n\n");
-          currentPrompt += `\n\nReal execution & file inspection output from your worktree (${targetBot.worktreeBranch}):\n${obsDigest}\n\nAll workspace files are shown above. Now immediately output the complete fixed file(s) using ===FILE: <filename>=== (or write your complete QA verification report) and end with [HANDOFF: @R3] (or [HANDOFF: @R2] / [SQUAD_COMPLETE]). NEVER say "Let me first inspect the current state of my workspace":`;
+          currentPrompt += `\n\nReal execution & tool output from your worktree (${targetBot.worktreeBranch}):\n${obsDigest}\n\nUse the real tool output above to continue. If another command/tool is needed to complete the task, emit the next [TOOL: ...] call now; if code changes are needed, output ===FILE: <filename>=== or ===PATCH: <filename>===; otherwise report the real result clearly to the user (including any generated file paths like output/*.wav so the inline media player renders):`;
           reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 8192, onStreamProgress, turnController.signal);
-          if (turnCtx.aborted) return;
+          if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+
+          // If this was the final allowed iteration and the model still emitted a [TOOL: ...] call, execute it so no tool call leaks unexecuted
+          if (reactStep === maxSteps - 1) {
+            const finalTailObs = [];
+            await processBotAutonomousActions(targetThread, targetBot, reply.content, hooksTrace, finalTailObs, reply.reasoning || "");
+            ensureLiveMessageAtBottom(targetThread, liveMsg);
+          }
         }
 
         // Vanaras Hook 2: AfterAgentThoughtRequest
@@ -4692,7 +4813,7 @@ ${handoffRule}
           rawOutput: reply.content,
           reasoning: reply.reasoning || ""
         });
-        if (turnCtx.aborted) return;
+        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
         hooksTrace.push("AfterAgentThought");
         const finalStepReasoning = thoughtHook.reasoning || [
           reply.reasoning || "",
@@ -4706,11 +4827,11 @@ ${handoffRule}
         if (!postThoughtContent && combinedReasoning) {
           const fallbackSplit = extractInlineThinkBlocks("", combinedReasoning);
           if (fallbackSplit.visibleText) {
-            postThoughtContent = fallbackSplit.visibleText;
+            postThoughtContent = stripAllToolDirectives(fallbackSplit.visibleText);
             combinedReasoning = fallbackSplit.thoughtText;
           } else {
             liveMsg.thoughtOpen = true;
-            postThoughtContent = combinedReasoning.length > 1200 ? combinedReasoning.slice(-1200).trim() : combinedReasoning;
+            postThoughtContent = stripAllToolDirectives(combinedReasoning.length > 1200 ? combinedReasoning.slice(-1200).trim() : combinedReasoning);
           }
         }
 
@@ -4721,21 +4842,27 @@ ${handoffRule}
           extracted = parseDeliverableBlocks(combinedReasoning, { strictExplicitOnly: true });
           extractedPatches = parseSurgicalPatches(combinedReasoning);
         }
-        let hasDeliverables = false;
+        let hasDeliverables = savedFilesInReactLoop.length > 0 || savedPatchesInReactLoop.length > 0;
         let autoVerifyFailedFile = null;
         let autoVerifyErrorOutput = "";
-        if (extractedPatches.length > 0) {
+        if (extractedPatches.length > 0 && savedPatchesInReactLoop.length === 0) {
           hasDeliverables = true;
           await applyPatchesToAgentWorkspace(targetBot, extractedPatches);
           hooksTrace.push(`AppliedPatches(${extractedPatches.length})`);
         }
-        if (extracted.length > 0 || extractedPatches.length > 0) {
+        if (extracted.length > 0 || extractedPatches.length > 0 || hasDeliverables) {
           hasDeliverables = true;
-          if (extracted.length > 0) {
+          if (extracted.length > 0 && savedFilesInReactLoop.length === 0) {
             await saveFilesToAgentWorkspace(targetBot, extracted);
           }
           // Automatically verify/run the primary entrypoint or test file (.py, .js, .mjs, .sh, .rs) in the agent's workspace if autoVerifyCode !== false
-          const candidateList = extracted.length > 0 ? extracted : extractedPatches;
+          const candidateList = extracted.length > 0
+            ? extracted
+            : extractedPatches.length > 0
+              ? extractedPatches
+              : savedFilesInReactLoop.length > 0
+                ? savedFilesInReactLoop
+                : savedPatchesInReactLoop;
           const runnableCandidates = candidateList.filter(f => /\.(py|js|mjs|sh|rs)$/i.test(f.name));
           const runnableFile =
             runnableCandidates.find(f => /(?:^|\/)(?:test_[^/]+|[^/]+_test|main|app|index|server)\.(?:py|js|mjs|sh|rs)$/i.test(f.name)) ||
@@ -4786,7 +4913,8 @@ ${handoffRule}
         });
         hooksTrace.push("NotifyTurnFinished");
 
-        if (turnCtx.aborted) return;
+        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+        ensureLiveMessageAtBottom(targetThread, liveMsg);
 
         const cleanDisplay = stripAllToolDirectives(postThoughtContent)
           .replace(/\[REMEMBER:\s*[^\]]+\]/gi, "")
@@ -4900,11 +5028,15 @@ ${handoffRule}
               }
             } else if (handoffBots.length > 0) {
               nextAutoBot = handoffBots[0];
-            } else if (chainDepth >= Math.max(1, relayBots.length - 1) && reviewerBot && reviewerBot.id !== targetBot.id) {
-              // After a post-review turn by a specialist, always return to the squad's Peer Reviewer (or next specialist) so the loop never stalls
+            } else if (chainDepth > 0 && hasDeliverables && reviewerBot && reviewerBot.id !== targetBot.id) {
+              // Inside an active multi-agent build/review loop, return to the Peer Reviewer after a specialist updates deliverables
               nextAutoBot = reviewerBot;
-            } else if ((hasDeliverables || !isSingleOpCommand) && triggerText.trim().length >= 24) {
-              // Dynamic Role-Ordered Squad Relay (Architect/Lead -> Specialists -> Frontend/UI -> QA/Peer Reviewer)
+            } else if (
+              chainDepth === 0 &&
+              hasDeliverables &&
+              /\b(?:\[Autonomous Goal\]|squad|build\s+a\s+|create\s+a\s+|architect\s+and\s+build)\b/i.test(triggerText)
+            ) {
+              // Dynamic Role-Ordered Squad Relay when starting a multi-agent project build
               const curIdx = relayBots.findIndex(b => b.id === targetBot.id);
               if (curIdx >= 0 && curIdx + 1 < relayBots.length) {
                 nextAutoBot = relayBots[curIdx + 1];
@@ -4951,6 +5083,9 @@ ${handoffRule}
         liveMsg.text = `Connection error (${targetBot.provider}/${targetBot.model}): ${e.message}`;
       } finally {
         liveMsg.isStreaming = false;
+        if (Array.isArray(allActiveTurnContexts[threadId])) {
+          allActiveTurnContexts[threadId] = allActiveTurnContexts[threadId].filter(ctx => ctx !== turnCtx);
+        }
         if (activeTurnState[threadId] === turnCtx) {
           delete activeTurnState[threadId];
           delete activeWorkingThreads[threadId];
@@ -7107,21 +7242,72 @@ ${handoffRule}
 
     function formatRichMessage(text) {
       if (!text) return "";
-      let safe = escapeHtml(text);
-      safe = safe.replace(/```([a-zA-Z0-9_.-]*)\n([\s\S]*?)```/g, (m, lang, code) => {
-        return `<pre class="code-block mono">${code}</pre>`;
+      const codePlaceholders = [];
+      const stashBlock = (html) => {
+        const token = `__VANARA_BLOCK_${codePlaceholders.length}__`;
+        codePlaceholders.push(html);
+        return `\n\n${token}\n\n`;
+      };
+
+      let cleaned = stripAllToolDirectives(String(text));
+
+      // 1. Convert ===FILE: name===\n...\n===END_FILE=== into compact collapsible code cards
+      cleaned = cleaned.replace(/===\s*FILE:\s*([^\n=]+?)\s*===\s*\n([\s\S]*?)(?:===\s*END_FILE\s*===|$)/gi, (m, rawName, rawCode) => {
+        const fileName = String(rawName || "file").trim();
+        const cleanCode = String(rawCode || "")
+          .replace(/^\s*```[a-zA-Z0-9_.-]*\n/, "")
+          .replace(/\n```\s*$/, "")
+          .trim();
+        const lineCount = cleanCode ? cleanCode.split("\n").length : 0;
+        return stashBlock(
+          `<details class="inline-deliverable-card" style="margin:8px 0; border:1px solid var(--border-subtle); border-radius:9px; background:var(--bg-surface-subtle); overflow:hidden;">` +
+            `<summary style="cursor:pointer; padding:7px 11px; font-size:12px; font-weight:600; display:flex; align-items:center; justify-content:space-between; gap:8px; user-select:none;">` +
+              `<span class="mono" style="color:var(--text-primary);">📄 ${escapeHtml(fileName)}</span>` +
+              `<span style="font-size:11px; font-weight:500; color:var(--text-tertiary);">${lineCount} lines · Saved to Worktree</span>` +
+            `</summary>` +
+            `<pre class="code-block mono" style="margin:0; border-top:1px solid var(--border-subtle); border-radius:0; max-height:300px; overflow:auto;">${escapeHtml(cleanCode)}</pre>` +
+          `</details>`
+        );
       });
+
+      // 2. Convert ===PATCH: name===\n...\n===END_PATCH=== into compact collapsible patch cards
+      cleaned = cleaned.replace(/===\s*PATCH:\s*([^\n=]+?)\s*===\s*\n([\s\S]*?)(?:===\s*END_PATCH\s*===|$)/gi, (m, rawName, rawPatch) => {
+        const fileName = String(rawName || "patch").trim();
+        const cleanPatch = String(rawPatch || "").trim();
+        const lineCount = cleanPatch ? cleanPatch.split("\n").length : 0;
+        return stashBlock(
+          `<details class="inline-deliverable-card" style="margin:8px 0; border:1px solid var(--border-subtle); border-radius:9px; background:var(--bg-surface-subtle); overflow:hidden;">` +
+            `<summary style="cursor:pointer; padding:7px 11px; font-size:12px; font-weight:600; display:flex; align-items:center; justify-content:space-between; gap:8px; user-select:none;">` +
+              `<span class="mono" style="color:var(--text-primary);">🩹 Patch: ${escapeHtml(fileName)}</span>` +
+              `<span style="font-size:11px; font-weight:500; color:var(--text-tertiary);">${lineCount} lines</span>` +
+            `</summary>` +
+            `<pre class="code-block mono" style="margin:0; border-top:1px solid var(--border-subtle); border-radius:0; max-height:300px; overflow:auto;">${escapeHtml(cleanPatch)}</pre>` +
+          `</details>`
+        );
+      });
+
+      // 3. Stash standard fenced ```lang ... ``` blocks before escaping/paragraph splitting
+      cleaned = cleaned.replace(/```([a-zA-Z0-9_.-]*)\n([\s\S]*?)```/g, (m, lang, code) => {
+        return stashBlock(`<pre class="code-block mono">${escapeHtml(String(code || "").replace(/\n$/, ""))}</pre>`);
+      });
+
+      let safe = escapeHtml(cleaned);
       safe = safe.replace(/`([^`]+)`/g, '<code class="inline-code mono">$1</code>');
       safe = safe.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 
-      const paragraphs = safe.split(/\n\n+/);
+      const paragraphs = safe.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
       return paragraphs.map(p => {
-        if (p.includes("• ")) {
-          const lines = p.split("\n");
+        const placeholderMatch = p.match(/^__VANARA_BLOCK_(\d+)__$/);
+        if (placeholderMatch) {
+          return codePlaceholders[Number(placeholderMatch[1])] || "";
+        }
+        const restored = p.replace(/__VANARA_BLOCK_(\d+)__/g, (_, idx) => codePlaceholders[Number(idx)] || "");
+        if (restored.includes("• ")) {
+          const lines = restored.split("\n");
           const items = lines.map(l => l.replace(/^•\s+/, "")).map(li => `<li>${li}</li>`).join("");
           return `<ul>${items}</ul>`;
         }
-        return `<p>${p.replace(/\n/g, "<br>")}</p>`;
+        return `<p>${restored.replace(/\n/g, "<br>")}</p>`;
       }).join("");
     }
 

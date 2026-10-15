@@ -1462,14 +1462,6 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
 
-          <!-- Common Squad Discussion CTA: [ 💬 Discuss ] -->
-          <button onclick="triggerGroupDiscussion()" class="header-tool-pill" title="Start a Common Roundtable Discussion among all squad agents (no handoff/code dump)">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-            <span>Discuss</span>
-          </button>
-
           <!-- Primary CTA: [ ▶ Run collaboration ] -->
           <button onclick="triggerGroupCollabRun()" class="header-tool-pill collab-cta" title="Run Multi-Agent Squad Collaboration">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
@@ -1508,15 +1500,6 @@
 
           <!-- Composer Quick Action Menu -->
           <div id="composerMenu" class="popover-menu hidden" style="bottom: 105px; left: 0; width: 268px;">
-            <button onclick="triggerGroupDiscussion(); hideComposerMenu();" class="popover-item">
-              <div class="popover-item-icon" style="color:var(--accent-blue);">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              </div>
-              <div>
-                <div class="popover-title">Start Common Squad Discussion</div>
-                <div class="popover-sub">Roundtable debate &amp; consensus (no handoffs)</div>
-              </div>
-            </button>
             <button onclick="attachRepoFileToComposer(); hideComposerMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:var(--accent-blue);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -3328,11 +3311,45 @@ Auto-save: enabled</pre>
 
       // 4. Role assignment bullets in visible text ONLY on initial Architect/Lead planning turn
       if (allowRoleBullets && vis) {
-        return candidatePool.filter(b => {
+        const bulletBots = candidatePool.filter(b => {
           const escaped = b.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           const roleAssignRx = new RegExp(`(?:^|\\n)\\s*(?:[-*•]|\\d+\\.)?\\s*\\*{0,2}@${escaped}\\*{0,2}\\s*(?:\\([^)]*\\))?\\s*:`, "i");
           return roleAssignRx.test(vis);
         });
+        if (bulletBots.length > 0) return bulletBots;
+      }
+
+      // 5. Natural @Name peer mentions in visible text (prioritize closing sentences / questions over opening acknowledgements)
+      if (vis) {
+        const tailSlice = vis.slice(-260);
+        const naturalMentions = [];
+        const mentionRx = /(?:^|[\s,("'])@([a-zA-Z0-9_-]+)\b/g;
+        const allFound = [];
+        while ((m = mentionRx.exec(vis)) !== null) {
+          const matchedBot = findBotByToken(m[1]);
+          if (matchedBot) {
+            allFound.push({
+              bot: matchedBot,
+              index: m.index,
+              inTail: m.index >= Math.max(0, vis.length - 260),
+              nearQuestion: /\?/.test(vis.slice(m.index, Math.min(vis.length, m.index + 160)))
+            });
+          }
+        }
+        // Sort so closing/question invitations come before opening "I agree with @R1" acknowledgements
+        allFound.sort((a, b) => {
+          if (a.nearQuestion !== b.nearQuestion) return a.nearQuestion ? -1 : 1;
+          if (a.inTail !== b.inTail) return a.inTail ? -1 : 1;
+          return b.index - a.index;
+        });
+        for (const item of allFound) {
+          if (!naturalMentions.includes(item.bot)) {
+            naturalMentions.push(item.bot);
+          }
+        }
+        if (naturalMentions.length > 0 && (/\?/.test(tailSlice) || allFound.some(x => x.inTail))) {
+          return naturalMentions;
+        }
       }
 
       return [];
@@ -3874,32 +3891,27 @@ Auto-save: enabled</pre>
       if (!isDm && relayBots.length > 1) {
         if (isLead) {
           const peerBullets = peers.map(p => `  • **@${p.name}** (${p.role})`).join("\n");
-          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @${bot.name} ${bot.role}):
-- NEVER try to build the entire project alone in a single monologue!
-- Step 1: Discuss the architecture, technical trade-offs, and module interfaces concisely (120–180 words).
-- Step 2: Explicitly assign responsibilities to your squad teammates according to their roles:
-${peerBullets}
-- Step 3: Output at most 1–2 foundational schema/config files (\`===FILE: ...===\`) and end your message with \`[HANDOFF: @${nextBot?.name || peers[0]?.name}]\`.`;
+          squadRoleDirective = `\n\nSHARED SQUAD ROOM COLLABORATION (Engineering Squad Room — @${bot.name} ${bot.role}):
+- You are in a shared group room with your teammates:\n${peerBullets}
+- **When discussing, brainstorming, or answering questions**: Converse naturally with the user and your teammates. Share your architectural perspective, weigh trade-offs, and naturally mention a teammate (e.g. \`@${nextBot?.name || peers[0]?.name}\`) if you want their perspective — do NOT force \`===FILE: ...===\` blocks or rigid handoffs during open discussion.
+- **When asked to build, implement, or fix software**: Never build the entire project alone in a single monologue. Outline the architecture & module interfaces (120–180 words), assign responsibilities to your teammates by role, output at most 1–2 foundational files (\`===FILE: ...===\`), and invite \`@${nextBot?.name || peers[0]?.name}\` (or \`[HANDOFF: @${nextBot?.name || peers[0]?.name}]\`) to continue.`;
         } else if (isReviewer) {
           const buildersList = peers.map(p => `@${p.name} (${p.role})`).join(", ");
           const sampleFixTarget = peers[peers.length - 1]?.name || peers[0]?.name || "teammate";
-          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @${bot.name} ${bot.role}):
-- Perform a candid **Peer Review** of your teammates' work (${buildersList}): highlight strengths, catch edge cases, stubs, mocks, test-tone placeholders, or integration bugs, and output a runnable verification test (\`===FILE: test_...===\`).
-- Your workspace files are already loaded above in MOUNTED WORKSPACE & LIVE SOURCE FILES. NEVER stop with "Let me first inspect the current state of my workspace" or "Let me check my repo".
-- If you find any critical bug, stub/mock implementation (e.g. a 0.4s test-tone instead of real multi-turn audio), or missing requirement that must be fixed, explain the issue clearly in your visible response and end with \`[HANDOFF: @${sampleFixTarget}]\` (or the responsible specialist) so they revise it and return it to you for re-review.
-- ONLY once all real requirements, modules, and tests pass your review, end your message with \`[SQUAD_COMPLETE]\` to sign off and complete the build.`;
+          squadRoleDirective = `\n\nSHARED SQUAD ROOM COLLABORATION (Engineering Squad Room — @${bot.name} ${bot.role}):
+- **When discussing or debating ideas**: Share your QA, reliability, and edge-case perspective naturally in the room conversation and respond to teammates' points (${buildersList}) without forcing code blocks.
+- **When reviewing built code**: Perform a candid Peer Review of your teammates' modules (already loaded above in MOUNTED WORKSPACE & LIVE SOURCE FILES — never stop with "Let me check my repo"), output a runnable verification test (\`===FILE: test_...===\`) if appropriate, tag \`@${sampleFixTarget}\` if bugs/stubs need fixing, or include \`[SQUAD_COMPLETE]\` once all real requirements pass.`;
         } else {
           const priorNames = relayBots.slice(0, Math.max(1, myIdx)).map(p => `@${p.name}`).join(" and ");
-          squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @${bot.name} ${bot.role}):
-- Your workspace files are already loaded above in MOUNTED WORKSPACE & LIVE SOURCE FILES. NEVER stop with "Let me first inspect the current state of my workspace" or "Let me check my repo" — write your complete updated \`===FILE: <filename>===\` blocks immediately in this response!
-- Review ${priorNames}'s architecture and modules, briefly discuss your design choices as **${bot.role}**, implement or fix your assigned module(s) using \`===FILE: <filename>===\`, and end your message with \`[HANDOFF: @${nextBot?.name || reviewerBot?.name}]\`.`;
+          squadRoleDirective = `\n\nSHARED SQUAD ROOM COLLABORATION (Engineering Squad Room — @${bot.name} ${bot.role}):
+- **When discussing or brainstorming**: Respond naturally to ${priorNames} and the user from your specialty as **${bot.role}**, challenge or refine trade-offs, and tag \`@${nextBot?.name || reviewerBot?.name}\` if their input is helpful — do NOT force \`===FILE: ...===\` blocks when just discussing.
+- **When building or fixing software**: Your workspace files are already loaded above in MOUNTED WORKSPACE & LIVE SOURCE FILES (never stop with "Let me first inspect my workspace"). Implement or update your assigned module(s) using \`===FILE: <filename>===\` and tag \`@${nextBot?.name || reviewerBot?.name}\` (or \`[HANDOFF: @${nextBot?.name || reviewerBot?.name}]\`).`;
         }
       }
       const otherAgentMentions = state.bots.filter(b => b.id !== bot.id).map(b => `@${b.name}`).join(", ") || "other agents";
-      const squadHandoffExamples = peers.slice(0, 3).map(p => `[HANDOFF: @${p.name}]`).join(", ") || "[HANDOFF: @teammate]";
       const handoffRule = isDm
         ? `5. This is a private 1-on-1 chat with the user. Do NOT mention, tag, or hand off to ${otherAgentMentions} unless the user explicitly asks you to.`
-        : `5. In this group squad room, collaborate with your teammates, divide responsibilities by role, and end with ${squadHandoffExamples} so the next specialist continues the discussion and peer review.`;
+        : `5. In this group squad room, talk naturally with your teammates (${otherAgentMentions}) by @mentioning them during discussions, or hand off implementation/review tasks as needed.`;
       const toolsProtocolBlock = `\n\nCODE & TOOL PROTOCOL (${enabledTools})${mcpLine}:
 1. Answer the user's message directly and naturally. If the user greets you (e.g. "Hi", "Hello") or asks a question, respond briefly in 1–3 sentences without invoking [TOOL: ...] tags and NEVER invent an unrequested project.
 2. When asked to build, fix, or create software, web apps, shaders, or scripts, output complete runnable files immediately in your visible response using:
@@ -4402,20 +4414,6 @@ ${handoffRule}
       showToast("Stopped generation, cleared batch queue & killed background processes");
     }
 
-    function isCommonDiscussionPrompt(text, thread) {
-      const t = String(text || "").trim();
-      if (/^\/(?:discuss|debate|roundtable)\b/i.test(t)) return true;
-      if (!thread || thread.type !== "group") return false;
-      // If user explicitly asks to write/implement/create files right now, use the build/handoff pipeline
-      if (/\b(?:write\s+(?:the\s+)?(?:code|file|script)|implement\s+and\s+save|output\s+===FILE|create\s+(?:the\s+)?files)\b/i.test(t)) {
-        return false;
-      }
-      // If user mentions 2+ agents or asks for a team discussion/brainstorm/opinion
-      const mentioned = (state.bots || []).filter(b => t.toLowerCase().includes(`@${b.name.toLowerCase()}`));
-      if (mentioned.length >= 2 && !/\b(?:build|implement|code)\b/i.test(t)) return true;
-      return /\b(?:discuss|discussion|roundtable|debate|brainstorm|what\s+do\s+you\s+(?:all|guys|team|squad)\s+think|share\s+your\s+(?:thoughts|views|perspectives|opinions)|pros\s+and\s+cons|trade-?offs\s+between)\b/i.test(t);
-    }
-
     async function handleSendMessage() {
       const input = document.getElementById("chatComposerInput");
       const text = input.value.trim();
@@ -4452,13 +4450,10 @@ ${handoffRule}
         showToast(`Batch started: running task 1 of ${batchTasks.length} (${batchTasks.length - 1} queued)`);
       }
 
-      const cleanTopic = firstTask.replace(/^\/(?:discuss|debate|roundtable)\s*/i, "").trim() || firstTask;
-      const runAsDiscussion = isCommonDiscussionPrompt(firstTask, thread);
-
       thread.messages.push({
         id: "msg_u_" + Date.now(),
         senderType: "user",
-        text: /^\/(?:discuss|debate|roundtable)\b/i.test(firstTask) ? `[Squad Discussion] ${cleanTopic}` : firstTask
+        text: firstTask
       });
       saveState();
       renderThreadList();
@@ -4476,14 +4471,6 @@ ${handoffRule}
           text: firstTask
         })
       }).catch(() => {});
-
-      if (runAsDiscussion) {
-        const explicitMentions = (state.bots || []).filter(b =>
-          cleanTopic.toLowerCase().includes(`@${b.name.toLowerCase()}`)
-        );
-        await runGroupDiscussionRoundtable(thread, cleanTopic, explicitMentions.length >= 2 ? explicitMentions : null);
-        return;
-      }
 
       const targetBot = resolveInitialTargetBotForPrompt(thread, firstTask);
       if (targetBot) {
@@ -4848,6 +4835,19 @@ ${handoffRule}
         );
 
         const maxRelayDepth = Math.max(16, relayBots.length * 4);
+        const lastUserIdx = targetThread.messages.map(m => m.senderType).lastIndexOf("user");
+        const recentBotMessagesSinceUser = lastUserIdx >= 0
+          ? targetThread.messages.slice(lastUserIdx + 1).filter(m => m.senderType === "bot")
+          : [];
+        const botsSpokenSinceUser = new Set(recentBotMessagesSinceUser.map(m => m.botId).filter(Boolean));
+        const hasDeliverablesSinceUser = hasDeliverables || recentBotMessagesSinceUser.some(m => Boolean(m.hasDeliverables));
+        const isBuildOrReviewFlow = Boolean(
+          hasDeliverablesSinceUser ||
+          autoVerifyFailedFile ||
+          reviewerFoundBugs ||
+          hasAffirmativeSquadComplete ||
+          /\b(?:implement|write\s+(?:the\s+)?(?:code|file|module|script)|===FILE:|create\s+(?:the\s+)?files|fix\s+(?:the\s+)?bug|build\s+a\s+|scaffold|peer\s+review)\b/i.test(triggerText)
+        );
 
         // Self-Healing Loop: If a builder agent's generated module failed syntax/runtime verification, self-trigger that builder to fix it.
         // (If the Peer Reviewer's test suite failed, that means the test caught a bug in a teammate's module — route to the specialist below!)
@@ -4860,10 +4860,22 @@ ${handoffRule}
           state.autoTriggerEnabled !== false &&
           (targetBot.tools || []).includes("handoff")
         ) {
-          // Strict Group-Only Dynamic Squad Discussion, Revision & Peer Review Relay:
-          // Adapts automatically to any role changes, custom agent names, or N agents in the squad!
+          // Organic Group Conversation, Collaborative Build & Peer Review Relay:
           if (chainDepth < maxRelayDepth) {
-            if (isCurrentBotReviewer) {
+            if (!isBuildOrReviewFlow) {
+              // Natural peer discussion: do NOT force code dumps or fake QA failures.
+              // Prefer a mentioned teammate who hasn't spoken yet since the user's message, or an explicitly invited teammate.
+              const unspokenMention = handoffBots.find(b => !botsSpokenSinceUser.has(b.id));
+              const hasExplicitTag = /\[HANDOFF:\s*@?[a-zA-Z0-9_-]+\]/i.test(postThoughtContent || "");
+              if (unspokenMention) {
+                nextAutoBot = unspokenMention;
+              } else if (handoffBots.length > 0 && (hasExplicitTag || chainDepth < relayBots.length)) {
+                nextAutoBot = handoffBots[0];
+              }
+              if (nextAutoBot) {
+                liveMsg.collabRound = `Turn ${chainDepth + 1} • Squad Discussion → @${nextAutoBot.name}`;
+              }
+            } else if (isCurrentBotReviewer) {
               if (!isSquadComplete || reviewerFoundBugs || handoffBots.length > 0) {
                 // Route back to the explicitly tagged specialist, or default to the primary backend/implementation specialist in the relay
                 const defaultSpecialist = relayBots.find(b => b.id !== targetBot.id && classifyAgentSquadArchetype(b) === "specialist")
@@ -4921,11 +4933,15 @@ ${handoffRule}
               const reviewerReasoningNote = (isCurrentBotReviewer && combinedReasoning && (cleanDisplay.length < 280 || reviewerFoundBugs))
                 ? `\n\nQA Reviewer Reasoning & Findings:\n"${combinedReasoning.slice(-900)}"`
                 : "";
-              nextAutoPrompt = isPeerReviewStep
-                ? `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} and the squad just completed their implementation/revision:\n"${cleanDisplay.slice(0, 600)}"\n\nAll workspace files are already loaded in your context above. Perform a candid Peer Review of your teammates' modules (${buildersDesc}) immediately in this turn, and either hand back to ${sampleSpecialists || "a teammate"} if any stub/mock/test-tone or bug needs fixing, or end with [SQUAD_COMPLETE] only if all real requirements pass.`
-                : isCurrentBotReviewer
-                  ? `@${nextAutoBot.name} (${nextAutoBot.role}), Peer Reviewer @${targetBot.name} flagged issues/stubs during QA verification:\n"${cleanDisplay.slice(0, 700)}"${reviewerReasoningNote}${testFailBlock}\n\nYour current workspace files are already loaded in your context above — do NOT stop to inspect them. Output the complete fixed module(s) immediately using \`===FILE: <filename>===\` in your worktree (${nextAutoBot.worktreeBranch}), and end with \`[HANDOFF: @${targetBot.name}]\` for re-review.`
-                  : `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} just completed their turn and handed off to you:\n"${cleanDisplay.slice(0, 600)}"\n\nDiscuss your technical approach as ${nextAutoBot.role}, implement or revise your assigned module(s) immediately using \`===FILE: <filename>===\` in your worktree (${nextAutoBot.worktreeBranch}), and hand off to the next squad specialist.`;
+              if (!isBuildOrReviewFlow) {
+                nextAutoPrompt = `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} shared their thoughts in the squad room and invited your perspective:\n"${cleanDisplay.slice(0, 700)}"\n\nRespond naturally from your specialty as ${nextAutoBot.role}. Engage directly with @${targetBot.name}'s points, and if another teammate's perspective would help, mention them with @Name (no need to force code blocks or handoffs if the question is answered).`;
+              } else {
+                nextAutoPrompt = isPeerReviewStep
+                  ? `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} and the squad just completed their implementation/revision:\n"${cleanDisplay.slice(0, 600)}"\n\nAll workspace files are already loaded in your context above. Perform a candid Peer Review of your teammates' modules (${buildersDesc}) immediately in this turn, and either hand back to ${sampleSpecialists || "a teammate"} if any stub/mock/test-tone or bug needs fixing, or end with [SQUAD_COMPLETE] only if all real requirements pass.`
+                  : isCurrentBotReviewer
+                    ? `@${nextAutoBot.name} (${nextAutoBot.role}), Peer Reviewer @${targetBot.name} flagged issues/stubs during QA verification:\n"${cleanDisplay.slice(0, 700)}"${reviewerReasoningNote}${testFailBlock}\n\nYour current workspace files are already loaded in your context above — do NOT stop to inspect them. Output the complete fixed module(s) immediately using \`===FILE: <filename>===\` in your worktree (${nextAutoBot.worktreeBranch}), and end with \`[HANDOFF: @${targetBot.name}]\` for re-review.`
+                    : `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} just completed their turn and handed off to you:\n"${cleanDisplay.slice(0, 600)}"\n\nDiscuss your technical approach as ${nextAutoBot.role}, implement or revise your assigned module(s) immediately using \`===FILE: <filename>===\` in your worktree (${nextAutoBot.worktreeBranch}), and hand off to the next squad specialist.`;
+              }
             }
           }
         }
@@ -5124,203 +5140,8 @@ ${handoffRule}
     }
 
     // =========================================================================
-    // 8. COMMON SQUAD ROUNDTABLE DISCUSSION & MULTI-AGENT COLLABORATION
+    // 8. MULTI-AGENT COLLABORATION
     // =========================================================================
-    async function triggerGroupDiscussion() {
-      const thread = getActiveThread();
-      if (!thread) return;
-      const input = document.getElementById("chatComposerInput");
-      let topic = input.value.trim();
-
-      if (!topic) {
-        const lastUserMsg = [...thread.messages].reverse().find(m => m.senderType === "user");
-        topic = await askInAppInput({
-          title: "Start Common Squad Discussion (Roundtable)",
-          subtitle: "All squad agents debate trade-offs, challenge assumptions, and reach a shared consensus — no handoffs or code dumps.",
-          defaultValue: lastUserMsg ? lastUserMsg.text.replace(/^\[[^\]]+\]\s*/, "") : "What architecture, trade-offs, and edge cases should we align on before building?",
-          placeholder: "Enter a topic or question for the squad to discuss together...",
-          confirmLabel: "Start Discussion"
-        });
-        if (!topic || !topic.trim()) return;
-      } else {
-        input.value = "";
-      }
-
-      const cleanTopic = topic.replace(/^\/(?:discuss|debate|roundtable)\s*/i, "").trim();
-      thread.messages.push({
-        id: "msg_discuss_topic_" + Date.now(),
-        senderType: "user",
-        text: `[Squad Discussion] ${cleanTopic}`
-      });
-      saveState();
-      renderThreadList();
-      renderActiveThread();
-
-      await runGroupDiscussionRoundtable(thread, cleanTopic, null);
-    }
-
-    async function runGroupDiscussionRoundtable(thread, topic, participantsOverride = null) {
-      if (!thread || !topic) return;
-      const threadId = thread.id;
-      const turnCtx = cancelActiveTurnForThread(thread, false);
-      activeTurnState[threadId] = turnCtx;
-
-      let participants = [];
-      if (Array.isArray(participantsOverride) && participantsOverride.length >= 2) {
-        participants = participantsOverride;
-      } else if (thread.type === "group") {
-        participants = buildDynamicSquadRelay(thread);
-      } else {
-        const primary = getBot(thread.botId);
-        const others = state.bots.filter(b => b.id !== primary.id).slice(0, 2);
-        participants = [primary, ...others];
-      }
-      if (participants.length === 0) participants = [state.bots[0]];
-
-      const rosterStr = participants.map(b => `@${b.name} (${b.role})`).join(", ");
-      const discussionLog = [];
-
-      try {
-        const folderSummary = await ensureFolderSnapshot(thread.mountPath, participants[0]);
-
-        // Phase 1: Every agent in the room shares their specialist perspective & responds to prior speakers
-        for (let i = 0; i < participants.length; i++) {
-          if (turnCtx.aborted) return;
-          const bot = participants[i];
-          activeWorkingThreads[threadId] = `Squad Discussion (${i + 1}/${participants.length}): @${bot.name} speaking...`;
-          renderThreadList();
-          updateComposerStopButton();
-
-          const priorTranscript = discussionLog.length === 0
-            ? "(You are opening the roundtable discussion. Frame the core architectural trade-offs and invite your teammates' perspectives.)"
-            : discussionLog.map(entry => `@${entry.name} (${entry.role}):\n${entry.text}`).join("\n\n---\n\n");
-
-          const sysPrompt = `You are @${bot.name} (${bot.role}) participating in a live COMMON SQUAD ROUNDTABLE DISCUSSION in the Vanaras engineering room.
-Squad participants in this room: ${rosterStr}.
-${bot.instructions || ""}
-${folderSummary ? `\nMOUNTED REPOSITORY CONTEXT:\n${String(folderSummary).slice(0, 6000)}` : ""}
-
-COMMON DISCUSSION RULES (STRICT):
-1. This is an open engineering roundtable conversation among peers — NOT a task handoff pipeline.
-2. Do NOT output ===FILE: ...=== code blocks, do NOT invoke [TOOL: ...] tags, and NEVER emit [HANDOFF: ...] or [SQUAD_COMPLETE].
-3. Speak naturally from your specialty (${bot.role}) in 80–140 words:
-   - Directly reference or challenge specific points made by earlier speakers (@Name) where relevant.
-   - Highlight concrete trade-offs, risks, or design insights from your domain.
-   - Pose 1 sharp question or counterpoint for the room if an important trade-off is still unresolved.`;
-
-          const userPrompt = `DISCUSSION TOPIC:\n${topic}\n\nROOM CONVERSATION SO FAR:\n${priorTranscript}\n\nYour perspective (@${bot.name} — ${bot.role}):`;
-
-          const liveMsg = {
-            id: `msg_disc_${Date.now()}_${i}`,
-            senderType: "bot",
-            botId: bot.id,
-            text: "▍",
-            reasoning: "",
-            thoughtOpen: false,
-            collabRound: `Common Discussion • Speaker ${i + 1}/${participants.length} (${bot.role})`,
-            isStreaming: true
-          };
-          thread.messages.push(liveMsg);
-          if (activeThreadId === threadId) renderActiveThread();
-
-          let lastRenderTs = 0;
-          const res = await queryBotLLM(bot, sysPrompt, userPrompt, 1400, (partialText, partialReason) => {
-            if (turnCtx.aborted) return;
-            const split = extractInlineThinkBlocks(partialText || "", partialReason || "");
-            if (split.thoughtText) liveMsg.reasoning = split.thoughtText;
-            liveMsg.text = split.visibleText || (liveMsg.reasoning ? "⏳ Thinking..." : "▍");
-            const now = Date.now();
-            if (activeThreadId === threadId && now - lastRenderTs > 85) {
-              lastRenderTs = now;
-              updateStreamingMessageDomInPlace(threadId, liveMsg);
-            }
-          }, turnCtx.abortController.signal);
-
-          if (turnCtx.aborted) return;
-          liveMsg.isStreaming = false;
-          const cleanSpeech = stripAllToolDirectives(res.content || "")
-            .replace(/\[HANDOFF:\s*@?[a-zA-Z0-9_-]+\]/gi, "")
-            .replace(/\[SQUAD_COMPLETE\]/gi, "")
-            .trim() || (res.reasoning ? res.reasoning.slice(-600).trim() : "(Shared perspective)");
-
-          liveMsg.text = cleanSpeech;
-          if (res.reasoning) liveMsg.reasoning = res.reasoning;
-          discussionLog.push({ name: bot.name, role: bot.role, text: cleanSpeech });
-
-          saveState();
-          renderThreadList();
-          if (activeThreadId === threadId) renderActiveThread();
-        }
-
-        // Phase 2: Lead Architect / Moderator synthesizes the room's debate into a Shared Consensus
-        if (participants.length >= 2 && !turnCtx.aborted) {
-          const synthesizer = participants[0];
-          activeWorkingThreads[threadId] = `Squad Discussion: @${synthesizer.name} synthesizing consensus...`;
-          renderThreadList();
-
-          const fullDebate = discussionLog.map(entry => `@${entry.name} (${entry.role}):\n${entry.text}`).join("\n\n---\n\n");
-          const synthSys = `You are @${synthesizer.name} (${synthesizer.role}) moderating the Vanaras engineering roundtable.
-Summarize the team's discussion into a crisp **Shared Squad Consensus**:
-- **Agreed Direction**: What the squad aligned on.
-- **Key Trade-offs & Mitigations**: How the points raised by ${participants.slice(1).map(p => "@" + p.name).join(", ")} are resolved.
-- **Recommended Next Step**: Concrete action plan when the user is ready to build.
-Do NOT output ===FILE: ...=== blocks or [HANDOFF: ...] tags. Keep it under 150 words.`;
-          const synthUsr = `DISCUSSION TOPIC:\n${topic}\n\nFULL SQUAD ROUNDTABLE:\n${fullDebate}\n\nWrite the Shared Squad Consensus:`;
-
-          const synthMsg = {
-            id: `msg_disc_synth_${Date.now()}`,
-            senderType: "bot",
-            botId: synthesizer.id,
-            text: "▍",
-            reasoning: "",
-            thoughtOpen: false,
-            collabRound: `Common Discussion • Shared Squad Consensus`,
-            isStreaming: true
-          };
-          thread.messages.push(synthMsg);
-          if (activeThreadId === threadId) renderActiveThread();
-
-          let lastRenderTs = 0;
-          const synthRes = await queryBotLLM(synthesizer, synthSys, synthUsr, 1400, (partialText, partialReason) => {
-            if (turnCtx.aborted) return;
-            const split = extractInlineThinkBlocks(partialText || "", partialReason || "");
-            if (split.thoughtText) synthMsg.reasoning = split.thoughtText;
-            synthMsg.text = split.visibleText || (synthMsg.reasoning ? "⏳ Thinking..." : "▍");
-            const now = Date.now();
-            if (activeThreadId === threadId && now - lastRenderTs > 85) {
-              lastRenderTs = now;
-              updateStreamingMessageDomInPlace(threadId, synthMsg);
-            }
-          }, turnCtx.abortController.signal);
-
-          if (turnCtx.aborted) return;
-          synthMsg.isStreaming = false;
-          synthMsg.text = stripAllToolDirectives(synthRes.content || "")
-            .replace(/\[HANDOFF:\s*@?[a-zA-Z0-9_-]+\]/gi, "")
-            .replace(/\[SQUAD_COMPLETE\]/gi, "")
-            .trim() || (synthRes.reasoning ? synthRes.reasoning.slice(-600).trim() : "(Consensus reached)");
-          if (synthRes.reasoning) synthMsg.reasoning = synthRes.reasoning;
-        }
-      } catch (e) {
-        if (e?.name === "AbortError" || turnCtx.aborted) return;
-        thread.messages.push({
-          id: "msg_disc_err_" + Date.now(),
-          senderType: "bot",
-          botId: participants[0].id,
-          text: `Discussion error: ${e.message}`
-        });
-      } finally {
-        if (activeTurnState[threadId] === turnCtx) {
-          delete activeTurnState[threadId];
-          delete activeWorkingThreads[threadId];
-        }
-        saveState();
-        renderThreadList();
-        updateComposerStopButton();
-        if (activeThreadId === threadId) renderActiveThread();
-      }
-    }
-
     async function triggerGroupCollabRun() {
       const thread = getActiveThread();
       const input = document.getElementById("chatComposerInput");

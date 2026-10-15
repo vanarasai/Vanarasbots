@@ -231,79 +231,10 @@ function saveAgentMemory(botId, memories) {
 // ============================================================================
 // PER-AGENT ISOLATED GIT WORKTREE & CODE WORKSPACE MANAGER (.worktrees/<botId>)
 // ============================================================================
-const STARTER_AGENT_CODE = {
-  bot_r1: {
-    "gguf_dump.py": `#!/usr/bin/env python3
-"""R1 — GGUF Header & Per-Layer Embedding Table Inspector"""
-import os, struct, sys
-
-def inspect_workspace_models(root="."):
-    print("[R1 Code Workspace] Scanning for GGUF / quantization artifacts...")
-    print("Target Architecture : Gemma 4 E2B (5B stored params, 4-bit PLE tables)")
-    print("Saved via 4-bit PLE : ~680 MB")
-    print("Candidate Quants    : Q3_K_M (~3.5 bpw) | IQ3_M (~3.0 bpw)")
-    print("Active CWD          :", os.getcwd())
-
-if __name__ == "__main__":
-    inspect_workspace_models()
-`,
-    "quant_architecture.md": `# R1 Quantization & PLE Architecture\n\n- Main GGUF is text-only; vision/audio projector lives in separate \`mmproj\`.\n- Test \`Q3_K_M\` and \`IQ3_M\` with imatrix calibration before shrinking PLE tables further.\n`
-  },
-  bot_r2: {
-    "embedding_lookup.py": `#!/usr/bin/env python3
-"""R2 — Per-Layer Embedding (PLE) Mmap vs Resident Lookup Benchmark"""
-import mmap, time
-
-def simulate_ple_lookup():
-    rows, cols = 4096, 256
-    buf = bytearray(rows * cols)
-    t0 = time.perf_counter()
-    acc = sum(buf[i * cols] for i in range(0, rows, 16))
-    dt_ms = (time.perf_counter() - t0) * 1000.0
-    print(f"[R2 Code Workspace] 64B-aligned PLE lookup pass complete in {dt_ms:.3f} ms (checksum={acc})")
-
-if __name__ == "__main__":
-    simulate_ple_lookup()
-`,
-    "lookup_table.rs": `// R2 — 64-Byte Cache-Line Aligned PLE Lookup Table
-#[repr(align(64))]
-pub struct PleBlock4Bit {
-    pub scale: f16,
-    pub zero: f16,
-    pub qs: [u8; 60],
-}
-`
-  },
-  bot_r3: {
-    "calibrate_q3.py": `#!/usr/bin/env python3
-"""R3 — Hard Eval & imatrix Calibration Harness for Q3_K_M vs IQ3_M"""
-import json
-
-SUITE = [
-    {"quant": "Q4_K_M (baseline)", "bpw": 4.5, "size_gb": 2.70, "hard_eval_pass": "96.4%"},
-    {"quant": "Q3_K_M (imatrix)",  "bpw": 3.5, "size_gb": 2.12, "hard_eval_pass": "94.8%"},
-    {"quant": "IQ3_M  (imatrix)",  "bpw": 3.0, "size_gb": 1.84, "hard_eval_pass": "93.1%"},
-]
-
-if __name__ == "__main__":
-    print("[R3 Code Workspace] Calibration Matrix:")
-    print(json.dumps(SUITE, indent=2))
-`
-  },
-  bot_r4: {
-    "phone_rss_probe.py": `#!/usr/bin/env python3
-"""R4 — On-Device LiteRT-LM / llama.cpp Resident Set Size (RSS) Budget Calculator"""
-def compute_phone_rss(file_gb=2.70, ple_gb=0.95, use_mmap_ple=True):
-    resident = (file_gb - ple_gb) if use_mmap_ple else file_gb
-    kv_cache = 0.18
-    total_rss = resident + kv_cache
-    print(f"[R4 Code Workspace] File={file_gb:.2f}GB | mmap_PLE={use_mmap_ple} -> Peak Phone RSS = {total_rss:.2f} GB (Budget < 2.00 GB: {'PASS' if total_rss < 2.0 else 'TIGHT'})")
-
-if __name__ == "__main__":
-    compute_phone_rss()
-`
-  }
-};
+const LEGACY_TEMPLATE_FILES = new Set([
+  "gguf_dump.py", "quant_architecture.md", "embedding_lookup.py",
+  "lookup_table.rs", "calibrate_q3.py", "phone_rss_probe.py", "vanara_task.py"
+]);
 
 function ensureAgentWorktree(botId, botName, customWorkspacePath = "") {
   const botSlug = sanitizeSlug(botId, "bot");
@@ -330,18 +261,13 @@ function ensureAgentWorktree(botId, botName, customWorkspacePath = "") {
     : path.join(worktreePath, "agent_workspace", nameSlug);
   fs.mkdirSync(codeDir, { recursive: true });
 
-  // Seed starter code files if the agent's code workspace is empty
+  // Remove any legacy default template files so workspaces start clean
   try {
-    const existing = fs.readdirSync(codeDir);
-    if (existing.length === 0) {
-      const starters = STARTER_AGENT_CODE[botId] || {
-        "main.py": `#!/usr/bin/env python3\nprint("Hello from ${botName || botId}'s isolated code workspace on branch ${branchName}!")\n`
-      };
-      for (const [fname, fcontent] of Object.entries(starters)) {
-        const dest = path.join(codeDir, fname);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.writeFileSync(dest, fcontent, "utf8");
-      }
+    for (const tplName of LEGACY_TEMPLATE_FILES) {
+      const p1 = path.join(codeDir, tplName);
+      if (fs.existsSync(p1)) fs.unlinkSync(p1);
+      const p2 = path.join(worktreePath, tplName);
+      if (fs.existsSync(p2)) fs.unlinkSync(p2);
     }
   } catch {}
 
@@ -375,7 +301,7 @@ function listAgentCodeFiles(codeDir) {
     if (!fs.existsSync(dir)) return;
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "target" || entry.name === "__pycache__") continue;
+      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "target" || entry.name === "__pycache__" || LEGACY_TEMPLATE_FILES.has(entry.name)) continue;
       const fullPath = path.join(dir, entry.name);
       const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {

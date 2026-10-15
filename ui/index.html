@@ -3514,9 +3514,8 @@ Auto-save: enabled</pre>
     // =========================================================================
     // 6. GROUNDED FOLDER CONTEXT, ISOLATED WORKTREE & BACKGROUND SHELL RUNNER
     // =========================================================================
-    async function ensureFolderSnapshot(mountPath, bot) {
-      const cacheKey = `${bot?.id || "shared"}:${mountPath || "default"}`;
-      if (cachedFolderSnapshots[cacheKey]) return cachedFolderSnapshots[cacheKey];
+    async function ensureFolderSnapshot(mountPath, bot = null) {
+      if (!mountPath) return "";
       try {
         const res = await fetch("/api/workspace/context", {
           method: "POST",
@@ -3534,6 +3533,7 @@ Auto-save: enabled</pre>
             bot.worktreeBranch = data.worktree.branch;
             updateHeaderPills();
           }
+          const cacheKey = `${mountPath}::${bot?.id || "default"}`;
           cachedFolderSnapshots[cacheKey] = data.summary || "";
           return cachedFolderSnapshots[cacheKey];
         }
@@ -3598,7 +3598,10 @@ Auto-save: enabled</pre>
         : "";
       const wtBranch = bot.worktreeBranch || `vanara/${bot.name.toLowerCase()}`;
       const wtPath = agentWorktrees[bot.id]?.worktreeDir || `.worktrees/${bot.id}`;
-      const worktreeBlock = `\n\nISOLATED GIT WORKTREE:\n- Branch: ${wtBranch} (${wtPath})`;
+      const folderContextBlock = folderSummary
+        ? `\n\nMOUNTED WORKSPACE & LIVE SOURCE FILES:\n${String(folderSummary).slice(0, 7500)}`
+        : "";
+      const worktreeBlock = `\n\nISOLATED GIT WORKTREE:\n- Branch: ${wtBranch} (${wtPath})${folderContextBlock}`;
       const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "handoff"]).join(", ");
       const mcpLine = bot.mcpCommand ? `\n- Connected MCP Server: ${bot.mcpCommand}` : "";
       const isDm = thread?.type === "dm";
@@ -3627,13 +3630,14 @@ ${peerBullets}
           const sampleFixTarget = peers[peers.length - 1]?.name || peers[0]?.name || "teammate";
           squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @${bot.name} ${bot.role}):
 - Perform a candid **Peer Review** of your teammates' work (${buildersList}): highlight strengths, catch edge cases, stubs, mocks, test-tone placeholders, or integration bugs, and output a runnable verification test (\`===FILE: test_...===\`).
-- If you need to inspect files or run tests, include an explicit \`[TOOL: fs_read | <path>]\` or \`[TOOL: shell | <cmd>]\` tag in the SAME response — NEVER stop after saying "Let me start by inspecting the workspace".
+- Your workspace files are already loaded above in MOUNTED WORKSPACE & LIVE SOURCE FILES. NEVER stop with "Let me first inspect the current state of my workspace" or "Let me check my repo".
 - If you find any critical bug, stub/mock implementation (e.g. a 0.4s test-tone instead of real multi-turn audio), or missing requirement that must be fixed, explain the issue clearly in your visible response and end with \`[HANDOFF: @${sampleFixTarget}]\` (or the responsible specialist) so they revise it and return it to you for re-review.
 - ONLY once all real requirements, modules, and tests pass your review, end your message with \`[SQUAD_COMPLETE]\` to sign off and complete the build.`;
         } else {
           const priorNames = relayBots.slice(0, Math.max(1, myIdx)).map(p => `@${p.name}`).join(" and ");
           squadRoleDirective = `\n\nMULTI-AGENT SQUAD PROTOCOL (Engineering Squad Room — @${bot.name} ${bot.role}):
-- Review ${priorNames}'s architecture and modules, briefly discuss your design choices as **${bot.role}**, implement ONLY your assigned module(s) using \`===FILE: <filename>===\`, and end your message with \`[HANDOFF: @${nextBot?.name || reviewerBot?.name}]\`.`;
+- Your workspace files are already loaded above in MOUNTED WORKSPACE & LIVE SOURCE FILES. NEVER stop with "Let me first inspect the current state of my workspace" or "Let me check my repo" — write your complete updated \`===FILE: <filename>===\` blocks immediately in this response!
+- Review ${priorNames}'s architecture and modules, briefly discuss your design choices as **${bot.role}**, implement or fix your assigned module(s) using \`===FILE: <filename>===\`, and end your message with \`[HANDOFF: @${nextBot?.name || reviewerBot?.name}]\`.`;
         }
       }
       const otherAgentMentions = state.bots.filter(b => b.id !== bot.id).map(b => `@${b.name}`).join(", ") || "other agents";
@@ -3643,10 +3647,11 @@ ${peerBullets}
         : `5. In this group squad room, collaborate with your teammates, divide responsibilities by role, and end with ${squadHandoffExamples} so the next specialist continues the discussion and peer review.`;
       const toolsProtocolBlock = `\n\nCODE & TOOL PROTOCOL (${enabledTools})${mcpLine}:
 1. Answer the user's message directly and naturally. If the user greets you (e.g. "Hi", "Hello") or asks a question, respond briefly in 1–3 sentences without invoking [TOOL: ...] tags and NEVER invent an unrequested project.
-2. When asked to build or create software, web apps, shaders, or scripts, output complete runnable files in your visible response using:
+2. When asked to build, fix, or create software, web apps, shaders, or scripts, output complete runnable files immediately in your visible response using:
 ===FILE: <relative_filename>===
 <full source code>
 ===END_FILE===
+NEVER output a placeholder message like "Let me first inspect the current state of my workspace" without also including the \`===FILE: ...===\` or \`[TOOL: ...]\` tags in the same message!
 3. When surgically editing an existing file, output:
 ===PATCH: <relative_filename>===
 <<<<<<< SEARCH
@@ -3655,7 +3660,7 @@ ${peerBullets}
 <replacement lines>
 >>>>>>> REPLACE
 ===END_PATCH===
-4. Only when you explicitly need to inspect or run something in your worktree for the user's task, include an exact tag such as [TOOL: fs_read | <path>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
+4. Only when you explicitly need to run a shell command or read an extra file in your worktree, include an exact tag such as [TOOL: fs_read | <path>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
 ${handoffRule}
 6. Keep any internal thinking (<think>) brief (under 120 words — high-level bullet plan only). NEVER write full source code files inside <think> or internal reasoning; close </think> immediately and output all code and explanations in your visible answer.`;
       const teamContext = isDm
@@ -3802,8 +3807,6 @@ ${handoffRule}
         scanSource += `\n[TOOL: shell | ls -la && (if [ -f test_podcast.py ]; then python3 test_podcast.py; fi) && (if [ -f app.py ]; then python3 app.py "LLM 101"; fi)]`;
       }
 
-      if (!scanSource) return executedTools;
-
       // 1. Extract [REMEMBER: ...] into Per-Agent Private Memory on disk
       const rememberRx = /\[REMEMBER:\s*([^\]]+)\]/gi;
       let rmMatch;
@@ -3946,7 +3949,7 @@ ${handoffRule}
         }
       }
 
-      // 3. Auto-Inspection Fallback: If the agent emitted a short "Let me start by inspecting the workspace..." stub
+      // 3. Auto-Inspection Fallback: If the agent emitted a short "Let me first inspect the current state of my workspace..." stub
       // or stated in its reasoning that it wants to inspect files/tools, but omitted a literal [TOOL: ...] tag,
       // automatically read the agent's workspace files and inject them into observationsOut so the ReAct loop continues!
       const cleanVisibleStub = stripAllToolDirectives(replyText || "");
@@ -3954,10 +3957,10 @@ ${handoffRule}
       const looksLikeInspectStub =
         !hasFileBlocks &&
         observationsOut.length === 0 &&
-        cleanVisibleStub.length < 320 &&
+        cleanVisibleStub.length < 360 &&
         (
-          /\b(let me start by|inspect(?:ing)? the workspace|check(?:ing)? (?:my |the )?worktree|pull(?:ing)? (?:in )?the squad|start with tool calls|let me inspect|i'll perform the qa|let me check)\b/i.test(cleanVisibleStub) ||
-          /\b(let me start with tool calls|inspect the actual files|let me read|check what exists in)\b/i.test(reasoningText || "")
+          /\b(let me (?:first |start by )?(?:inspect|check|read|review|verify)|inspect(?:ing)? (?:the |my )?(?:current |actual )?(?:state|workspace|repo|files|worktree)|check(?:ing)? (?:my |the )?(?:worktree|workspace|repo|state|files)|pull(?:ing)? (?:in )?the squad|start with tool calls|i'll perform the qa|i'll fix the .* let me)\b/i.test(cleanVisibleStub) ||
+          /\b(let me (?:first |start by )?(?:inspect|check|read)|start with tool calls|inspect the (?:actual |current )?(?:files|state|workspace)|read the current)\b/i.test(reasoningText || "")
         );
 
       if (looksLikeInspectStub) {
@@ -3974,15 +3977,15 @@ ${handoffRule}
           });
           const wsData = await wsRes.json();
           if (wsRes.ok && Array.isArray(wsData.files) && wsData.files.length > 0) {
-            const fileSummaries = wsData.files
-              .slice(0, 6)
-              .map(f => `=== ${f.name} (${f.size}B) ===\n${String(f.content || "").slice(0, 1800)}`)
+            const relevantFiles = wsData.files.filter(f => !/^test_r3_/i.test(f.name)).slice(0, 6);
+            const fileSummaries = relevantFiles
+              .map(f => `=== ${f.name} (${f.size}B) ===\n${String(f.content || "").slice(0, 2200)}`)
               .join("\n\n");
             insertTerminalBeforeStreaming(thread, {
               senderType: "terminal",
-              command: `[${bot.name} ${bot.worktreeBranch || "worktree"}] auto-inspect workspace (${wsData.files.length} files)`,
+              command: `[${bot.name} ${bot.worktreeBranch || "worktree"}] auto-inspect workspace (${relevantFiles.length} files loaded)`,
               exitCode: 0,
-              text: wsData.files.map(f => `${f.name} (${f.size}B)`).join(", ")
+              text: relevantFiles.map(f => `${f.name} (${f.size}B)`).join(", ")
             });
             observationsOut.push({
               tool: "workspace_files_snapshot",
@@ -4303,7 +4306,7 @@ ${handoffRule}
           const stepObservations = [];
           await processBotAutonomousActions(targetThread, targetBot, stepCleaned, hooksTrace, stepObservations, stepReason);
 
-          const hasFilesAlready = parseDeliverableBlocks(stepCleaned).length > 0;
+          const hasFilesAlready = parseDeliverableBlocks(stepCleaned).length > 0 || parseSurgicalPatches(stepCleaned).length > 0;
           if (stepObservations.length === 0 || hasFilesAlready) {
             reply.content = stepCleaned;
             if (stepHook.reasoning !== undefined) {
@@ -4312,16 +4315,23 @@ ${handoffRule}
             break;
           }
 
+          // Re-render thread immediately so the user sees the inserted Terminal inspection card & live status while Step 2 runs
+          activeWorkingThreads[threadId] = `${targetBot.name} inspected workspace — writing code/review (Step ${reactStep + 2})...`;
+          renderThreadList();
+          if (activeThreadId === threadId) {
+            renderActiveThread();
+          }
+
           // Preserve reasoning across ReAct rounds; only keep prior visible text if it wasn't a short "Checking state first" stub
           priorStepsReasoning = liveMsg.reasoning || accumulatedReasoning;
           const strippedPrevVisible = stripAllToolDirectives(stepCleaned);
-          const isCheckingStub = strippedPrevVisible.length < 260 && /\b(checking|let me|on it|pulling|inspect|start by|i'll perform)\b/i.test(strippedPrevVisible);
+          const isCheckingStub = strippedPrevVisible.length < 320 && /\b(checking|let me|on it|pulling|inspect|start by|i'll perform|i'll fix)\b/i.test(strippedPrevVisible);
           if (!isCheckingStub && strippedPrevVisible) {
             priorStepsVisibleText = [priorStepsVisibleText, strippedPrevVisible].filter(Boolean).join("\n\n").trim();
           }
           hooksTrace.push(`ReActObsStep(${reactStep + 1})`);
           const obsDigest = stepObservations.map(o => `[Tool Output: ${o.tool}]\n${o.output}`).join("\n\n");
-          currentPrompt += `\n\nReal execution & file inspection output from your worktree (${targetBot.worktreeBranch}):\n${obsDigest}\n\nNow write your complete technical analysis/review, report concrete execution results, and if any module uses a stub/mock/test-tone or fails a requirement, explain the bug and end with [HANDOFF: @R2] (or [SQUAD_COMPLETE] only if everything is genuinely complete). Do NOT say "Let me start by inspecting the workspace":`;
+          currentPrompt += `\n\nReal execution & file inspection output from your worktree (${targetBot.worktreeBranch}):\n${obsDigest}\n\nAll workspace files are shown above. Now immediately output the complete fixed file(s) using ===FILE: <filename>=== (or write your complete QA verification report) and end with [HANDOFF: @R3] (or [HANDOFF: @R2] / [SQUAD_COMPLETE]). NEVER say "Let me first inspect the current state of my workspace":`;
           reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 8192, onStreamProgress, turnController.signal);
           if (turnCtx.aborted) return;
         }
@@ -4486,7 +4496,7 @@ ${handoffRule}
         ) {
           // Strict Group-Only Dynamic Squad Discussion, Revision & Peer Review Relay:
           // Adapts automatically to any role changes, custom agent names, or N agents in the squad!
-          const maxRelayDepth = Math.max(7, relayBots.length + 3);
+          const maxRelayDepth = Math.max(8, relayBots.length + 4);
           if (chainDepth < maxRelayDepth) {
             const handoffBots = findExplicitHandoffBots(`${postThoughtContent}\n${combinedReasoning}`, targetBot.id);
             if (isCurrentBotReviewer) {
@@ -4514,14 +4524,16 @@ ${handoffRule}
               }
             } else if (handoffBots.length > 0) {
               nextAutoBot = handoffBots[0];
-            } else if (hasDeliverables && chainDepth >= Math.max(1, relayBots.length - 1) && reviewerBot && reviewerBot.id !== targetBot.id) {
-              // After a post-review code revision by a specialist, automatically return to the squad's Peer Reviewer for final sign-off
+            } else if (chainDepth >= Math.max(1, relayBots.length - 1) && reviewerBot && reviewerBot.id !== targetBot.id) {
+              // After a post-review turn by a specialist, always return to the squad's Peer Reviewer (or next specialist) so the loop never stalls
               nextAutoBot = reviewerBot;
             } else if ((hasDeliverables || !isSingleOpCommand) && triggerText.trim().length >= 24) {
               // Dynamic Role-Ordered Squad Relay (Architect/Lead -> Specialists -> Frontend/UI -> QA/Peer Reviewer)
               const curIdx = relayBots.findIndex(b => b.id === targetBot.id);
               if (curIdx >= 0 && curIdx + 1 < relayBots.length) {
                 nextAutoBot = relayBots[curIdx + 1];
+              } else if (reviewerBot && reviewerBot.id !== targetBot.id) {
+                nextAutoBot = reviewerBot;
               }
             }
             if (nextAutoBot) {
@@ -4546,10 +4558,10 @@ ${handoffRule}
                 ? `\n\nQA Reviewer Reasoning & Findings:\n"${combinedReasoning.slice(-900)}"`
                 : "";
               nextAutoPrompt = isPeerReviewStep
-                ? `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} and the squad just completed their implementation/revision:\n"${cleanDisplay.slice(0, 600)}"\n\nPerform a candid Peer Review of your teammates' modules (${buildersDesc}), inspect the actual files and outputs in your worktree (${nextAutoBot.worktreeBranch}), and either hand back to ${sampleSpecialists || "a teammate"} if any stub/mock/test-tone or bug needs fixing, or end with [SQUAD_COMPLETE] only if all real requirements pass.`
+                ? `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} and the squad just completed their implementation/revision:\n"${cleanDisplay.slice(0, 600)}"\n\nAll workspace files are already loaded in your context above. Perform a candid Peer Review of your teammates' modules (${buildersDesc}) immediately in this turn, and either hand back to ${sampleSpecialists || "a teammate"} if any stub/mock/test-tone or bug needs fixing, or end with [SQUAD_COMPLETE] only if all real requirements pass.`
                 : isCurrentBotReviewer
-                  ? `@${nextAutoBot.name} (${nextAutoBot.role}), Peer Reviewer @${targetBot.name} flagged issues/stubs during QA verification:\n"${cleanDisplay.slice(0, 700)}"${reviewerReasoningNote}${testFailBlock}\n\nReplace any stub/mock/test-tone implementation with a full, realistic implementation in your module(s) using \`===FILE: <filename>===\` or \`===PATCH: <filename>===\` in your worktree (${nextAutoBot.worktreeBranch}), verify the fix, and hand back to @${targetBot.name} (\`[HANDOFF: @${targetBot.name}]\`) for re-review.`
-                  : `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} just completed their turn and handed off to you:\n"${cleanDisplay.slice(0, 600)}"\n\nDiscuss your technical approach as ${nextAutoBot.role}, implement or revise your assigned module(s) in your worktree (${nextAutoBot.worktreeBranch}), and hand off to the next squad specialist.`;
+                  ? `@${nextAutoBot.name} (${nextAutoBot.role}), Peer Reviewer @${targetBot.name} flagged issues/stubs during QA verification:\n"${cleanDisplay.slice(0, 700)}"${reviewerReasoningNote}${testFailBlock}\n\nYour current workspace files are already loaded in your context above — do NOT stop to inspect them. Output the complete fixed module(s) immediately using \`===FILE: <filename>===\` in your worktree (${nextAutoBot.worktreeBranch}), and end with \`[HANDOFF: @${targetBot.name}]\` for re-review.`
+                  : `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} just completed their turn and handed off to you:\n"${cleanDisplay.slice(0, 600)}"\n\nDiscuss your technical approach as ${nextAutoBot.role}, implement or revise your assigned module(s) immediately using \`===FILE: <filename>===\` in your worktree (${nextAutoBot.worktreeBranch}), and hand off to the next squad specialist.`;
             }
           }
         }

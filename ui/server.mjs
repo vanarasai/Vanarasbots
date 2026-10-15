@@ -233,7 +233,8 @@ function saveAgentMemory(botId, memories) {
 // ============================================================================
 const LEGACY_TEMPLATE_FILES = new Set([
   "gguf_dump.py", "quant_architecture.md", "embedding_lookup.py",
-  "lookup_table.rs", "calibrate_q3.py", "phone_rss_probe.py", "vanara_task.py"
+  "lookup_table.rs", "calibrate_q3.py", "phone_rss_probe.py", "vanara_task.py",
+  "solution.py", "calc.js"
 ]);
 
 function ensureAgentWorktree(botId, botName, customWorkspacePath = "") {
@@ -301,7 +302,7 @@ function listAgentCodeFiles(codeDir) {
     if (!fs.existsSync(dir)) return;
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "target" || entry.name === "__pycache__" || LEGACY_TEMPLATE_FILES.has(entry.name)) continue;
+      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "target" || entry.name === "__pycache__" || entry.name === "output_test" || entry.name === "test_output" || LEGACY_TEMPLATE_FILES.has(entry.name)) continue;
       const fullPath = path.join(dir, entry.name);
       const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
@@ -309,7 +310,7 @@ function listAgentCodeFiles(codeDir) {
       } else if (entry.isFile() && results.length < 40) {
         try {
           const stat = fs.statSync(fullPath);
-          if (stat.size <= 256 * 1024) {
+          if (stat.size <= 256 * 1024 && !/\.(wav|mp3|ogg|m4a|mp4|webm|mov|png|jpg|jpeg|gif|webp|pyc|pyo)$/i.test(entry.name)) {
             results.push({
               name: relPath,
               size: stat.size,
@@ -335,7 +336,7 @@ const RESERVED_ROOT_ENTRIES = new Set([
 
 const STARTER_BOILERPLATE_FILES = new Set([
   "gguf_dump.py", "quant_architecture.md", "embedding_lookup.py", "lookup_table.rs",
-  "calibrate_q3.py", "phone_rss_probe.py", "main.py", "vanara_task.py", "notes.md", "health_check.py", "calc.js"
+  "calibrate_q3.py", "phone_rss_probe.py", "main.py", "vanara_task.py", "notes.md", "health_check.py", "calc.js", "solution.py"
 ]);
 
 function isDeliverableRelPathAllowed(relPath) {
@@ -612,7 +613,7 @@ function extractRepositorySymbolMap(rootDir) {
 }
 
 // Gather grounded filesystem, symbol map & git snapshot from a mounted directory
-function inspectMountedDirectory(targetPath) {
+function inspectMountedDirectory(targetPath, codeDir = "") {
   const resolved = path.resolve(ROOT_DIR, targetPath || ".");
   if (!fs.existsSync(resolved)) {
     return { exists: false, path: resolved, summary: `Directory not found: ${resolved}` };
@@ -620,7 +621,7 @@ function inspectMountedDirectory(targetPath) {
 
   try {
     const entries = fs.readdirSync(resolved, { withFileTypes: true })
-      .filter(e => !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "target")
+      .filter(e => !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "target" && !LEGACY_TEMPLATE_FILES.has(e.name))
       .slice(0, 35)
       .map(e => (e.isDirectory() ? `${e.name}/` : e.name));
 
@@ -628,10 +629,18 @@ function inspectMountedDirectory(targetPath) {
     for (const candidate of ["Cargo.toml", "package.json", "README.md"]) {
       const p = path.join(resolved, candidate);
       if (fs.existsSync(p) && fs.statSync(p).isFile()) {
-        const content = fs.readFileSync(p, "utf8").slice(0, 800);
+        const content = fs.readFileSync(p, "utf8").slice(0, 600);
         snippets.push(`--- ${candidate} ---\n${content}`);
       }
     }
+
+    // Include live source files from the agent's workspace so the agent never stops with "Let me first inspect the current state of my workspace"
+    const wsDir = codeDir && fs.existsSync(codeDir) ? codeDir : resolved;
+    const wsFiles = listAgentCodeFiles(wsDir).filter(f => !/^test_r3_/i.test(f.name));
+    const wsDigest = wsFiles.length > 0
+      ? `--- CURRENT WORKSPACE SOURCE FILES (ALREADY LOADED IN CONTEXT — DO NOT STOP TO INSPECT) ---\n` +
+        wsFiles.slice(0, 6).map(f => `=== ${f.name} (${f.size}B) ===\n${String(f.content || "").slice(0, 2200)}`).join("\n\n")
+      : "";
 
     const symbolMap = extractRepositorySymbolMap(resolved);
     const symbolDigest = symbolMap.length > 0
@@ -644,7 +653,8 @@ function inspectMountedDirectory(targetPath) {
       entries,
       symbolMap,
       snippets,
-      summary: `Mounted Path: ${resolved}\nTop-level files: ${entries.join(", ")}\n${symbolDigest ? symbolDigest + "\n\n" : ""}${snippets.join("\n\n")}`
+      workspaceFiles: wsFiles.map(f => ({ name: f.name, size: f.size })),
+      summary: `Mounted Path: ${resolved}\nTop-level files: ${entries.join(", ")}\n${wsDigest ? wsDigest + "\n\n" : ""}${symbolDigest ? symbolDigest + "\n\n" : ""}${snippets.join("\n\n")}`
     };
   } catch (e) {
     return { exists: false, path: resolved, summary: `Error inspecting ${resolved}: ${e.message}` };
@@ -1830,11 +1840,16 @@ const server = http.createServer(async (req, res) => {
     try {
       const { mountPath, folderPath, botId, botName } = await readJsonBody(req);
       let targetDir = mountPath || folderPath || ROOT_DIR;
+      let codeDir = "";
+      let worktreeInfo = null;
       if (botId) {
         const wt = ensureAgentWorktree(botId, botName);
         targetDir = wt.worktreePath;
+        codeDir = wt.codeDir;
+        worktreeInfo = wt;
       }
-      const info = inspectMountedDirectory(targetDir);
+      const info = inspectMountedDirectory(targetDir, codeDir);
+      if (worktreeInfo) info.worktree = worktreeInfo;
       return sendJson(res, 200, info);
     } catch (e) {
       return sendJson(res, 500, { error: e.message });

@@ -3761,18 +3761,32 @@ ${handoffRule}
       }
     }
 
+    function normalizeLooseToolSyntax(text) {
+      if (!text) return "";
+      return String(text)
+        .replace(/(?:^|\n)\s*(?:===)?TOOL:\s*([a-z_]+)\s*\|\s*([^\n]+?)(?:===)?\s*(?=\n|$)/gi, "\n[TOOL: $1 | $2]")
+        .replace(/(?:^|\n)\s*(?:===)?END_TOOL(?:===)?\s*(?=\n|$)/gi, "");
+    }
+
+    function stripAllToolDirectives(text) {
+      if (!text) return "";
+      return normalizeLooseToolSyntax(text)
+        .replace(/\[TOOL:[^\]]+\](?:[ \t]*:?[ \t]*[^\n\[`]*)?/gi, "")
+        .trim();
+    }
+
     async function processBotAutonomousActions(thread, bot, replyText, hooksTrace = [], observationsOut = [], reasoningText = "") {
       const executedTools = [];
       if (!replyText && !reasoningText) return executedTools;
 
       const { visibleText } = extractInlineThinkBlocks(replyText || "");
-      let scanSource = visibleText || "";
+      let scanSource = normalizeLooseToolSyntax(visibleText || "");
 
       // If visibleText had no [TOOL: ...] tags, check if the agent emitted concrete [TOOL: ...] tags at the tail of reasoningText
       const toolCheckRx = /\[TOOL:\s*[a-z_]+(?:\s*\|\s*[^\]\n]+)?\]/i;
       if (!toolCheckRx.test(scanSource) && reasoningText) {
-        const tailReasoning = String(reasoningText).slice(-800);
-        const reasoningTools = tailReasoning.match(/\[TOOL:\s*(?:fs_read|fs_write|shell_exec|shell|git_status|git_diff|git_commit)(?:\s*\|\s*[^\]<\n]+)?\]/gi);
+        const tailReasoning = normalizeLooseToolSyntax(String(reasoningText).slice(-800));
+        const reasoningTools = tailReasoning.match(/\[TOOL:\s*(?:fs_read|fs_write|shell_exec|shell|git_status|git_diff|git_commit)(?:\s*\|\s*[^\]<.\n][^\]<\n]*)?\]/gi);
         if (reasoningTools && reasoningTools.length > 0) {
           scanSource = `${scanSource}\n${reasoningTools.join("\n")}`.trim();
         }
@@ -3804,6 +3818,7 @@ ${handoffRule}
 
       // 2. Extract [TOOL: type | arg1 | arg2] OR loose [TOOL: type] arg1 (plus optional following code fence for fs_write)
       const toolRx = /\[TOOL:\s*([a-z_]+)(?:\s*\|\s*([^\]|\n]+))?(?:\s*\|\s*([^\]\n]+))?\](?:[ \t]*:?[ \t]*([^\n\[`]+))?(?:\s*\n```[a-zA-Z0-9_.-]*\n([\s\S]*?)```)?/gi;
+      const seenToolCalls = new Set();
       let tMatch;
       while ((tMatch = toolRx.exec(scanSource)) !== null) {
         const rawTool = tMatch[1].trim().toLowerCase();
@@ -3814,11 +3829,17 @@ ${handoffRule}
             : rawTool === "read_file"
               ? "fs_read"
               : rawTool;
-        const arg1 = (tMatch[2] || tMatch[4] || "").trim();
+        const arg1 = (tMatch[2] || tMatch[4] || "").trim().replace(/===$/, "").trim();
         const arg2 = (tMatch[3] || tMatch[5] || "").trim();
 
-        // Skip template placeholders like <path> or <command>
-        if (/^<[a-z_-\s]+>$/i.test(arg1)) continue;
+        // Skip template placeholders like "...", "…", "<path>", or "<command>"
+        if (/^(?:\.{2,}|…|<[a-z_-\s]+>)$/i.test(arg1)) continue;
+        if (normalizedTool === "shell_exec" && (!arg1 || /^\.{2,}/.test(arg1))) continue;
+
+        // Deduplicate identical tool invocations within the same ReAct step
+        const dedupKey = `${normalizedTool}::${arg1}::${arg2}`;
+        if (seenToolCalls.has(dedupKey)) continue;
+        seenToolCalls.add(dedupKey);
 
         // Skip empty planned fs_write placeholders (e.g. "[TOOL: fs_write] config.py" without content)
         if (normalizedTool === "fs_write" && (!arg1 || !arg2)) {
@@ -4244,7 +4265,7 @@ ${handoffRule}
 
           // Preserve reasoning across ReAct rounds; only keep prior visible text if it wasn't a short "Checking state first" stub
           priorStepsReasoning = liveMsg.reasoning || accumulatedReasoning;
-          const strippedPrevVisible = stepCleaned.replace(/\[TOOL:[^\]]+\](?:[ \t]*:?[ \t]*[^\n\[`]*)?/gi, "").trim();
+          const strippedPrevVisible = stripAllToolDirectives(stepCleaned);
           const isCheckingStub = strippedPrevVisible.length < 220 && /\b(checking|let me|on it|pulling)\b/i.test(strippedPrevVisible);
           if (!isCheckingStub && strippedPrevVisible) {
             priorStepsVisibleText = [priorStepsVisibleText, strippedPrevVisible].filter(Boolean).join("\n\n").trim();
@@ -4252,7 +4273,7 @@ ${handoffRule}
           hooksTrace.push(`ReActObsStep(${reactStep + 1})`);
           const obsDigest = stepObservations.map(o => `[Tool Output: ${o.tool}]\n${o.output}`).join("\n\n");
           currentPrompt += `\n\nReal execution output from your worktree (${targetBot.worktreeBranch}):\n${obsDigest}\n\nNow report the concrete execution results, test pass/fail status, and output directly (or invoke one more [TOOL: shell | <cmd>] / ===FILE: <name>=== if needed). Do NOT say "Checking my worktree state first":`;
-          reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 6000, onStreamProgress, turnController.signal);
+          reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 8192, onStreamProgress, turnController.signal);
           if (turnCtx.aborted) return;
         }
 
@@ -4270,9 +4291,7 @@ ${handoffRule}
           ...(Array.isArray(thoughtHook.thoughts) ? thoughtHook.thoughts : [])
         ].filter(Boolean).join("\n\n").trim();
         let combinedReasoning = [priorStepsReasoning, finalStepReasoning].filter(Boolean).join("\n\n---\n\n").trim() || liveMsg.reasoning || "";
-        const finalStepVisible = (thoughtHook.cleanedOutput !== undefined ? thoughtHook.cleanedOutput : reply.content)
-          .replace(/\[TOOL:[^\]]+\](?:[ \t]*:?[ \t]*[^\n\[`]*)?/gi, "")
-          .trim();
+        const finalStepVisible = stripAllToolDirectives(thoughtHook.cleanedOutput !== undefined ? thoughtHook.cleanedOutput : reply.content);
         let postThoughtContent = [priorStepsVisibleText, finalStepVisible].filter(Boolean).join("\n\n").trim();
 
         // If the model spent all tokens inside reasoning without emitting separate visible content, promote the deliverables/final section into postThoughtContent
@@ -4376,7 +4395,7 @@ ${handoffRule}
         if (turnCtx.aborted) return;
 
         const isSquadComplete = /\[SQUAD_COMPLETE\]/i.test(postThoughtContent);
-        const cleanDisplay = postThoughtContent
+        const cleanDisplay = stripAllToolDirectives(postThoughtContent)
           .replace(/\[REMEMBER:\s*[^\]]+\]/gi, "")
           .replace(/\[HANDOFF:\s*@?[a-zA-Z0-9_-]+\]/gi, "")
           .replace(/\[SQUAD_COMPLETE\]/gi, "")
@@ -4394,9 +4413,19 @@ ${handoffRule}
         }
 
         const isShortGreeting = /^(hi|hello|hey|yo|sup|hola|namaste|thanks|thank you|ok|okay|ping|test|status)\b/i.test(triggerText.trim()) && triggerText.trim().length < 28;
+        const isSingleOpCommand = /\b(copy|move|delete|remove|where\s+is|what\s+is\s+the\s+progress)\b/i.test(triggerText) && !/\b(build|create|design|implement|architect|develop)\b/i.test(triggerText);
 
-        // Self-Healing Loop: If auto-verification of generated software failed, self-trigger targetBot to fix the error
-        if (autoVerifyFailedFile && state.autoTriggerEnabled !== false && chainDepth < 5) {
+        const relayBots = buildDynamicSquadRelay(targetThread);
+        const reviewerBot = getSquadReviewerBot(targetThread);
+        const isCurrentBotReviewer = Boolean(targetThread.type === "group" && reviewerBot && targetBot.id === reviewerBot.id && relayBots.length > 1);
+        const reviewerFoundBugs = isCurrentBotReviewer && !isSquadComplete && (
+          Boolean(autoVerifyFailedFile) ||
+          /(?:❌\s*FAIL|CRITICAL\s+FAILURES|BUG\s*#\d+|Status:\s*❌)/i.test(postThoughtContent)
+        );
+
+        // Self-Healing Loop: If a builder agent's generated module failed syntax/runtime verification, self-trigger that builder to fix it.
+        // (If the Peer Reviewer's test suite failed, that means the test caught a bug in a teammate's module — route to the specialist below!)
+        if (autoVerifyFailedFile && !isCurrentBotReviewer && state.autoTriggerEnabled !== false && chainDepth < 6) {
           nextAutoBot = targetBot;
           nextAutoPrompt = `[PostToolUseFailure Auto-Heal] Executing '${autoVerifyFailedFile}' in your workspace exited with an error:\n\`\`\`\n${autoVerifyErrorOutput.slice(0, 800)}\n\`\`\`\nFix '${autoVerifyFailedFile}' and output a surgical ===PATCH: ${autoVerifyFailedFile}=== or corrected ===FILE: ${autoVerifyFailedFile}=== block so the build passes.`;
         } else if (
@@ -4407,26 +4436,25 @@ ${handoffRule}
         ) {
           // Strict Group-Only Dynamic Squad Discussion, Revision & Peer Review Relay:
           // Adapts automatically to any role changes, custom agent names, or N agents in the squad!
-          const relayBots = buildDynamicSquadRelay(targetThread);
-          const reviewerBot = getSquadReviewerBot(targetThread);
-          const maxRelayDepth = Math.max(6, relayBots.length + 2);
+          const maxRelayDepth = Math.max(7, relayBots.length + 3);
           if (chainDepth < maxRelayDepth) {
             const handoffBots = findExplicitHandoffBots(postThoughtContent, targetBot.id);
-            const isCurrentBotReviewer = Boolean(reviewerBot && targetBot.id === reviewerBot.id && relayBots.length > 1);
             if (isCurrentBotReviewer) {
-              // If the Peer Reviewer found an issue and handed back to a specialist without [SQUAD_COMPLETE], continue revision loop!
-              if (!isSquadComplete && handoffBots.length > 0) {
-                nextAutoBot = handoffBots[0];
+              if (!isSquadComplete && (handoffBots.length > 0 || reviewerFoundBugs)) {
+                // Route back to the explicitly tagged specialist, or default to the primary backend/implementation specialist in the relay
+                const defaultSpecialist = relayBots.find(b => b.id !== targetBot.id && classifyAgentSquadArchetype(b) === "specialist")
+                  || relayBots.find(b => b.id !== targetBot.id);
+                nextAutoBot = handoffBots[0] || defaultSpecialist;
               } else {
                 // Peer Reviewer signed off — mark squad build verified & complete
                 liveMsg.collabRound = `Turn ${chainDepth + 1} • Peer Review Signed Off ✓ • ${targetBot.worktreeBranch}`;
               }
             } else if (handoffBots.length > 0) {
               nextAutoBot = handoffBots[0];
-            } else if (chainDepth >= Math.max(1, relayBots.length - 1) && reviewerBot && reviewerBot.id !== targetBot.id) {
-              // After a post-review revision by a specialist, automatically return to the squad's Peer Reviewer for final sign-off
+            } else if (hasDeliverables && chainDepth >= Math.max(1, relayBots.length - 1) && reviewerBot && reviewerBot.id !== targetBot.id) {
+              // After a post-review code revision by a specialist, automatically return to the squad's Peer Reviewer for final sign-off
               nextAutoBot = reviewerBot;
-            } else if (triggerText.trim().length >= 24) {
+            } else if ((hasDeliverables || !isSingleOpCommand) && triggerText.trim().length >= 24) {
               // Dynamic Role-Ordered Squad Relay (Architect/Lead -> Specialists -> Frontend/UI -> QA/Peer Reviewer)
               const curIdx = relayBots.findIndex(b => b.id === targetBot.id);
               if (curIdx >= 0 && curIdx + 1 < relayBots.length) {
@@ -4448,9 +4476,14 @@ ${handoffRule}
                 .slice(-2)
                 .map(b => `@${b.name}`)
                 .join("/");
+              const testFailBlock = (isCurrentBotReviewer && autoVerifyErrorOutput)
+                ? `\n\nQA Test Suite Output (${autoVerifyFailedFile || "verification"}):\n\`\`\`\n${autoVerifyErrorOutput.slice(0, 900)}\n\`\`\``
+                : "";
               nextAutoPrompt = isPeerReviewStep
-                ? `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} and the squad just completed their implementation/revision:\n"${cleanDisplay.slice(0, 600)}"\n\nPerform a candid Peer Review of your teammates' modules (${buildersDesc}), run a verification test in your worktree (${nextAutoBot.worktreeBranch}), and either hand back to ${sampleSpecialists || "a teammate"} if fixes are needed or end with [SQUAD_COMPLETE] if all checks pass.`
-                : `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} just completed their turn and handed off to you:\n"${cleanDisplay.slice(0, 600)}"\n\nDiscuss your technical approach as ${nextAutoBot.role}, implement or revise your assigned module(s) in your worktree (${nextAutoBot.worktreeBranch}), and hand off to the next squad specialist.`;
+                ? `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} and the squad just completed their implementation/revision:\n"${cleanDisplay.slice(0, 600)}"\n\nPerform a candid Peer Review of your teammates' modules (${buildersDesc}), run the verification test suite in your worktree (${nextAutoBot.worktreeBranch}), and either hand back to ${sampleSpecialists || "a teammate"} if fixes are needed or end with [SQUAD_COMPLETE] if all checks pass.`
+                : isCurrentBotReviewer
+                  ? `@${nextAutoBot.name} (${nextAutoBot.role}), Peer Reviewer @${targetBot.name} found issues during QA verification:\n"${cleanDisplay.slice(0, 700)}"${testFailBlock}\n\nFix the reported bugs in your module(s) using \`===FILE: <filename>===\` or \`===PATCH: <filename>===\` in your worktree (${nextAutoBot.worktreeBranch}), verify the fix, and hand back to @${targetBot.name} (\`[HANDOFF: @${targetBot.name}]\`) for re-review.`
+                  : `@${nextAutoBot.name} (${nextAutoBot.role}), @${targetBot.name} just completed their turn and handed off to you:\n"${cleanDisplay.slice(0, 600)}"\n\nDiscuss your technical approach as ${nextAutoBot.role}, implement or revise your assigned module(s) in your worktree (${nextAutoBot.worktreeBranch}), and hand off to the next squad specialist.`;
             }
           }
         }

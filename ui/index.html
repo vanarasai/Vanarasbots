@@ -2566,13 +2566,17 @@ Auto-save: enabled</pre>
       }
     });
 
+    let pendingBatchQueue = {};
+
     function saveApiKeysToLocalStore() {
       try {
         const keyMap = JSON.parse(localStorage.getItem("vanaras_api_keys_v1") || "{}");
         (state.bots || []).forEach(b => {
           if (b && b.id && b.apiKey) {
             keyMap[b.id] = b.apiKey;
-            keyMap._default = b.apiKey;
+            if (b.provider) {
+              keyMap[`provider:${b.provider}`] = b.apiKey;
+            }
           }
         });
         localStorage.setItem("vanaras_api_keys_v1", JSON.stringify(keyMap));
@@ -2583,8 +2587,11 @@ Auto-save: enabled</pre>
       try {
         const keyMap = JSON.parse(localStorage.getItem("vanaras_api_keys_v1") || "{}");
         (state.bots || []).forEach(b => {
-          if (b && !b.apiKey && (keyMap[b.id] || keyMap._default)) {
-            b.apiKey = keyMap[b.id] || keyMap._default || "";
+          if (!b || b.apiKey) return;
+          if (keyMap[b.id]) {
+            b.apiKey = keyMap[b.id];
+          } else if (b.provider && keyMap[`provider:${b.provider}`]) {
+            b.apiKey = keyMap[`provider:${b.provider}`];
           }
         });
       } catch {}
@@ -2592,7 +2599,23 @@ Auto-save: enabled</pre>
 
     function saveState() {
       saveApiKeysToLocalStore();
-      localStorage.setItem("vanaras_v6_app", JSON.stringify(state));
+      try {
+        localStorage.setItem("vanaras_v6_app", JSON.stringify(state));
+      } catch {
+        try {
+          const compactCopy = {
+            ...state,
+            threads: (state.threads || []).map(t => ({
+              ...t,
+              messages: (t.messages || []).slice(-30).map(m => ({
+                ...m,
+                reasoning: m.reasoning ? String(m.reasoning).slice(-600) : undefined
+              }))
+            }))
+          };
+          localStorage.setItem("vanaras_v6_app", JSON.stringify(compactCopy));
+        } catch {}
+      }
       fetch("/api/workspace", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3197,14 +3220,21 @@ Auto-save: enabled</pre>
     async function runMissionQuickStart(missionType) {
       const input = document.getElementById("chatComposerInput");
       if (!input) return;
+      const thread = getActiveThread();
+      const relay = buildDynamicSquadRelay(thread);
+      const lead = relay[0] || state.bots[0] || { name: "R1" };
+      const spec = relay.find(b => b.id !== lead.id && classifyAgentSquadArchetype(b) === "specialist") || relay[1] || lead;
+      const rev = getSquadReviewerBot(thread) || relay[relay.length - 1] || lead;
+      const fe = relay.find(b => classifyAgentSquadArchetype(b) === "frontend") || relay[2] || spec;
+
       if (missionType === "architect") {
-        input.value = "@R1 Design a clean modular health-check & telemetry utility in JavaScript (`health_probe.js`) with automated self-tests, and hand off to @R2 and @R3.";
+        input.value = `@${lead.name} Design a clean modular health-check & telemetry utility in JavaScript (\`health_probe.js\`) with automated self-tests, and hand off to @${spec.name} and @${rev.name}.`;
       } else if (missionType === "audit") {
-        input.value = "@R3 Inspect our repository status and symbol map using [TOOL: git_status], review recent commits, and summarize key architectural risks.";
+        input.value = `@${rev.name} Inspect our repository status and symbol map using [TOOL: git_status], review recent commits, and summarize key architectural risks.`;
       } else if (missionType === "patch") {
-        input.value = "@R2 Read `calc.js` in our workspace and apply a surgical ===PATCH: calc.js=== SEARCH/REPLACE upgrade to add multiply(a, b) with verification output.";
+        input.value = `@${spec.name} Inspect our current workspace modules and apply a surgical ===PATCH: <filename>=== SEARCH/REPLACE upgrade with verification output.`;
       } else if (missionType === "webapp") {
-        input.value = "@R4 Create a sleek real-time system metrics dashboard in `index.html` using ===FILE: index.html=== so we can preview and serve it live in the Workspace.";
+        input.value = `@${fe.name} Create a sleek real-time system metrics dashboard in \`dashboard.html\` using ===FILE: dashboard.html=== so we can preview and serve it live in the Workspace.`;
       }
       await handleSendMessage();
     }
@@ -3713,7 +3743,8 @@ NEVER output a placeholder message like "Let me first inspect the current state 
 ===END_PATCH===
 4. Only when you explicitly need to run a shell command or read an extra file in your worktree, include an exact tag such as [TOOL: fs_read | <path>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
 ${handoffRule}
-6. Keep any internal thinking (<think>) brief (under 120 words — high-level bullet plan only). NEVER write full source code files inside <think> or internal reasoning; close </think> immediately and output all code and explanations in your visible answer.`;
+6. Keep any internal thinking (<think>) brief (under 120 words — high-level bullet plan only). NEVER write full source code files inside <think> or internal reasoning; close </think> immediately and output all code and explanations in your visible answer.
+7. To persist an important architectural decision or project convention into your private disk memory across sessions, include \`[REMEMBER: <concise fact>]\`.`;
       const teamContext = isDm
         ? ""
         : `\n\nSquad teammates in this room (in relay order): ${relayBots.map(b => `@${b.name} (${b.role})`).join(" → ")}.${squadRoleDirective}`;
@@ -3780,6 +3811,23 @@ ${handoffRule}
       }
     }
 
+    function formatMessageForPromptContext(m) {
+      if (!m) return "";
+      if (m.senderType === "user") return `User: ${m.text}`;
+      if (m.senderType === "terminal") return `[Terminal ${m.command}]: ${String(m.text || "").slice(0, 350)}`;
+      const b = getBot(m.botId);
+      const compactedBody = String(m.text || "")
+        .replace(/===FILE:\s*([^\n=]+?)===\s*\n([\s\S]*?)(?:===END_FILE===|$)/gi, (_, fname, code) => {
+          const lineCount = String(code || "").split("\n").length;
+          return `[Saved file to workspace: ${fname.trim()} (${lineCount} lines — full content in MOUNTED WORKSPACE & LIVE SOURCE FILES above)]`;
+        })
+        .replace(/===PATCH:\s*([^\n=]+?)===\s*\n([\s\S]*?)(?:===END_PATCH===|$)/gi, (_, fname) => {
+          return `[Applied surgical patch to workspace file: ${fname.trim()}]`;
+        })
+        .trim();
+      return `${b ? b.name : "Agent"}: ${compactedBody.slice(0, 1400)}`;
+    }
+
     async function triggerPreCompactOnActiveThread() {
       const thread = getActiveThread();
       const leadBot = getActiveLeadBot();
@@ -3789,19 +3837,12 @@ ${handoffRule}
         botName: leadBot.name,
         messages: thread.messages
       });
-      if (res && res.compactedCount > 0 && Array.isArray(res.keptMessages)) {
-        thread.messages = [
-          {
-            senderType: "terminal",
-            command: `[PreCompactRequest • ${leadBot.name}] Compacted ${res.compactedCount} turns`,
-            exitCode: 0,
-            text: res.compactDigest
-          },
-          ...res.keptMessages
-        ];
+      if (res && res.compactedCount > 0 && res.compactDigest) {
+        thread.compressedDigest = res.compactDigest;
+        thread.lastCompactedCount = res.compactedCount;
         saveState();
         renderActiveThread();
-        showToast(`PreCompact: summarized ${res.compactedCount} turns`);
+        showToast(`PreCompact: compressed ${res.compactedCount} earlier turns (UI history preserved)`);
       } else {
         showToast("PreCompact: context window is already compact (<= 6 turns)");
       }
@@ -4105,9 +4146,43 @@ ${handoffRule}
       return nextCtx;
     }
 
+    function resolveInitialTargetBotForPrompt(thread, promptText) {
+      if (!thread) return state.bots[0];
+      const explicitMentionedBots = state.bots.filter(b =>
+        String(promptText || "").toLowerCase().includes(`@${b.name.toLowerCase()}`)
+      );
+      if (explicitMentionedBots.length > 0) {
+        return explicitMentionedBots[0];
+      }
+      if (thread.type === "dm") {
+        return getBot(thread.botId);
+      }
+      const relay = buildDynamicSquadRelay(thread);
+      return relay[0] || state.bots[0];
+    }
+
+    function parseBatchPromptTasks(rawText) {
+      const trimmed = String(rawText || "").trim();
+      if (!trimmed) return [];
+      if (/^\/batch\b/i.test(trimmed)) {
+        const body = trimmed.replace(/^\/batch\b/i, "").trim();
+        const items = body
+          .split(/\n(?=(?:\d+[\.\)]\s+|[-*•]\s+|---\s*$))/m)
+          .map(s => s.replace(/^---\s*$/gm, "").replace(/^(?:\d+[\.\)]|[-*•])\s+/, "").trim())
+          .filter(Boolean);
+        return items.length > 0 ? items : [body];
+      }
+      if (/\n---\n/.test(trimmed) && !/===PATCH:|<<<<<<< SEARCH/.test(trimmed)) {
+        const parts = trimmed.split(/\n---\n/).map(s => s.trim()).filter(Boolean);
+        if (parts.length > 1) return parts;
+      }
+      return [trimmed];
+    }
+
     function stopActiveThreadGeneration(threadId = activeThreadId) {
       const targetThread = state.threads.find(t => t.id === threadId) || getActiveThread();
       if (!targetThread) return;
+      delete pendingBatchQueue[targetThread.id];
       const leadBot = targetThread.type === "dm" ? getBot(targetThread.botId) : getActiveLeadBot();
       cancelActiveTurnForThread(targetThread, true);
       fetch("/api/workspace/kill", {
@@ -4121,7 +4196,7 @@ ${handoffRule}
         renderActiveThread();
       }
       updateComposerStopButton();
-      showToast("Stopped generation & background processes");
+      showToast("Stopped generation, cleared batch queue & killed background processes");
     }
 
     async function handleSendMessage() {
@@ -4133,8 +4208,6 @@ ${handoffRule}
       const thread = getActiveThread();
       input.value = "";
 
-      cancelActiveTurnForThread(thread, false);
-
       if (text.startsWith("/run ")) {
         const cmd = text.slice(5).trim();
         thread.messages.push({ id: "msg_u_" + Date.now(), senderType: "user", text });
@@ -4144,7 +4217,25 @@ ${handoffRule}
         return;
       }
 
-      thread.messages.push({ id: "msg_u_" + Date.now(), senderType: "user", text });
+      const batchTasks = parseBatchPromptTasks(text);
+      if (isThreadBusy(thread.id)) {
+        if (!Array.isArray(pendingBatchQueue[thread.id])) pendingBatchQueue[thread.id] = [];
+        pendingBatchQueue[thread.id].push(...batchTasks);
+        showToast(`Queued ${batchTasks.length} prompt(s) in batch (${pendingBatchQueue[thread.id].length} pending — will run after current turn)`);
+        renderThreadList();
+        return;
+      }
+
+      const firstTask = batchTasks[0];
+      if (batchTasks.length > 1) {
+        pendingBatchQueue[thread.id] = [
+          ...(pendingBatchQueue[thread.id] || []),
+          ...batchTasks.slice(1)
+        ];
+        showToast(`Batch started: running task 1 of ${batchTasks.length} (${batchTasks.length - 1} queued)`);
+      }
+
+      thread.messages.push({ id: "msg_u_" + Date.now(), senderType: "user", text: firstTask });
       saveState();
       renderThreadList();
       renderActiveThread();
@@ -4158,37 +4249,27 @@ ${handoffRule}
           threadId: thread.id,
           sender: state.currentUser.name,
           senderType: "user",
-          text
+          text: firstTask
         })
       }).catch(() => {});
 
-      const explicitMentionedBots = state.bots.filter(b =>
-        text.toLowerCase().includes(`@${b.name.toLowerCase()}`)
-      );
-
-      let targetBot = null;
-      if (explicitMentionedBots.length > 0) {
-        targetBot = explicitMentionedBots[0];
-      } else if (thread.type === "dm") {
-        targetBot = getBot(thread.botId);
-      } else {
-        const roomBots = (thread.botIds || []).map(id => getBot(id)).filter(Boolean);
-        targetBot = roomBots[0] || state.bots[0];
-      }
-
+      const targetBot = resolveInitialTargetBotForPrompt(thread, firstTask);
       if (targetBot) {
-        await runBotTurnInThread(thread.id, targetBot, text, 0);
+        await runBotTurnInThread(thread.id, targetBot, firstTask, 0);
       }
     }
 
     async function startAutonomousBackgroundGoal() {
       const thread = getActiveThread();
       if (!thread) return;
+      const relay = buildDynamicSquadRelay(thread);
+      const leadBot = relay[0] || getActiveLeadBot();
+      const nextPeers = relay.slice(1, 3).map(b => `@${b.name}`).join(" and ") || "your squad teammates";
       const lastUser = [...thread.messages].reverse().find(m => m.senderType === "user");
       const goal = await askInAppInput({
         title: "Launch Autonomous Background Goal",
         subtitle: "Vanaras will self-trigger turns, tools, and peer handoffs in the background while you work.",
-        defaultValue: lastUser ? lastUser.text : "Inspect the mounted repository, build a runnable verification module in your worktree, and hand off to @R2 and @R3",
+        defaultValue: lastUser ? lastUser.text : `Inspect the mounted repository, build a runnable verification module in your worktree, and hand off to ${nextPeers}`,
         placeholder: "Describe what the Vanara engineering squad should build or verify...",
         confirmLabel: "Start Autonomous Loop"
       });
@@ -4206,8 +4287,8 @@ ${handoffRule}
       renderThreadList();
       renderActiveThread();
 
-      const leadBot = getActiveLeadBot();
-      await runBotTurnInThread(thread.id, leadBot, `${goal.trim()}\n\n(Autonomous Mode: execute any helpful [TOOL: ...] in your worktree and include [HANDOFF: @R2] or [HANDOFF: @R3] when ready for the next specialist.)`, 0);
+      const handoffTags = relay.slice(1, 3).map(b => `[HANDOFF: @${b.name}]`).join(" or ") || "[HANDOFF: @teammate]";
+      await runBotTurnInThread(thread.id, leadBot, `${goal.trim()}\n\n(Autonomous Mode: execute any helpful [TOOL: ...] in your worktree and include ${handoffTags} when ready for the next specialist.)`, 0);
     }
 
     async function runBotTurnInThread(threadId, targetBot, triggerText, chainDepth = 0) {
@@ -4223,8 +4304,10 @@ ${handoffRule}
       };
       activeTurnState[threadId] = turnCtx;
 
+      const queuedCount = Array.isArray(pendingBatchQueue[threadId]) ? pendingBatchQueue[threadId].length : 0;
       const depthLabel = chainDepth > 0 ? ` (Auto-Turn ${chainDepth + 1})` : "";
-      activeWorkingThreads[threadId] = `${targetBot.name} working in ${targetBot.worktreeBranch || "worktree"}${depthLabel}...`;
+      const queueLabel = queuedCount > 0 ? ` · ${queuedCount} batched` : "";
+      activeWorkingThreads[threadId] = `${targetBot.name} working in ${targetBot.worktreeBranch || "worktree"}${depthLabel}${queueLabel}...`;
       renderThreadList();
       updateComposerStopButton();
 
@@ -4252,25 +4335,16 @@ ${handoffRule}
         await ensureAgentWorktreeOnServer(targetBot);
         if (turnCtx.aborted) return;
 
-        // Vanaras Hook 0: Automatic PreCompactRequest when conversation history grows > 18 messages
-        if (targetThread.messages.length > 19) {
+        // Vanaras Hook 0: Non-destructive Automatic PreCompactRequest when conversation history grows > 12 messages
+        if (targetThread.messages.length > 13) {
           const compactRes = await invokeAgentLifecycleHook("PreCompactRequest", {
             botId: targetBot.id,
             botName: targetBot.name,
             messages: targetThread.messages.slice(0, -1)
           });
-          if (!turnCtx.aborted && compactRes && compactRes.compactedCount > 0 && Array.isArray(compactRes.keptMessages)) {
-            targetThread.messages = [
-              {
-                id: "msg_compact_" + Date.now(),
-                senderType: "terminal",
-                command: `[PreCompactRequest • ${targetBot.name}] Auto-compacted ${compactRes.compactedCount} turns`,
-                exitCode: 0,
-                text: compactRes.compactDigest
-              },
-              ...compactRes.keptMessages,
-              liveMsg
-            ];
+          if (!turnCtx.aborted && compactRes && compactRes.compactedCount > 0 && compactRes.compactDigest) {
+            targetThread.compressedDigest = compactRes.compactDigest;
+            targetThread.lastCompactedCount = compactRes.compactedCount;
             hooksTrace.push("PreCompact");
           }
         }
@@ -4293,12 +4367,11 @@ ${handoffRule}
         const historySlice = (lastBeforeLive && lastBeforeLive.senderType === "user" && lastBeforeLive.text === triggerText)
           ? allBeforeLive.slice(0, -1)
           : allBeforeLive;
-        const historyContext = historySlice.slice(-6).map(m => {
-          if (m.senderType === "user") return `User: ${m.text}`;
-          if (m.senderType === "terminal") return `[Terminal ${m.command}]: ${m.text.slice(0, 300)}`;
-          const b = getBot(m.botId);
-          return `${b ? b.name : "Agent"}: ${m.text}`;
-        }).join("\n\n");
+        const recentHistoryContext = historySlice.slice(-6).map(m => formatMessageForPromptContext(m)).join("\n\n");
+        const historyContext = [
+          targetThread.compressedDigest ? targetThread.compressedDigest : "",
+          recentHistoryContext
+        ].filter(Boolean).join("\n\n");
 
         const sysPrompt = buildGroundedSystemPrompt(targetBot, targetThread, folderSummary);
         const enrichedTrigger = beforeHook.enrichedPrompt || triggerText;
@@ -4655,6 +4728,33 @@ ${handoffRule}
             updateComposerStopButton();
           }
         }, 1100);
+      } else if (!turnCtx.aborted && Array.isArray(pendingBatchQueue[threadId]) && pendingBatchQueue[threadId].length > 0) {
+        const nextBatchedPrompt = pendingBatchQueue[threadId].shift();
+        if (pendingBatchQueue[threadId].length === 0) {
+          delete pendingBatchQueue[threadId];
+        }
+        if (nextBatchedPrompt) {
+          const nextTargetBot = resolveInitialTargetBotForPrompt(targetThread, nextBatchedPrompt);
+          if (nextTargetBot) {
+            activeWorkingThreads[threadId] = `Starting next batched prompt (@${nextTargetBot.name})...`;
+            renderThreadList();
+            updateComposerStopButton();
+            activeAutonomousTimers[threadId] = setTimeout(() => {
+              delete activeAutonomousTimers[threadId];
+              if (!turnCtx.aborted) {
+                targetThread.messages.push({
+                  id: "msg_u_batch_" + Date.now(),
+                  senderType: "user",
+                  text: nextBatchedPrompt
+                });
+                saveState();
+                renderThreadList();
+                if (activeThreadId === threadId) renderActiveThread();
+                runBotTurnInThread(threadId, nextTargetBot, nextBatchedPrompt, 0);
+              }
+            }, 900);
+          }
+        }
       }
     }
 
@@ -5313,6 +5413,7 @@ ${handoffRule}
           model,
           baseUrl,
           apiKey,
+          customModelConfigured: true,
           instructions,
           avatarStyle: selectedAvatarStyleInModal,
           memories: [...modalPrivateMemories],
@@ -5334,6 +5435,7 @@ ${handoffRule}
           baseUrl,
           apiKey,
           model,
+          customModelConfigured: true,
           instructions,
           memories: [...modalPrivateMemories],
           tools: selectedTools,
@@ -5373,7 +5475,7 @@ ${handoffRule}
       renderThreadList();
       renderActiveThread();
       populateWorkspaceAgentSelector();
-      showToast(`Saved ${name} (memory, tools & worktree synced)`);
+      showToast(`Saved ${name} (${provider}/${model}, memory, tools & worktree synced)`);
     }
 
     function deleteBotFromModal() {
@@ -5495,16 +5597,22 @@ ${handoffRule}
         deleteBtn.classList.add("hidden");
       }
 
-      document.getElementById("groupBotsChecklist").innerHTML = state.bots.map(b => `
-        <label style="display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-card); cursor:pointer;">
-          <input type="checkbox" class="group-bot-cb" value="${b.id}" ${selectedBots.includes(b.id) ? "checked" : ""}>
-          ${renderCleanAgentCircle(b, 26)}
-          <div style="min-width:0;">
-            <div style="font-size:12px; font-weight:600; color:var(--text-primary);">${escapeHtml(b.name)}</div>
-            <div style="font-size:10px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(b.role)}</div>
-          </div>
-        </label>
-      `).join("");
+      document.getElementById("groupBotsChecklist").innerHTML = state.bots.map(b => {
+        const shortMdl = (b.model || detectedLocalModel || "local").split("/").pop();
+        return `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-radius:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-card);">
+          <label style="display:flex; align-items:center; gap:8px; min-width:0; flex:1; cursor:pointer;">
+            <input type="checkbox" class="group-bot-cb" value="${b.id}" ${selectedBots.includes(b.id) ? "checked" : ""}>
+            ${renderCleanAgentCircle(b, 26)}
+            <div style="min-width:0;">
+              <div style="font-size:12px; font-weight:600; color:var(--text-primary);">${escapeHtml(b.name)} <span class="mono" style="font-size:9.5px; font-weight:500; color:var(--accent-blue-text); background:var(--accent-blue-soft); padding:1px 5px; border-radius:4px;">${escapeHtml(b.provider || "local")}/${escapeHtml(shortMdl)}</span></div>
+              <div style="font-size:10px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(b.role)}</div>
+            </div>
+          </label>
+          <button type="button" onclick="closeGroupModal(); openBotModal('${b.id}')" class="btn-secondary" style="height:22px; padding:0 7px; font-size:10px; flex-shrink:0;" title="Assign separate model or role for @${escapeHtml(b.name)}">Model</button>
+        </div>
+      `;
+      }).join("");
 
       document.getElementById("groupHumansChecklist").innerHTML = state.humans.map(h => `
         <label style="display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-card); cursor:pointer;">
@@ -5753,15 +5861,21 @@ ${handoffRule}
 
       const squadEl = document.getElementById("onboardSquadPreview");
       if (squadEl) {
-        squadEl.innerHTML = state.bots.map(b => `
-          <div style="display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:9px; background:var(--bg-surface); border:1px solid var(--border-card);">
-            ${renderCleanAgentCircle(b, 26)}
-            <div style="min-width:0;">
-              <div style="font-size:12px; font-weight:700; color:var(--text-primary);">@${escapeHtml(b.name)}</div>
-              <div style="font-size:10.5px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(b.role)}</div>
+        squadEl.innerHTML = state.bots.map(b => {
+          const shortMdl = (b.model || detectedLocalModel || "local").split("/").pop();
+          return `
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 10px; border-radius:9px; background:var(--bg-surface); border:1px solid var(--border-card);">
+            <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+              ${renderCleanAgentCircle(b, 26)}
+              <div style="min-width:0;">
+                <div style="font-size:12px; font-weight:700; color:var(--text-primary);">@${escapeHtml(b.name)} <span class="mono" style="font-size:9.5px; font-weight:500; color:var(--accent-blue-text); background:var(--accent-blue-soft); padding:1px 5px; border-radius:4px;">${escapeHtml(b.provider || "local")}/${escapeHtml(shortMdl)}</span></div>
+                <div style="font-size:10.5px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(b.role)}</div>
+              </div>
             </div>
+            <button type="button" onclick="closeOnboardingModal(); openBotModal('${b.id}')" class="btn-secondary" style="height:22px; padding:0 7px; font-size:10px; flex-shrink:0;">Edit Model</button>
           </div>
-        `).join("");
+        `;
+        }).join("");
       }
       modal.classList.remove("hidden");
     }
@@ -5908,11 +6022,22 @@ ${handoffRule}
       state.onboarded = true;
       serverDefaultMountPath = mountPath;
 
-      state.bots.forEach(b => {
-        b.provider = provider;
-        b.baseUrl = baseUrl;
-        b.apiKey = apiKey;
-        b.model = model;
+      const prevLead = state.bots[0] || {};
+      const prevDefaultProvider = prevLead.provider;
+      const prevDefaultModel = prevLead.model;
+
+      state.bots.forEach((b, idx) => {
+        const hasSeparateCustomModel = !resetThreads && idx > 0 && (
+          b.customModelConfigured ||
+          (b.provider && b.provider !== prevDefaultProvider) ||
+          (b.model && b.model !== prevDefaultModel)
+        );
+        if (!hasSeparateCustomModel) {
+          b.provider = provider;
+          b.baseUrl = baseUrl;
+          b.apiKey = apiKey;
+          b.model = model;
+        }
       });
 
       if (resetThreads) {

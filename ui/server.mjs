@@ -12,6 +12,19 @@ const AGENTS_STATE_DIR = path.join(__dirname, ".vanaras-agents");
 const WORKTREES_DIR = path.join(ROOT_DIR, ".worktrees");
 const PORT = 3000;
 
+// Ensure child processes (git, python3, node, cargo, ffmpeg) have full developer PATH when launched via Finder / Vanaras.app
+{
+  const home = process.env.HOME || "";
+  const extraPaths = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    home ? path.join(home, ".cargo", "bin") : "",
+    home ? path.join(home, ".local", "bin") : ""
+  ].filter(Boolean);
+  const currentPath = process.env.PATH || "/usr/bin:/bin:/usr/sbin:/sbin";
+  process.env.PATH = [...new Set([...extraPaths, ...currentPath.split(":")])].join(":");
+}
+
 fs.mkdirSync(AGENTS_STATE_DIR, { recursive: true });
 fs.mkdirSync(WORKTREES_DIR, { recursive: true });
 
@@ -712,6 +725,10 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204);
     res.end();
     return;
+  }
+
+  if (req.method === "GET" && (req.url === "/api/health" || req.url.startsWith("/api/health?"))) {
+    return sendJson(res, 200, { ok: true, status: "running", pid: process.pid, port: PORT });
   }
 
   // 1. Real-time Multiplayer & Background Task Event Stream (SSE)
@@ -1580,21 +1597,62 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // 4. PreCompactRequest: automatic context-window compaction & summarization
+      // 4. PreCompactRequest: structured context-window compaction & summarization
       if (hook === "PreCompactRequest") {
         const msgList = Array.isArray(messages) ? messages : [];
-        const headSummary = msgList.slice(0, Math.max(0, msgList.length - 6)).map(m => {
-          const who = m.senderType === "user" ? "User" : (m.botId || "Agent");
-          return `- ${who}: ${String(m.text || "").replace(/\s+/g, " ").slice(0, 140)}`;
-        }).join("\n");
-        const compactDigest = headSummary
-          ? `[PreCompact Summary of ${Math.max(0, msgList.length - 6)} earlier turns]\n${headSummary}`
+        const olderMessages = msgList.slice(0, Math.max(0, msgList.length - 6));
+        const userGoals = [];
+        const touchedFiles = new Set();
+        const turnNotes = [];
+
+        for (const m of olderMessages) {
+          const rawText = String(m.text || "");
+          if (m.senderType === "user") {
+            const cleanGoal = rawText.replace(/\s+/g, " ").trim().slice(0, 220);
+            if (cleanGoal && !userGoals.includes(cleanGoal)) userGoals.push(cleanGoal);
+            continue;
+          }
+          if (m.senderType === "terminal") {
+            const cmd = String(m.command || "").trim();
+            if (cmd) turnNotes.push(`- [Terminal] ${cmd} (exit ${m.exitCode ?? 0})`);
+            continue;
+          }
+          const fileRx = /===FILE:\s*([^\n=]+?)===|===PATCH:\s*([^\n=]+?)===/gi;
+          let fm;
+          while ((fm = fileRx.exec(rawText)) !== null) {
+            const fName = (fm[1] || fm[2] || "").trim();
+            if (fName) touchedFiles.add(fName);
+          }
+          const strippedCode = rawText
+            .replace(/===FILE:\s*[^\n=]+===[\s\S]*?(?:===END_FILE===|$)/gi, "")
+            .replace(/===PATCH:\s*[^\n=]+===[\s\S]*?(?:===END_PATCH===|$)/gi, "")
+            .replace(/```[\s\S]*?```/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+          const who = m.botId ? m.botId.replace(/^bot_/, "").toUpperCase() : "Agent";
+          if (strippedCode) {
+            turnNotes.push(`- ${who}: ${strippedCode.slice(0, 200)}`);
+          }
+        }
+
+        const digestSections = [];
+        if (userGoals.length > 0) {
+          digestSections.push(`User Goals: ${userGoals.slice(-3).join(" | ")}`);
+        }
+        if (touchedFiles.size > 0) {
+          digestSections.push(`Files Created/Updated: ${Array.from(touchedFiles).join(", ")}`);
+        }
+        if (turnNotes.length > 0) {
+          digestSections.push(`Key Prior Turns:\n${turnNotes.slice(-10).join("\n")}`);
+        }
+        const compactDigest = digestSections.length > 0
+          ? `[PreCompact Summary of ${olderMessages.length} earlier turns]\n${digestSections.join("\n")}`
           : "Context window is already compact.";
-        broadcastEvent("agent_hook", { hook, botId, botName, compactedCount: Math.max(0, msgList.length - 6), timestamp });
+        broadcastEvent("agent_hook", { hook, botId, botName, compactedCount: olderMessages.length, timestamp });
         return sendJson(res, 200, {
           ok: true,
           hook,
-          compactedCount: Math.max(0, msgList.length - 6),
+          compactedCount: olderMessages.length,
           compactDigest,
           keptMessages: msgList.slice(-6),
           timestamp
@@ -2574,6 +2632,14 @@ const server = http.createServer(async (req, res) => {
     });
     fs.createReadStream(indexPath).pipe(res);
   }
+});
+
+server.on("error", (err) => {
+  if (err && err.code === "EADDRINUSE") {
+    console.log(`Vanaras Desktop Engine is already running on http://localhost:${PORT}`);
+    process.exit(0);
+  }
+  console.error("Server error:", err);
 });
 
 server.listen(PORT, "0.0.0.0", () => {

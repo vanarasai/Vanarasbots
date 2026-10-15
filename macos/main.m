@@ -141,40 +141,117 @@
     }];
 }
 
+- (NSString *)resolveVanarasRepoDir {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
+    NSString *adjacentDir = [bundlePath stringByDeletingLastPathComponent];
+    if ([fm fileExistsAtPath:[adjacentDir stringByAppendingPathComponent:@"ui/server.mjs"]]) {
+        return adjacentDir;
+    }
+#ifdef VANARAS_REPO_ROOT
+    NSString *compiledRoot = [NSString stringWithUTF8String:VANARAS_REPO_ROOT];
+    if ([fm fileExistsAtPath:[compiledRoot stringByAppendingPathComponent:@"ui/server.mjs"]]) {
+        return compiledRoot;
+    }
+#endif
+    return adjacentDir;
+}
+
+- (NSString *)resolveNodeExecutable:(NSMutableArray<NSString *> *)extraPathDirs {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *home = NSHomeDirectory();
+    NSMutableArray<NSString *> *candidates = [NSMutableArray array];
+
+    NSString *nvmVersionsDir = [home stringByAppendingPathComponent:@".nvm/versions/node"];
+    NSArray<NSString *> *nvmEntries = [fm contentsOfDirectoryAtPath:nvmVersionsDir error:nil];
+    if (nvmEntries.count > 0) {
+        NSArray<NSString *> *sorted = [nvmEntries sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
+        for (NSString *ver in [sorted reverseObjectEnumerator]) {
+            NSString *binDir = [[nvmVersionsDir stringByAppendingPathComponent:ver] stringByAppendingPathComponent:@"bin"];
+            [extraPathDirs addObject:binDir];
+            [candidates addObject:[binDir stringByAppendingPathComponent:@"node"]];
+        }
+    }
+
+    [extraPathDirs addObjectsFromArray:@[
+        @"/opt/homebrew/bin",
+        @"/usr/local/bin",
+        [home stringByAppendingPathComponent:@".cargo/bin"],
+        [home stringByAppendingPathComponent:@".local/bin"],
+        @"/usr/bin",
+        @"/bin",
+        @"/usr/sbin",
+        @"/sbin"
+    ]];
+
+    [candidates addObjectsFromArray:@[
+        @"/opt/homebrew/bin/node",
+        @"/usr/local/bin/node",
+        @"/usr/bin/node"
+    ]];
+
+    for (NSString *candidate in candidates) {
+        if ([fm isExecutableFileAtPath:candidate]) {
+            return candidate;
+        }
+    }
+    return nil;
+}
+
 - (void)ensureBackendServerRunning {
     if (self.serverTask && [self.serverTask isRunning]) {
         return;
     }
-    NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
-    NSString *vanarasDir = [bundlePath stringByDeletingLastPathComponent];
+    NSURL *healthUrl = [NSURL URLWithString:@"http://127.0.0.1:3000/api/health"];
+    NSURLRequest *req = [NSURLRequest requestWithURL:healthUrl
+                                         cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+                                     timeoutInterval:0.45];
+    __weak typeof(self) weakSelf = self;
+    NSURLSessionDataTask *probe = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+        if (httpResp && httpResp.statusCode == 200) {
+            return; // Server is already running and healthy on port 3000
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (strongSelf) {
+                [strongSelf launchBackendServerNow];
+            }
+        });
+    }];
+    [probe resume];
+}
+
+- (void)launchBackendServerNow {
+    if (self.serverTask && [self.serverTask isRunning]) {
+        return;
+    }
+    NSString *vanarasDir = [self resolveVanarasRepoDir];
     NSString *serverScript = [vanarasDir stringByAppendingPathComponent:@"ui/server.mjs"];
     if (![[NSFileManager defaultManager] fileExistsAtPath:serverScript]) {
         return;
     }
 
-    NSArray *nodeCandidates = @[
-        @"/Users/lakshmipriyasridharan/.nvm/versions/node/v20.19.5/bin/node",
-        @"/usr/local/bin/node",
-        @"/opt/homebrew/bin/node"
-    ];
-    NSString *nodeBin = nil;
-    for (NSString *candidate in nodeCandidates) {
-        if ([[NSFileManager defaultManager] isExecutableFileAtPath:candidate]) {
-            nodeBin = candidate;
-            break;
-        }
-    }
+    NSMutableArray<NSString *> *pathDirs = [NSMutableArray array];
+    NSString *nodeBin = [self resolveNodeExecutable:pathDirs];
     if (!nodeBin) return;
+
+    NSMutableDictionary<NSString *, NSString *> *env = [NSMutableDictionary dictionaryWithDictionary:[[NSProcessInfo processInfo] environment]];
+    NSString *existingPath = env[@"PATH"] ?: @"/usr/bin:/bin:/usr/sbin:/sbin";
+    NSString *joinedPaths = [[pathDirs valueForKey:@"description"] componentsJoinedByString:@":"];
+    env[@"PATH"] = [NSString stringWithFormat:@"%@:%@", joinedPaths, existingPath];
 
     NSTask *task = [[NSTask alloc] init];
     [task setExecutableURL:[NSURL fileURLWithPath:nodeBin]];
     [task setArguments:@[serverScript]];
     [task setCurrentDirectoryURL:[NSURL fileURLWithPath:vanarasDir]];
+    [task setEnvironment:env];
     __weak typeof(self) weakSelf = self;
     [task setTerminationHandler:^(NSTask *terminatedTask) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if (strongSelf) {
+                strongSelf.serverTask = nil;
                 [strongSelf ensureBackendServerRunning];
             }
         });
@@ -182,7 +259,9 @@
     self.serverTask = task;
     @try {
         [self.serverTask launchAndReturnError:nil];
-    } @catch (NSException *exception) {}
+    } @catch (NSException *exception) {
+        self.serverTask = nil;
+    }
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {

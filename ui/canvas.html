@@ -4446,8 +4446,20 @@ ${handoffRule}
                   || relayBots.find(b => b.id !== targetBot.id);
                 nextAutoBot = handoffBots[0] || defaultSpecialist;
               } else {
-                // Peer Reviewer signed off — mark squad build verified & complete
-                liveMsg.collabRound = `Turn ${chainDepth + 1} • Peer Review Signed Off ✓ • ${targetBot.worktreeBranch}`;
+                // Peer Reviewer signed off — automatically promote all squad deliverables & generated outputs into the main root folder
+                try {
+                  await fetch("/api/agent/workspace", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      action: "merge_to_main",
+                      botId: targetBot.id,
+                      botName: targetBot.name,
+                      customWorkspacePath: targetBot.workspacePath || ""
+                    })
+                  });
+                } catch {}
+                liveMsg.collabRound = `Turn ${chainDepth + 1} • Peer Review Signed Off ✓ • Synced to Main Folder (${targetBot.worktreeBranch})`;
               }
             } else if (handoffBots.length > 0) {
               nextAutoBot = handoffBots[0];

@@ -399,6 +399,148 @@ function listAgentCodeFiles(codeDir) {
   return results;
 }
 
+const RESERVED_ROOT_ENTRIES = new Set([
+  "ui", "crates", "macos", "Vanaras.app", "agent_workspace", "projects",
+  "target", "node_modules", "skills", "docs", ".git", ".gitignore",
+  ".worktrees", ".vanaras-memory", ".DS_Store", "__pycache__", ".pytest_cache",
+  "Cargo.toml", "Cargo.lock", "package.json", "package-lock.json",
+  "README.md", "AGENTS.md", "CONTRIBUTING.md", "build-macos-app.sh", "run-windows.bat"
+]);
+
+const STARTER_BOILERPLATE_FILES = new Set([
+  "gguf_dump.py", "quant_architecture.md", "embedding_lookup.py", "lookup_table.rs",
+  "calibrate_q3.py", "phone_rss_probe.py", "main.py", "vanara_task.py", "notes.md", "health_check.py", "calc.js"
+]);
+
+function isDeliverableRelPathAllowed(relPath) {
+  const norm = String(relPath || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!norm || norm.includes("..")) return false;
+  const parts = norm.split("/");
+  const top = parts[0];
+  if (!top || top.startsWith(".") || RESERVED_ROOT_ENTRIES.has(top)) return false;
+  if (STARTER_BOILERPLATE_FILES.has(norm) || STARTER_BOILERPLATE_FILES.has(parts[parts.length - 1])) return false;
+  for (const seg of parts) {
+    if (!seg || seg.startsWith(".") || seg === "__pycache__" || seg === "node_modules" || seg === "target" || seg === "agent_workspace") {
+      return false;
+    }
+  }
+  const baseName = parts[parts.length - 1];
+  if (/\.(pyc|pyo|log|tmp)$/i.test(baseName)) return false;
+  return true;
+}
+
+function collectDeliverablesInDir(baseDir) {
+  const found = new Map();
+  function walk(currDir, relPrefix = "") {
+    if (!fs.existsSync(currDir)) return;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(currDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      const top = relPath.split("/")[0];
+      if (RESERVED_ROOT_ENTRIES.has(top) || entry.name === "__pycache__" || entry.name === "node_modules" || entry.name === "target" || entry.name === "agent_workspace") {
+        continue;
+      }
+      const absPath = path.join(currDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(absPath, relPath);
+      } else if (entry.isFile() && isDeliverableRelPathAllowed(relPath)) {
+        try {
+          const st = fs.statSync(absPath);
+          if (st.size <= 50 * 1024 * 1024) {
+            found.set(relPath, { absPath, mtimeMs: st.mtimeMs, size: st.size });
+          }
+        } catch {}
+      }
+    }
+  }
+  walk(baseDir);
+  return found;
+}
+
+function copyIfNewer(srcAbs, srcMtimeMs, destAbs) {
+  try {
+    if (path.resolve(srcAbs) === path.resolve(destAbs)) return false;
+    if (fs.existsSync(destAbs)) {
+      const dstStat = fs.statSync(destAbs);
+      if (dstStat.mtimeMs >= srcMtimeMs - 25 && dstStat.size === fs.statSync(srcAbs).size) {
+        return false;
+      }
+      if (dstStat.mtimeMs > srcMtimeMs + 25) {
+        return false;
+      }
+    }
+    fs.mkdirSync(path.dirname(destAbs), { recursive: true });
+    fs.copyFileSync(srcAbs, destAbs);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function syncWorktreeDeliverablesToMainRoot(wt, { syncSiblings = true } = {}) {
+  const promotedToRoot = [];
+  try {
+    const candidateDirs = [];
+    if (wt && wt.codeDir && fs.existsSync(wt.codeDir)) candidateDirs.push(wt.codeDir);
+    if (wt && wt.worktreePath && fs.existsSync(wt.worktreePath)) candidateDirs.push(wt.worktreePath);
+
+    const siblingDirs = [];
+    if (syncSiblings && fs.existsSync(WORKTREES_DIR)) {
+      try {
+        for (const ent of fs.readdirSync(WORKTREES_DIR, { withFileTypes: true })) {
+          if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
+          const sibWt = path.join(WORKTREES_DIR, ent.name);
+          siblingDirs.push(sibWt);
+          const awDir = path.join(sibWt, "agent_workspace");
+          if (fs.existsSync(awDir)) {
+            for (const sub of fs.readdirSync(awDir, { withFileTypes: true })) {
+              if (sub.isDirectory() && !sub.name.startsWith(".")) {
+                siblingDirs.push(path.join(awDir, sub.name));
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    const allSourceDirs = [...new Set([...candidateDirs, ...siblingDirs])];
+    const newestByRel = new Map();
+
+    for (const dir of allSourceDirs) {
+      const map = collectDeliverablesInDir(dir);
+      for (const [relPath, info] of map.entries()) {
+        const prev = newestByRel.get(relPath);
+        if (!prev || info.mtimeMs > prev.mtimeMs) {
+          newestByRel.set(relPath, info);
+        }
+      }
+    }
+
+    const allTargetDirs = [...new Set([ROOT_DIR, ...allSourceDirs])];
+    for (const [relPath, info] of newestByRel.entries()) {
+      for (const targetBase of allTargetDirs) {
+        const destAbs = path.resolve(targetBase, relPath);
+        if (!isPathInside(destAbs, targetBase)) continue;
+        const copied = copyIfNewer(info.absPath, info.mtimeMs, destAbs);
+        if (targetBase === ROOT_DIR && (copied || fs.existsSync(destAbs))) {
+          promotedToRoot.push(relPath);
+        }
+      }
+    }
+  } catch {}
+  return [...new Set(promotedToRoot)];
+}
+
+function syncAllWorktreesToMainRoot() {
+  return syncWorktreeDeliverablesToMainRoot(null, { syncSiblings: true });
+}
+
 // ============================================================================
 // REAL MCP STDIO CLIENT (JSON-RPC 2.0 initialize -> tools/list | tools/call)
 // ============================================================================
@@ -718,10 +860,12 @@ const server = http.createServer(async (req, res) => {
           const autoMsg = `fix(${slug}): apply surgical patch to ${modifiedFiles.join(", ")}`;
           autoCommitOut = safeGitCommit(wt.worktreePath, autoMsg, 5000);
         }
+        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
         const updatedWt = ensureAgentWorktree(botId, botName, customWorkspacePath);
         return sendJson(res, 200, {
           ...updatedWt,
           appliedPatches,
+          promotedToRoot,
           autoCommitOut,
           files: listAgentCodeFiles(updatedWt.codeDir)
         });
@@ -729,7 +873,6 @@ const server = http.createServer(async (req, res) => {
 
       if ((action === "save_files" || action === "save") && Array.isArray(files)) {
         const savedNames = [];
-        const reservedRootNames = new Set(["ui", "crates", "macos", "Vanaras.app", "Cargo.toml", "Cargo.lock", "README.md", "build-macos-app.sh", "run-windows.bat", ".git", ".gitignore"]);
         for (const f of files) {
           if (!f || !f.name) continue;
           const cleanRel = String(f.name).replace(/^\/+/, "").replace(/\.\./g, "");
@@ -739,7 +882,7 @@ const server = http.createServer(async (req, res) => {
             fs.writeFileSync(dest, String(f.content ?? ""), "utf8");
             savedNames.push(cleanRel);
             const topSegment = cleanRel.split("/")[0];
-            if (topSegment && !reservedRootNames.has(topSegment)) {
+            if (topSegment && !RESERVED_ROOT_ENTRIES.has(topSegment)) {
               const wtDest = path.resolve(wt.worktreePath, cleanRel);
               if (isPathInside(wtDest, wt.worktreePath)) {
                 try {
@@ -757,10 +900,12 @@ const server = http.createServer(async (req, res) => {
           const autoMsg = `feat(${slug}): update ${savedNames.join(", ")} in agent workspace`;
           autoCommitOut = safeGitCommit(wt.worktreePath, autoMsg, 5000);
         }
+        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
         const updatedWt = ensureAgentWorktree(botId, botName, customWorkspacePath);
         return sendJson(res, 200, {
           ...updatedWt,
           savedNames,
+          promotedToRoot,
           autoCommitOut,
           files: listAgentCodeFiles(updatedWt.codeDir)
         });
@@ -780,9 +925,11 @@ const server = http.createServer(async (req, res) => {
         } catch (err) {
           output = err.message;
         }
+        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
         const updatedWt = ensureAgentWorktree(botId, botName, customWorkspacePath);
         return sendJson(res, 200, {
           ...updatedWt,
+          promotedToRoot,
           output,
           files: listAgentCodeFiles(updatedWt.codeDir)
         });
@@ -792,6 +939,7 @@ const server = http.createServer(async (req, res) => {
         const slug = wt.botName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
         let output = "";
         const verifiedFiles = [];
+        let promotedToRoot = [];
         try {
           // 1. Pre-merge syntax verification on .js/.mjs/.py files in wt.codeDir
           const codeFiles = listAgentCodeFiles(wt.codeDir);
@@ -809,10 +957,11 @@ const server = http.createServer(async (req, res) => {
           // 2. Ensure worktree changes are committed on the agent's branch first
           safeGitCommit(wt.worktreePath, `feat(${slug}): pre-merge checkpoint`, 5000);
 
-          // 3. Copy agent_workspace/<slug> into main ROOT_DIR/agent_workspace/<slug> and commit on main
+          // 3. Copy agent_workspace/<slug> into main ROOT_DIR/agent_workspace/<slug> AND promote all squad deliverables & generated outputs into ROOT_DIR
           const mainDest = path.resolve(ROOT_DIR, "agent_workspace", slug);
           fs.mkdirSync(mainDest, { recursive: true });
           fs.cpSync(wt.codeDir, mainDest, { recursive: true, force: true });
+          promotedToRoot = syncAllWorktreesToMainRoot();
           try {
             execFileSync("git", ["add", `agent_workspace/${slug}`], { cwd: ROOT_DIR, stdio: "pipe", timeout: 4000 });
             execFileSync("git", ["commit", "-m", `feat(${slug}): merge ${wt.branch} workspace into main`], { cwd: ROOT_DIR, stdio: "pipe", timeout: 4000 });
@@ -822,7 +971,8 @@ const server = http.createServer(async (req, res) => {
             stdio: "pipe",
             timeout: 4000
           }).toString("utf8").trim();
-          output = (verifiedFiles.length > 0 ? `[Pre-Merge Syntax Check: ${verifiedFiles.join(", ")}]\n` : "") + commitLog;
+          const promoNote = promotedToRoot.length > 0 ? `[Synced to Main Root Folder (${ROOT_DIR}): ${promotedToRoot.join(", ")}]\n` : "";
+          output = (verifiedFiles.length > 0 ? `[Pre-Merge Syntax Check: ${verifiedFiles.join(", ")}]\n` : "") + promoNote + commitLog;
         } catch (err) {
           output = `Pre-merge verification or git merge failed: ${err.message}`;
         }
@@ -830,6 +980,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, {
           ...updatedWt,
           verifiedFiles,
+          promotedToRoot,
           output,
           files: listAgentCodeFiles(updatedWt.codeDir)
         });
@@ -1085,6 +1236,7 @@ const server = http.createServer(async (req, res) => {
           timeout: 15000,
           trackKey: botId
         });
+        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
 
         const combinedOut = [
           execRes.output,
@@ -1098,6 +1250,7 @@ const server = http.createServer(async (req, res) => {
           cwd: wt.codeDir,
           branch: wt.branch,
           syntaxVerified: syntaxNotes,
+          promotedToRoot,
           output: combinedOut || "(Completed with exit code 0)"
         });
       }
@@ -1127,6 +1280,7 @@ const server = http.createServer(async (req, res) => {
         if (isPathInside(absTarget, wt.codeDir)) {
           fs.mkdirSync(path.dirname(absTarget), { recursive: true });
           fs.writeFileSync(absTarget, content || "", "utf8");
+          syncWorktreeDeliverablesToMainRoot(wt);
         }
         return sendJson(res, 200, { ...ensureAgentWorktree(botId, botName, customWorkspacePath), writtenFile: cleanRel });
       }
@@ -1260,6 +1414,8 @@ const server = http.createServer(async (req, res) => {
             rel = path.relative(wt.codeDir, rawInput);
           } else if (isPathInside(rawInput, wt.worktreePath)) {
             rel = path.relative(wt.worktreePath, rawInput);
+          } else if (isPathInside(rawInput, ROOT_DIR)) {
+            rel = path.relative(ROOT_DIR, rawInput);
           } else {
             return sendJson(res, 400, { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` });
           }
@@ -1274,13 +1430,15 @@ const server = http.createServer(async (req, res) => {
         const cleanRel = path.relative(wt.codeDir, target);
         const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
         await safeGitCommitAsync(wt.worktreePath, `feat(${slug}): write ${cleanRel} in agent workspace`, 5000);
+        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
         return sendJson(res, 200, {
           ok: true,
           bytesWritten: bodyContent.length,
           worktreePath: wt.worktreePath,
           codeDir: wt.codeDir,
           branch: wt.branch,
-          output: `Wrote ${bodyContent.length} bytes to ${cleanRel} & committed to ${wt.branch}`
+          promotedToRoot,
+          output: `Wrote ${bodyContent.length} bytes to ${cleanRel} & synced to main root folder`
         });
       }
 
@@ -1298,7 +1456,8 @@ const server = http.createServer(async (req, res) => {
         } catch (err) {
           out = err.message;
         }
-        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, output: out });
+        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, promotedToRoot, output: out });
       }
 
       if (toolName === "git_status" || toolName === "git_diff") {
@@ -1359,6 +1518,7 @@ const server = http.createServer(async (req, res) => {
             }
           );
         });
+        result.promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
         return sendJson(res, 200, result);
       }
 
@@ -1512,6 +1672,7 @@ const server = http.createServer(async (req, res) => {
 
       if (action === "CommitSandBoxStoreManifest") {
         const wt = ensureAgentWorktree(botId, botName);
+        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
         const files = listAgentCodeFiles(wt.codeDir).map(f => ({
           name: f.name,
           size: f.size,
@@ -1524,12 +1685,13 @@ const server = http.createServer(async (req, res) => {
           branch: wt.branch,
           codeDir: wt.codeDir,
           committedAt: new Date().toISOString(),
+          promotedToRoot,
           objects: files,
           locks
         };
         const manifestFile = path.join(storeDir, `${sanitizeSlug(botId)}-manifest.json`);
         fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2), "utf8");
-        return sendJson(res, 200, { ok: true, action, manifest });
+        return sendJson(res, 200, { ok: true, action, promotedToRoot, manifest });
       }
 
       if (action === "StatSandBoxStoreObject") {
@@ -2295,5 +2457,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Vanaras Desktop Engine listening at http://localhost:${PORT}`);
+  const promoted = syncAllWorktreesToMainRoot();
+  console.log(`Vanaras Desktop Engine listening at http://localhost:${PORT}${promoted.length > 0 ? ` (synced ${promoted.length} deliverables to main root)` : ""}`);
 });

@@ -2772,6 +2772,21 @@ Auto-save: enabled</pre>
     async function syncAgentSkillOnServer(bot, action = "get", extra = {}) {
       if (!bot) return "";
       try {
+        const agentConfigPayload = action === "set" ? {
+          name: bot.name,
+          role: bot.role,
+          provider: bot.provider,
+          model: bot.model,
+          baseUrl: bot.baseUrl,
+          instructions: bot.instructions,
+          mcpCommand: bot.mcpCommand || "",
+          mcpCustomInstructions: bot.mcpCustomInstructions || "",
+          mcpDisabledTools: bot.mcpDisabledTools || [],
+          tools: bot.tools || [],
+          maxReactSteps: bot.maxReactSteps || 3,
+          autoVerifyCode: bot.autoVerifyCode !== false,
+          worktreeBranch: bot.worktreeBranch || ""
+        } : undefined;
         const res = await fetch("/api/agent/skill", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2780,6 +2795,7 @@ Auto-save: enabled</pre>
             botName: bot.name,
             botRole: bot.role,
             action,
+            agentConfig: agentConfigPayload,
             ...extra
           })
         });
@@ -2791,6 +2807,15 @@ Auto-save: enabled</pre>
           if (typeof data.skillMarkdown === "string") {
             bot.skillMarkdown = data.skillMarkdown;
             bot.skillFile = data.skillFile || "";
+          }
+          if (data.agentConfig && action === "get") {
+            const cfg = data.agentConfig;
+            if (cfg.mcpCommand && !bot.mcpCommand) bot.mcpCommand = cfg.mcpCommand;
+            if (cfg.mcpCustomInstructions && !bot.mcpCustomInstructions) bot.mcpCustomInstructions = cfg.mcpCustomInstructions;
+            if (Array.isArray(cfg.mcpDisabledTools) && (!bot.mcpDisabledTools || bot.mcpDisabledTools.length === 0)) bot.mcpDisabledTools = cfg.mcpDisabledTools;
+            if (Array.isArray(cfg.tools) && cfg.tools.length > 0) bot.tools = cfg.tools;
+            if (typeof cfg.maxReactSteps === "number") bot.maxReactSteps = cfg.maxReactSteps;
+            if (typeof cfg.autoVerifyCode === "boolean") bot.autoVerifyCode = cfg.autoVerifyCode;
           }
           return data;
         }

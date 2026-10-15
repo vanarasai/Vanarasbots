@@ -287,6 +287,35 @@ function saveAgentSkill(botId, skillMarkdown = "") {
   }
 }
 
+function getAgentConfigFile(botId) {
+  const slug = sanitizeSlug(botId, "bot");
+  const dir = path.join(AGENTS_STATE_DIR, slug);
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, "agent-config.json");
+}
+
+function loadAgentConfig(botId) {
+  try {
+    const file = getAgentConfigFile(botId);
+    if (fs.existsSync(file)) {
+      return JSON.parse(fs.readFileSync(file, "utf8"));
+    }
+  } catch {}
+  return null;
+}
+
+function saveAgentConfig(botId, config = {}) {
+  try {
+    const file = getAgentConfigFile(botId);
+    const prev = loadAgentConfig(botId) || {};
+    const merged = { ...prev, ...config, botId, updatedAt: Date.now() };
+    fs.writeFileSync(file, JSON.stringify(merged, null, 2), "utf8");
+    return merged;
+  } catch {
+    return null;
+  }
+}
+
 function discoverWorkspaceSkillFiles() {
   const found = [];
   const candidateRoots = [
@@ -1384,27 +1413,34 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 2C-bis. Per-Agent SKILL.md & Harness Configuration Store (/api/agent/skill)
+  // 2C-bis. Per-Agent SKILL.md, MCP & Harness Configuration Store (/api/agent/skill)
   if (req.method === "POST" && req.url === "/api/agent/skill") {
     try {
-      const { botId = "bot_r1", botName = "R1", role = "", action = "get", skillMarkdown = "" } = await readJsonBody(req);
+      const { botId = "bot_r1", botName = "R1", botRole = "", role = "", action = "get", skillMarkdown = "", agentConfig = null } = await readJsonBody(req);
+      const effectiveRole = botRole || role;
       const templates = discoverWorkspaceSkillFiles();
       if (action === "set") {
         const savedPath = saveAgentSkill(botId, skillMarkdown);
+        const savedConfig = agentConfig ? saveAgentConfig(botId, agentConfig) : loadAgentConfig(botId);
         return sendJson(res, 200, {
           ok: true,
           botId,
           skillFile: savedPath,
+          configFile: getAgentConfigFile(botId),
           skillMarkdown: String(skillMarkdown || ""),
+          agentConfig: savedConfig,
           templates
         });
       }
-      const loaded = loadAgentSkill(botId, botName, role);
+      const loaded = loadAgentSkill(botId, botName, effectiveRole);
+      const loadedConfig = loadAgentConfig(botId);
       return sendJson(res, 200, {
         ok: true,
         botId,
         skillFile: getAgentSkillFile(botId),
+        configFile: getAgentConfigFile(botId),
         skillMarkdown: loaded,
+        agentConfig: loadedConfig,
         templates
       });
     } catch (e) {
@@ -1415,24 +1451,43 @@ const server = http.createServer(async (req, res) => {
   // 2D. Per-Agent Tool & MCP Server Executor (/api/agent/tool)
   if (req.method === "POST" && req.url === "/api/agent/tool") {
     try {
-      const { botId, botName, tool, action, args = {}, filePath, content, mcpCommand } = await readJsonBody(req);
+      const {
+        botId,
+        botName,
+        tool,
+        action,
+        args = {},
+        toolName: requestedMcpToolName,
+        toolArgs: requestedMcpToolArgs,
+        filePath,
+        content,
+        mcpCommand
+      } = await readJsonBody(req);
       const toolName = tool || action;
       const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
+      const savedAgentCfg = loadAgentConfig(botId || "bot_r1") || {};
+      const effectiveMcpCommand = String(mcpCommand || savedAgentCfg.mcpCommand || "").trim();
 
-      if (toolName === "mcp_probe" && mcpCommand) {
-        const mcpRes = await callStdioMcpServer({ commandLine: mcpCommand, cwd: wt.worktreePath, method: "tools/list" });
+      if (toolName === "mcp_probe" && effectiveMcpCommand) {
+        const mcpRes = await callStdioMcpServer({ commandLine: effectiveMcpCommand, cwd: wt.worktreePath, method: "tools/list" });
         const tools = mcpRes.result?.tools || [];
         return sendJson(res, 200, { ...mcpRes, tools });
       }
 
-      if (toolName === "mcp_call" && mcpCommand) {
+      if (toolName === "mcp_call" && effectiveMcpCommand) {
+        const targetMcpTool = requestedMcpToolName || args.name || "";
+        const targetMcpArgs = requestedMcpToolArgs || args.arguments || {};
         const mcpRes = await callStdioMcpServer({
-          commandLine: mcpCommand,
+          commandLine: effectiveMcpCommand,
           cwd: wt.worktreePath,
           method: "tools/call",
-          params: { name: args.name, arguments: args.arguments || {} }
+          params: { name: targetMcpTool, arguments: targetMcpArgs }
         });
-        return sendJson(res, 200, mcpRes);
+        const contentItems = Array.isArray(mcpRes.result?.content)
+          ? mcpRes.result.content.map(c => c.text || JSON.stringify(c)).join("\n")
+          : "";
+        const output = contentItems || (mcpRes.result ? JSON.stringify(mcpRes.result, null, 2) : "");
+        return sendJson(res, 200, { ...mcpRes, output });
       }
 
       if (toolName === "fs_read") {

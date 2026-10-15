@@ -2426,8 +2426,8 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 10. Workspace Media & Webpage Streaming Endpoint (GET /api/workspace/media?path=...)
-  if (req.method === "GET" && req.url.startsWith("/api/workspace/media")) {
+  // 10. Workspace Media & Webpage Streaming Endpoint (GET/HEAD /api/workspace/media?path=...)
+  if ((req.method === "GET" || req.method === "HEAD") && req.url.startsWith("/api/workspace/media")) {
     try {
       const parsedUrl = new URL(req.url, `http://localhost:${PORT}`);
       let rawPath = decodeURIComponent(parsedUrl.searchParams.get("path") || "").trim();
@@ -2547,6 +2547,10 @@ const server = http.createServer(async (req, res) => {
           "Content-Range": `bytes ${start}-${end}/${stat.size}`,
           "Content-Length": end - start + 1
         });
+        if (req.method === "HEAD") {
+          res.end();
+          return;
+        }
         fs.createReadStream(chosenPath, { start, end }).pipe(res);
         return;
       }
@@ -2555,6 +2559,10 @@ const server = http.createServer(async (req, res) => {
         ...baseHeaders,
         "Content-Length": stat.size
       });
+      if (req.method === "HEAD") {
+        res.end();
+        return;
+      }
       fs.createReadStream(chosenPath).pipe(res);
       return;
     } catch (e) {

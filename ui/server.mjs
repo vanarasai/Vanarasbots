@@ -1854,8 +1854,7 @@ const server = http.createServer(async (req, res) => {
         const rawCmd = String(content || filePath || args.command || "").trim();
         const cmdStr = rawCmd
           .replace(/\\\\\(/g, "\\(")
-          .replace(/\\\\\)/g, "\\)")
-          .replace(/\\"/g, '"');
+          .replace(/\\\\\)/g, "\\)");
         if (!cmdStr) {
           return sendJson(res, 400, { ok: false, error: "Missing shell command" });
         }

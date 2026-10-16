@@ -2616,11 +2616,11 @@ Auto-save: enabled</pre>
             cleaned.push(...staleBlock);
           }
         }
-        const tbBotIdx = cleaned.findIndex(m => m.id === "msg_bot_1792088738399_265g");
-        if (tbBotIdx >= 0) {
-          const hasNewerUserAfterTb = cleaned.slice(tbBotIdx + 1).some(m => m && m.senderType === "user");
-          if (!hasNewerUserAfterTb && cleaned.length > tbBotIdx + 1) {
-            cleaned.splice(tbBotIdx + 1);
+        const goodGuysBotIdx = cleaned.findIndex(m => m.id === "msg_bot_1792091054933_y66c");
+        if (goodGuysBotIdx >= 0) {
+          const hasNewerUserAfterGood = cleaned.slice(goodGuysBotIdx + 1).some(m => m && m.senderType === "user");
+          if (!hasNewerUserAfterGood && cleaned.length > goodGuysBotIdx + 1) {
+            cleaned.splice(goodGuysBotIdx + 1);
           }
         }
         t.messages = cleaned;
@@ -4157,7 +4157,7 @@ ${handoffRule}
       }
 
       // 2. Extract [TOOL: type | arg1 | arg2] OR loose [TOOL: type] arg1 (plus optional following code fence for fs_write)
-      const toolRx = /\[TOOL:\s*([a-z_]+)(?:\s*\|\s*([^\]|\n]+))?(?:\s*\|\s*([^\]\n]+))?\](?:[ \t]*:?[ \t]*([^\n\[`]+))?(?:\s*\n```[a-zA-Z0-9_.-]*\n([\s\S]*?)```)?/gi;
+      const toolRx = /\[TOOL:\s*([a-z_]+)(?:\s*\|\s*([^\]\n]+))?\](?:[ \t]*:?[ \t]*([^\n\[`]+))?(?:\s*\n```[a-zA-Z0-9_.-]*\n([\s\S]*?)```)?/gi;
       const seenToolCalls = new Set();
       let tMatch;
       while ((tMatch = toolRx.exec(scanSource)) !== null) {
@@ -4169,13 +4169,14 @@ ${handoffRule}
             : rawTool === "read_file"
               ? "fs_read"
               : rawTool;
-        const rawArg1 = (tMatch[2] || tMatch[4] || "").trim().replace(/===$/, "").trim();
-        const rawArg2 = (tMatch[3] || tMatch[5] || "").trim();
-        // Preserve shell pipes (|) when the tool is shell_exec or git_commit
-        const arg1 = ((normalizedTool === "shell_exec" || normalizedTool === "git_commit") && tMatch[2] && tMatch[3])
-          ? `${tMatch[2].trim()} | ${tMatch[3].trim()}`.replace(/===$/, "").trim()
-          : rawArg1;
-        const arg2 = (normalizedTool === "shell_exec" || normalizedTool === "git_commit") ? "" : rawArg2;
+        const fullBody = (tMatch[2] || tMatch[3] || "").trim().replace(/===$/, "").trim();
+        let arg1 = fullBody;
+        let arg2 = (tMatch[4] || "").trim();
+        if ((normalizedTool === "fs_write" || normalizedTool === "mcp_call") && fullBody.includes("|")) {
+          const pipeIdx = fullBody.indexOf("|");
+          arg1 = fullBody.slice(0, pipeIdx).trim();
+          arg2 = fullBody.slice(pipeIdx + 1).trim() || arg2;
+        }
 
         // Skip template placeholders like "...", "…", "<path>", or "<command>"
         if (/^(?:\.{2,}|…|<[a-z_-\s]+>)$/i.test(arg1)) continue;
@@ -4865,7 +4866,8 @@ ${handoffRule}
                 : savedPatchesInReactLoop;
           const runnableCandidates = candidateList.filter(f => /\.(py|js|mjs|sh|rs)$/i.test(f.name));
           const runnableFile =
-            runnableCandidates.find(f => /(?:^|\/)(?:test_[^/]+|[^/]+_test|main|app|index|server)\.(?:py|js|mjs|sh|rs)$/i.test(f.name)) ||
+            runnableCandidates.find(f => /(?:^|\/)(?:test_[^/]+|[^/]+_test)\.(?:py|js|mjs|sh|rs)$/i.test(f.name)) ||
+            runnableCandidates.find(f => /(?:^|\/)(?:main|app|index|server)\.(?:py|js|mjs|sh|rs)$/i.test(f.name)) ||
             runnableCandidates[0];
           if (runnableFile && targetBot.autoVerifyCode !== false && (targetBot.tools || []).includes("shell_exec")) {
             try {
@@ -4916,15 +4918,17 @@ ${handoffRule}
         if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
         ensureLiveMessageAtBottom(targetThread, liveMsg);
 
-        const cleanDisplay = stripAllToolDirectives(postThoughtContent)
+        const strippedPostThought = stripAllToolDirectives(postThoughtContent)
           .replace(/\[REMEMBER:\s*[^\]]+\]/gi, "")
           .replace(/\[HANDOFF:\s*@?[a-zA-Z0-9_-]+\]/gi, "")
           .replace(/\[SQUAD_COMPLETE\]/gi, "")
-          .trim() || (combinedReasoning ? combinedReasoning.slice(-900).trim() : "(Completed)");
+          .trim();
+        const cleanDisplay = strippedPostThought || (combinedReasoning ? combinedReasoning.slice(-900).trim() : "(Completed)");
 
         liveMsg.isStreaming = false;
         liveMsg.text = cleanDisplay;
         liveMsg.reasoning = combinedReasoning;
+        liveMsg.thoughtOpen = !strippedPostThought;
         liveMsg.hooksTrace = hooksTrace;
         liveMsg.hasDeliverables = hasDeliverables;
 
@@ -4933,7 +4937,7 @@ ${handoffRule}
           showToast(`${targetBot.name} completed turn in ${targetThread.name || targetBot.name}`);
         }
 
-        const isShortGreeting = /^(hi|hello|hey|yo|sup|hola|namaste|thanks|thank you|ok|okay|ping|test|status)\b/i.test(triggerText.trim()) && triggerText.trim().length < 28;
+        const isShortGreeting = /^(hi|hello|hey|yo|sup|hola|namaste|thanks|thank you|ok|okay|ping|test|status|good|great|awesome|nice|cool|it'?s working)\b/i.test(triggerText.trim()) && triggerText.trim().length < 32;
         const isSingleOpCommand = /\b(copy|move|delete|remove|where\s+is|what\s+is\s+the\s+progress)\b/i.test(triggerText) && !/\b(build|create|design|implement|architect|develop)\b/i.test(triggerText);
 
         const relayBots = buildDynamicSquadRelay(targetThread);
@@ -4977,11 +4981,17 @@ ${handoffRule}
           /\b(?:implement|write\s+(?:the\s+)?(?:code|file|module|script)|===FILE:|create\s+(?:the\s+)?files|fix\s+(?:the\s+)?bug|build\s+a\s+|scaffold|peer\s+review)\b/i.test(triggerText)
         );
 
-        // Self-Healing Loop: If a builder agent's generated module failed syntax/runtime verification, self-trigger that builder to fix it.
-        // (If the Peer Reviewer's test suite failed, that means the test caught a bug in a teammate's module — route to the specialist below!)
-        if (autoVerifyFailedFile && !isCurrentBotReviewer && state.autoTriggerEnabled !== false && chainDepth < maxRelayDepth) {
+        // Self-Healing Loop: If a builder agent's generated module failed syntax/runtime verification, self-trigger that builder once to fix it.
+        const prevBotBeforeLive = recentBotMessagesSinceUser.length >= 2
+          ? recentBotMessagesSinceUser[recentBotMessagesSinceUser.length - 2]
+          : null;
+        const alreadySelfHealedOnce = Boolean(prevBotBeforeLive && prevBotBeforeLive.botId === targetBot.id);
+        if (autoVerifyFailedFile && !isCurrentBotReviewer && !alreadySelfHealedOnce && state.autoTriggerEnabled !== false && chainDepth < maxRelayDepth) {
           nextAutoBot = targetBot;
-          nextAutoPrompt = `[PostToolUseFailure Auto-Heal] Executing '${autoVerifyFailedFile}' in your workspace exited with an error:\n\`\`\`\n${autoVerifyErrorOutput.slice(0, 800)}\n\`\`\`\nFix '${autoVerifyFailedFile}' and output a surgical ===PATCH: ${autoVerifyFailedFile}=== or corrected ===FILE: ${autoVerifyFailedFile}=== block so the build passes.`;
+          const errTail = autoVerifyErrorOutput.length > 1800
+            ? `...\n${autoVerifyErrorOutput.slice(-1800)}`
+            : autoVerifyErrorOutput;
+          nextAutoPrompt = `[PostToolUseFailure Auto-Heal] Executing '${autoVerifyFailedFile}' in your workspace exited with an error:\n\`\`\`\n${errTail}\n\`\`\`\nFix the failing assertion or runtime error in '${autoVerifyFailedFile}' (the file on disk is NOT truncated; see the traceback at the bottom above) and output a surgical ===PATCH: ${autoVerifyFailedFile}=== or corrected ===FILE: ${autoVerifyFailedFile}=== block so the test suite passes.`;
         } else if (
           targetThread.type === "group" &&
           !isShortGreeting &&

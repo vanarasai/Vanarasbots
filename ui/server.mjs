@@ -1304,11 +1304,18 @@ const server = http.createServer(async (req, res) => {
           if (ext === ".py") {
             const absTarget = path.join(wt.codeDir, cleanFile);
             const src = fs.existsSync(absTarget) ? fs.readFileSync(absTarget, "utf8") : "";
+            const venvCandidates = [
+              path.join(wt.codeDir, ".venv", "bin", "python3"),
+              path.join(wt.worktreePath, ".venv", "bin", "python3"),
+              path.join(ROOT_DIR, ".venv", "bin", "python3"),
+              path.join(WORKTREES_ROOT, "bot_r1", ".venv", "bin", "python3")
+            ];
+            const pyBin = venvCandidates.find(p => fs.existsSync(p)) || "python3";
             // Avoid hanging 15s if a script starts a blocking server loop (uvicorn.run / app.run / serve_forever)
             if (/\b(?:uvicorn\.run|app\.run|serve_forever)\s*\(/.test(src)) {
-              runCmd = `python3 -m py_compile "${cleanFile}" && echo "[Verified server entrypoint ${cleanFile} syntax & imports ready]"`;
+              runCmd = `"${pyBin}" -m py_compile "${cleanFile}" && echo "[Verified server entrypoint ${cleanFile} syntax & imports ready]"`;
             } else {
-              runCmd = `python3 "${cleanFile}"`;
+              runCmd = `"${pyBin}" "${cleanFile}"`;
             }
           } else if (ext === ".js" || ext === ".mjs") {
             runCmd = `node "${cleanFile}"`;

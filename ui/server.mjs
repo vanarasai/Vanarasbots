@@ -1852,13 +1852,17 @@ const server = http.createServer(async (req, res) => {
 
       if (toolName === "shell_exec" || toolName === "shell") {
         const rawCmd = String(content || filePath || args.command || "").trim();
-        const cmdStr = rawCmd
+        const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
+        const sharedVenv = resolveSharedVenvDir(execCwd, wt.worktreePath);
+        let cmdStr = rawCmd
           .replace(/\\\\\(/g, "\\(")
           .replace(/\\\\\)/g, "\\)");
+        if (sharedVenv) {
+          cmdStr = cmdStr.replace(/\/(?:opt\/homebrew|usr\/local)\/bin\/(python3|python|pip3|pip)\b/g, "$1");
+        }
         if (!cmdStr) {
           return sendJson(res, 400, { ok: false, error: "Missing shell command" });
         }
-        const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
         const execRes = await spawnCommandAsync(cmdStr, {
           cwd: execCwd,
           worktreePath: wt.worktreePath,

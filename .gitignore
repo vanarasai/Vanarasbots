@@ -7,8 +7,10 @@
 
 # Runtime state, API keys, per-agent memory & isolated worktrees
 /ui/.vanaras-workspace.json
+/ui/.vanaras-keys.json
 /ui/.vanaras-agents/
 /.worktrees/
+/.venv/
 /projects/
 .DS_Store
 node_modules/

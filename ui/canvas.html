@@ -2695,19 +2695,34 @@ Auto-save: enabled</pre>
     });
 
     let pendingBatchQueue = {};
+    let pendingMentionQueue = {};
 
     function saveApiKeysToLocalStore() {
       try {
         const keyMap = JSON.parse(localStorage.getItem("vanaras_api_keys_v1") || "{}");
+        const vaultBots = {};
+        const vaultProviders = {};
         (state.bots || []).forEach(b => {
-          if (b && b.id && b.apiKey) {
-            keyMap[b.id] = b.apiKey;
+          if (b && b.id && b.apiKey && String(b.apiKey).trim()) {
+            const cleanKey = String(b.apiKey).trim();
+            keyMap[b.id] = cleanKey;
+            vaultBots[b.id] = cleanKey;
             if (b.provider) {
-              keyMap[`provider:${b.provider}`] = b.apiKey;
+              keyMap[`provider:${b.provider}`] = cleanKey;
+              if (b.provider !== "local") {
+                vaultProviders[String(b.provider).toLowerCase()] = cleanKey;
+              }
             }
           }
         });
         localStorage.setItem("vanaras_api_keys_v1", JSON.stringify(keyMap));
+        if (Object.keys(vaultBots).length > 0 || Object.keys(vaultProviders).length > 0) {
+          fetch("/api/settings/keys", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ providers: vaultProviders, bots: vaultBots })
+          }).catch(() => {});
+        }
       } catch {}
     }
 
@@ -2722,6 +2737,34 @@ Auto-save: enabled</pre>
             b.apiKey = keyMap[`provider:${b.provider}`];
           }
         });
+      } catch {}
+    }
+
+    async function syncApiKeysWithVaultOnBoot() {
+      try {
+        const res = await fetch("/api/settings/keys");
+        if (!res.ok) return;
+        const data = await res.json();
+        const vaultBots = data.bots || {};
+        const vaultProviders = data.providers || {};
+        const keyMap = JSON.parse(localStorage.getItem("vanaras_api_keys_v1") || "{}");
+        let hydrated = false;
+        (state.bots || []).forEach(b => {
+          if (!b) return;
+          const vaultKey = vaultBots[b.id] || (b.provider ? vaultProviders[String(b.provider).toLowerCase()] : "") || "";
+          if (!b.apiKey && vaultKey) {
+            b.apiKey = vaultKey;
+            keyMap[b.id] = vaultKey;
+            if (b.provider) keyMap[`provider:${b.provider}`] = vaultKey;
+            hydrated = true;
+          }
+        });
+        if (hydrated) {
+          localStorage.setItem("vanaras_api_keys_v1", JSON.stringify(keyMap));
+          updateHeaderPills();
+        } else {
+          saveApiKeysToLocalStore();
+        }
       } catch {}
     }
 
@@ -3593,12 +3636,15 @@ Auto-save: enabled</pre>
           const row = document.createElement("div");
           row.className = "terminal-card mono";
           row.setAttribute("data-msg-id", m.id);
+          const statusHtml = m.isRunning
+            ? `<span class="terminal-exit-pill" style="color:#38bdf8;">⏳ running…</span>`
+            : `<span class="terminal-exit-pill" style="color:${m.exitCode === 0 ? '#10b981' : '#f59e0b'};">exit ${m.exitCode ?? 0}</span>`;
           row.innerHTML = `
             <div class="terminal-header">
               <span>$ ${escapeHtml(m.command || "shell")}</span>
-              <span style="color:${m.exitCode === 0 ? '#10b981' : '#f59e0b'};">exit ${m.exitCode ?? 0}</span>
+              ${statusHtml}
             </div>
-            <pre style="white-space:pre-wrap; overflow-x:auto; max-height:160px;">${escapeHtml(m.text)}</pre>
+            <pre class="terminal-output-pre" style="white-space:pre-wrap; overflow-x:auto; max-height:180px;">${escapeHtml(m.text)}</pre>
           `;
           msgInner.appendChild(row);
         } else {
@@ -4213,21 +4259,39 @@ ${handoffRule}
 
         try {
           if (normalizedTool === "shell_exec" && arg1) {
+            const streamId = `msg_term_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const liveTermCard = {
+              id: streamId,
+              senderType: "terminal",
+              command: `[${bot.name} ${bot.worktreeBranch || "worktree"}] $ ${arg1}`,
+              exitCode: 0,
+              isRunning: true,
+              text: "⏳ Running command in worktree..."
+            };
+            insertTerminalBeforeStreaming(thread, liveTermCard);
+            if (activeThreadId === thread.id) renderActiveThread();
+
             const res = await fetch("/api/agent/tool", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "shell_exec", botId: bot.id, botName: bot.name, content: arg1 })
+              body: JSON.stringify({
+                action: "shell_exec",
+                botId: bot.id,
+                botName: bot.name,
+                content: arg1,
+                streamId,
+                threadId: thread.id
+              })
             });
             const data = await res.json();
             const shellOut = data.output || data.error || "(exit 0)";
             const exitCode = typeof data.exitCode === "number" ? data.exitCode : (res.ok && data.ok !== false ? 0 : 1);
-            insertTerminalBeforeStreaming(thread, {
-              senderType: "terminal",
-              command: `[${bot.name} ${data.branch || bot.worktreeBranch || "worktree"}] $ ${arg1}`,
-              exitCode,
-              text: shellOut.slice(0, 1600)
-            });
-            observationsOut.push({ tool: `shell_exec(${arg1})`, output: `exitCode=${exitCode}\n${shellOut.slice(0, 2000)}` });
+            liveTermCard.command = `[${bot.name} ${data.branch || bot.worktreeBranch || "worktree"}] $ ${arg1}`;
+            liveTermCard.exitCode = exitCode;
+            liveTermCard.isRunning = false;
+            liveTermCard.text = shellOut.slice(-2400);
+            if (activeThreadId === thread.id) renderActiveThread();
+            observationsOut.push({ tool: `shell_exec(${arg1})`, output: `exitCode=${exitCode}\n${shellOut.slice(-2400)}` });
             executedTools.push(`shell: ${arg1}`);
             hooksTrace.push(`PostToolUse(shell_exec:exit=${exitCode})`);
           } else if (normalizedTool === "fs_read") {
@@ -4438,11 +4502,24 @@ ${handoffRule}
       return nextCtx;
     }
 
+    function resolveExplicitMentionedBotsForPrompt(thread, promptText) {
+      if (!thread) return [];
+      const lower = String(promptText || "").toLowerCase();
+      const matches = [];
+      (state.bots || []).forEach(b => {
+        if (!b || !b.name) return;
+        const idx = lower.indexOf(`@${b.name.toLowerCase()}`);
+        if (idx !== -1) {
+          matches.push({ bot: b, idx });
+        }
+      });
+      matches.sort((a, b) => a.idx - b.idx);
+      return matches.map(m => m.bot);
+    }
+
     function resolveInitialTargetBotForPrompt(thread, promptText) {
       if (!thread) return state.bots[0];
-      const explicitMentionedBots = state.bots.filter(b =>
-        String(promptText || "").toLowerCase().includes(`@${b.name.toLowerCase()}`)
-      );
+      const explicitMentionedBots = resolveExplicitMentionedBotsForPrompt(thread, promptText);
       if (explicitMentionedBots.length > 0) {
         return explicitMentionedBots[0];
       }
@@ -4475,6 +4552,7 @@ ${handoffRule}
       const targetThread = state.threads.find(t => t.id === threadId) || getActiveThread();
       if (!targetThread) return;
       delete pendingBatchQueue[targetThread.id];
+      delete pendingMentionQueue[targetThread.id];
       const leadBot = targetThread.type === "dm" ? getBot(targetThread.botId) : getActiveLeadBot();
       cancelActiveTurnForThread(targetThread, true);
       fetch("/api/workspace/kill", {
@@ -4556,7 +4634,17 @@ ${handoffRule}
         })
       }).catch(() => {});
 
-      const targetBot = resolveInitialTargetBotForPrompt(thread, firstTask);
+      const explicitMentions = resolveExplicitMentionedBotsForPrompt(thread, firstTask);
+      if (explicitMentions.length > 1 && thread.type === "group") {
+        pendingMentionQueue[thread.id] = explicitMentions.slice(1).map(b => ({
+          botId: b.id,
+          prompt: firstTask
+        }));
+      } else {
+        delete pendingMentionQueue[thread.id];
+      }
+
+      const targetBot = explicitMentions[0] || resolveInitialTargetBotForPrompt(thread, firstTask);
       if (targetBot) {
         await runBotTurnInThread(thread.id, targetBot, firstTask, 0);
       }
@@ -5108,6 +5196,23 @@ ${handoffRule}
         }
       }
 
+      // If the user explicitly tagged multiple agents in their message (e.g. "@R1 @R2 ..."), ensure the next tagged agent gets a turn
+      if (!turnCtx.aborted && Array.isArray(pendingMentionQueue[threadId]) && pendingMentionQueue[threadId].length > 0) {
+        if (nextAutoBot) {
+          pendingMentionQueue[threadId] = pendingMentionQueue[threadId].filter(item => item.botId !== nextAutoBot.id);
+        } else {
+          const nextMentionItem = pendingMentionQueue[threadId].shift();
+          const mentionedBot = nextMentionItem ? getBot(nextMentionItem.botId) : null;
+          if (mentionedBot) {
+            nextAutoBot = mentionedBot;
+            nextAutoPrompt = nextMentionItem.prompt;
+          }
+        }
+        if (pendingMentionQueue[threadId] && pendingMentionQueue[threadId].length === 0) {
+          delete pendingMentionQueue[threadId];
+        }
+      }
+
       if (!turnCtx.aborted && nextAutoBot && state.autoTriggerEnabled !== false && targetThread.type === "group") {
         activeWorkingThreads[threadId] = `Auto-triggering @${nextAutoBot.name}...`;
         renderThreadList();
@@ -5158,6 +5263,7 @@ ${handoffRule}
         : bot.model;
 
       const payload = {
+        botId: bot.id,
         provider: bot.provider,
         baseUrl: bot.baseUrl,
         apiKey: bot.apiKey,
@@ -7602,6 +7708,39 @@ ${handoffRule}
           }
         });
 
+        es.addEventListener("tool_stream", ev => {
+          try {
+            const data = JSON.parse(ev.data);
+            if (!data || !data.streamId) return;
+            const targetThread = data.threadId
+              ? state.threads.find(t => t.id === data.threadId)
+              : getActiveThread();
+            if (targetThread && Array.isArray(targetThread.messages)) {
+              const termMsg = targetThread.messages.find(m => m && m.id === data.streamId);
+              if (termMsg) {
+                termMsg.text = String(data.output || data.chunk || "").slice(-2400);
+              }
+            }
+            if (activeThreadId === (data.threadId || activeThreadId)) {
+              const row = document.querySelector(`[data-msg-id="${data.streamId}"]`);
+              if (row) {
+                const preEl = row.querySelector(".terminal-output-pre") || row.querySelector("pre");
+                if (preEl) {
+                  preEl.textContent = String(data.output || data.chunk || "").slice(-2400);
+                  preEl.scrollTop = preEl.scrollHeight;
+                }
+              }
+            }
+            if (data.botId === activeWorkspaceBotId && data.chunk) {
+              const consoleOut = document.getElementById("workspaceConsoleOutput");
+              if (consoleOut) {
+                consoleOut.textContent = (consoleOut.textContent + "\n" + String(data.chunk).trim()).slice(-3500);
+                consoleOut.scrollTop = consoleOut.scrollHeight;
+              }
+            }
+          } catch {}
+        });
+
         es.addEventListener("agent_server_log", ev => {
           const data = JSON.parse(ev.data);
           if (data.botId === activeWorkspaceBotId && data.chunk) {
@@ -7641,6 +7780,7 @@ ${handoffRule}
     renderActiveThread();
     populateWorkspaceAgentSelector();
     loadDiskWorkspaceOnBoot();
+    syncApiKeysWithVaultOnBoot();
     probeLocalModel();
     initMultiplayerStream();
   </script>

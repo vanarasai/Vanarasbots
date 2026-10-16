@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
 const REPO_ROOT = path.resolve(ROOT_DIR, "..");
 const WORKSPACE_FILE = path.join(__dirname, ".vanaras-workspace.json");
+const KEYS_VAULT_FILE = path.join(__dirname, ".vanaras-keys.json");
 const AGENTS_STATE_DIR = path.join(__dirname, ".vanaras-agents");
 const WORKTREES_DIR = path.join(ROOT_DIR, ".worktrees");
 const PORT = 3000;
@@ -120,10 +121,115 @@ function getHeadSha(cwd) {
   }
 }
 
-function spawnCommandAsync(command, { cwd, timeout = 15000, trackKey = null } = {}) {
+function hasVenvPython(venvDir) {
+  if (!venvDir) return false;
+  try {
+    return (
+      fs.existsSync(path.join(venvDir, "bin", "python3")) ||
+      fs.existsSync(path.join(venvDir, "bin", "python")) ||
+      fs.existsSync(path.join(venvDir, "Scripts", "python.exe"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function resolveSharedVenvDir(cwd = "", worktreePath = "") {
+  const candidates = [
+    cwd ? path.join(cwd, ".venv") : "",
+    worktreePath ? path.join(worktreePath, ".venv") : "",
+    path.join(ROOT_DIR, ".venv"),
+    path.join(WORKTREES_DIR, "bot_r1", ".venv"),
+    path.join(WORKTREES_DIR, "bot_r1", "agent_workspace", "r1", ".venv")
+  ].filter(Boolean);
+
+  if (fs.existsSync(WORKTREES_DIR)) {
+    try {
+      for (const ent of fs.readdirSync(WORKTREES_DIR, { withFileTypes: true })) {
+        if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
+        const wtDir = path.join(WORKTREES_DIR, ent.name);
+        candidates.push(path.join(wtDir, ".venv"));
+        const awDir = path.join(wtDir, "agent_workspace");
+        if (fs.existsSync(awDir)) {
+          for (const sub of fs.readdirSync(awDir, { withFileTypes: true })) {
+            if (sub.isDirectory() && !sub.name.startsWith(".")) {
+              candidates.push(path.join(awDir, sub.name, ".venv"));
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  for (const cand of candidates) {
+    if (hasVenvPython(cand)) {
+      try {
+        return fs.realpathSync(cand);
+      } catch {
+        return cand;
+      }
+    }
+  }
+  return "";
+}
+
+function ensureSharedVenvSymlinks(worktreePath = "", codeDir = "") {
+  const sharedVenv = resolveSharedVenvDir(codeDir, worktreePath);
+  const sharedNodeModules = fs.existsSync(path.join(ROOT_DIR, "node_modules"))
+    ? path.join(ROOT_DIR, "node_modules")
+    : "";
+  const targetDirs = [ROOT_DIR, worktreePath, codeDir].filter(d => d && fs.existsSync(d));
+  for (const dir of targetDirs) {
+    if (sharedVenv) {
+      const linkPath = path.join(dir, ".venv");
+      try {
+        if (!fs.existsSync(linkPath)) {
+          fs.symlinkSync(sharedVenv, linkPath, "dir");
+        }
+      } catch {}
+    }
+    if (sharedNodeModules && dir !== ROOT_DIR) {
+      const nmLink = path.join(dir, "node_modules");
+      try {
+        if (!fs.existsSync(nmLink)) {
+          fs.symlinkSync(sharedNodeModules, nmLink, "dir");
+        }
+      } catch {}
+    }
+  }
+  return sharedVenv;
+}
+
+function buildAgentExecEnv(cwd = "", worktreePath = "") {
+  const sharedVenv = ensureSharedVenvSymlinks(worktreePath, cwd);
+  const venvBin = sharedVenv
+    ? (process.platform === "win32" ? path.join(sharedVenv, "Scripts") : path.join(sharedVenv, "bin"))
+    : "";
+  const currentPath = process.env.PATH || "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin";
+  const pathEntries = [
+    venvBin,
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    ...currentPath.split(path.delimiter)
+  ].filter(Boolean);
+  const pyPaths = [cwd, worktreePath, ROOT_DIR, process.env.PYTHONPATH || ""].filter(Boolean);
+
+  return {
+    ...process.env,
+    PATH: [...new Set(pathEntries)].join(path.delimiter),
+    ...(sharedVenv ? { VIRTUAL_ENV: sharedVenv } : {}),
+    PIP_BREAK_SYSTEM_PACKAGES: "1",
+    PYTHONUNBUFFERED: "1",
+    PYTHONPATH: [...new Set(pyPaths)].join(path.delimiter)
+  };
+}
+
+function spawnCommandAsync(command, { cwd, worktreePath = "", timeout = 15000, trackKey = null, onProgress = null } = {}) {
   return new Promise((resolve) => {
+    const execEnv = buildAgentExecEnv(cwd, worktreePath);
     const proc = spawn("sh", ["-c", command], {
       cwd,
+      env: execEnv,
       stdio: ["ignore", "pipe", "pipe"]
     });
     if (trackKey) {
@@ -132,6 +238,15 @@ function spawnCommandAsync(command, { cwd, timeout = 15000, trackKey = null } = 
     let stdout = "";
     let stderr = "";
     let finished = false;
+    let lastEmitTs = 0;
+    const emitProgressIfNeeded = (force = false) => {
+      if (typeof onProgress !== "function") return;
+      const now = Date.now();
+      if (!force && now - lastEmitTs < 110) return;
+      lastEmitTs = now;
+      const combined = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
+      try { onProgress(combined); } catch {}
+    };
     const timer = setTimeout(() => {
       if (!finished) {
         finished = true;
@@ -141,10 +256,12 @@ function spawnCommandAsync(command, { cwd, timeout = 15000, trackKey = null } = 
       }
     }, timeout);
     proc.stdout.on("data", chunk => {
-      if (stdout.length < 64000) stdout += chunk.toString("utf8");
+      if (stdout.length < 96000) stdout += chunk.toString("utf8");
+      emitProgressIfNeeded(false);
     });
     proc.stderr.on("data", chunk => {
-      if (stderr.length < 64000) stderr += chunk.toString("utf8");
+      if (stderr.length < 96000) stderr += chunk.toString("utf8");
+      emitProgressIfNeeded(false);
     });
     proc.on("error", err => {
       if (finished) return;
@@ -158,7 +275,8 @@ function spawnCommandAsync(command, { cwd, timeout = 15000, trackKey = null } = 
       finished = true;
       clearTimeout(timer);
       if (trackKey) activeRunProcs.delete(trackKey);
-      const out = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n").slice(0, 4000);
+      emitProgressIfNeeded(true);
+      const out = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n").slice(0, 6000);
       const exitCode = signal === "SIGTERM" || signal === "SIGKILL" ? 130 : (code ?? 0);
       resolve({ exitCode, output: out, killedBySignal: signal });
     });
@@ -380,6 +498,7 @@ function ensureAgentWorktree(botId, botName, customWorkspacePath = "") {
     ? customWorkspacePath
     : path.join(worktreePath, "agent_workspace", nameSlug);
   fs.mkdirSync(codeDir, { recursive: true });
+  ensureSharedVenvSymlinks(worktreePath, codeDir);
 
   // Remove any legacy default template files so workspaces start clean
   try {
@@ -663,10 +782,69 @@ function callStdioMcpServer({ commandLine, cwd, method = "tools/list", params = 
   });
 }
 
+function loadLocalKeysVault() {
+  try {
+    if (fs.existsSync(KEYS_VAULT_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(KEYS_VAULT_FILE, "utf8"));
+      if (parsed && typeof parsed === "object") return parsed;
+    }
+  } catch (e) {
+    console.warn("Could not read local keys vault:", e.message);
+  }
+  return { providers: {}, bots: {} };
+}
+
+function saveLocalKeysVault(vaultUpdate = {}) {
+  try {
+    const current = loadLocalKeysVault();
+    const merged = {
+      providers: { ...(current.providers || {}), ...(vaultUpdate.providers || {}) },
+      bots: { ...(current.bots || {}), ...(vaultUpdate.bots || {}) },
+      updatedAt: new Date().toISOString()
+    };
+    fs.writeFileSync(KEYS_VAULT_FILE, JSON.stringify(merged, null, 2), { encoding: "utf8", mode: 0o600 });
+    try { fs.chmodSync(KEYS_VAULT_FILE, 0o600); } catch {}
+    return merged;
+  } catch (e) {
+    console.warn("Could not write local keys vault:", e.message);
+    return loadLocalKeysVault();
+  }
+}
+
+function resolveVaultApiKey(provider = "", explicitKey = "", botId = "") {
+  const trimmed = String(explicitKey || "").trim();
+  if (trimmed) return trimmed;
+  const vault = loadLocalKeysVault();
+  if (botId && vault.bots && vault.bots[botId]) {
+    return String(vault.bots[botId]).trim();
+  }
+  const prov = String(provider || "").toLowerCase();
+  if (prov && vault.providers && vault.providers[prov]) {
+    return String(vault.providers[prov]).trim();
+  }
+  if (prov === "openrouter" && process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
+  if ((prov === "openai") && process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
+  if ((prov === "anthropic" || prov === "claude") && process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+  if (prov === "gemini" && (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)) {
+    return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  }
+  return "";
+}
+
 function loadWorkspaceDiskState() {
   try {
     if (fs.existsSync(WORKSPACE_FILE)) {
-      return JSON.parse(fs.readFileSync(WORKSPACE_FILE, "utf8"));
+      const state = JSON.parse(fs.readFileSync(WORKSPACE_FILE, "utf8"));
+      const vault = loadLocalKeysVault();
+      if (state && Array.isArray(state.bots)) {
+        state.bots.forEach(b => {
+          if (!b.apiKey) {
+            const restoredKey = (vault.bots && vault.bots[b.id]) || (vault.providers && vault.providers[b.provider]) || "";
+            if (restoredKey) b.apiKey = restoredKey;
+          }
+        });
+      }
+      return state;
     }
   } catch (e) {
     console.warn("Could not read workspace file:", e.message);
@@ -677,13 +855,25 @@ function loadWorkspaceDiskState() {
 function saveWorkspaceDiskState(state) {
   try {
     const sanitized = JSON.parse(JSON.stringify(state));
+    const botKeys = {};
+    const providerKeys = {};
     if (Array.isArray(sanitized.bots)) {
       sanitized.bots.forEach(b => {
+        if (b.apiKey && String(b.apiKey).trim()) {
+          const cleanKey = String(b.apiKey).trim();
+          botKeys[b.id] = cleanKey;
+          if (b.provider && b.provider !== "local") {
+            providerKeys[String(b.provider).toLowerCase()] = cleanKey;
+          }
+        }
         delete b.apiKey;
         if (Array.isArray(b.memories)) {
           saveAgentMemory(b.id, b.memories);
         }
       });
+    }
+    if (Object.keys(botKeys).length > 0 || Object.keys(providerKeys).length > 0) {
+      saveLocalKeysVault({ providers: providerKeys, bots: botKeys });
     }
     fs.writeFileSync(WORKSPACE_FILE, JSON.stringify(sanitized, null, 2), "utf8");
   } catch (e) {
@@ -872,6 +1062,25 @@ const server = http.createServer(async (req, res) => {
         broadcastEvent("workspace_synced", { updatedAt: Date.now() });
       }
       return sendJson(res, 200, { ok: true });
+    } catch (e) {
+      return sendJson(res, 400, { error: e.message });
+    }
+  }
+
+  // 2.1 Local Disk-Backed API Key Vault (GET & POST /api/settings/keys)
+  if (req.method === "GET" && req.url === "/api/settings/keys") {
+    const vault = loadLocalKeysVault();
+    return sendJson(res, 200, { ok: true, providers: vault.providers || {}, bots: vault.bots || {}, updatedAt: vault.updatedAt || null });
+  }
+
+  if (req.method === "POST" && req.url === "/api/settings/keys") {
+    try {
+      const bodyObj = await readJsonBody(req);
+      const saved = saveLocalKeysVault({
+        providers: bodyObj.providers || {},
+        bots: bodyObj.bots || {}
+      });
+      return sendJson(res, 200, { ok: true, providers: saved.providers || {}, bots: saved.bots || {}, updatedAt: saved.updatedAt });
     } catch (e) {
       return sendJson(res, 400, { error: e.message });
     }
@@ -1304,13 +1513,8 @@ const server = http.createServer(async (req, res) => {
           if (ext === ".py") {
             const absTarget = path.join(wt.codeDir, cleanFile);
             const src = fs.existsSync(absTarget) ? fs.readFileSync(absTarget, "utf8") : "";
-            const venvCandidates = [
-              path.join(wt.codeDir, ".venv", "bin", "python3"),
-              path.join(wt.worktreePath, ".venv", "bin", "python3"),
-              path.join(ROOT_DIR, ".venv", "bin", "python3"),
-              path.join(WORKTREES_ROOT, "bot_r1", ".venv", "bin", "python3")
-            ];
-            const pyBin = venvCandidates.find(p => fs.existsSync(p)) || "python3";
+            const sharedVenv = resolveSharedVenvDir(wt.codeDir, wt.worktreePath);
+            const pyBin = sharedVenv ? path.join(sharedVenv, "bin", "python3") : "python3";
             // Avoid hanging 15s if a script starts a blocking server loop (uvicorn.run / app.run / serve_forever)
             if (/\b(?:uvicorn\.run|app\.run|serve_forever)\s*\(/.test(src)) {
               runCmd = `"${pyBin}" -m py_compile "${cleanFile}" && echo "[Verified server entrypoint ${cleanFile} syntax & imports ready]"`;
@@ -1474,7 +1678,9 @@ const server = http.createServer(async (req, res) => {
         toolArgs: requestedMcpToolArgs,
         filePath,
         content,
-        mcpCommand
+        mcpCommand,
+        streamId = "",
+        threadId = ""
       } = await readJsonBody(req);
       const toolName = tool || action;
       const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
@@ -1654,34 +1860,37 @@ const server = http.createServer(async (req, res) => {
           return sendJson(res, 400, { ok: false, error: "Missing shell command" });
         }
         const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
-        const result = await new Promise((resolve) => {
-          exec(
-            cmdStr,
-            {
-              cwd: execCwd,
-              timeout: 18000,
-              maxBuffer: 1024 * 512,
-              env: {
-                ...process.env,
-                PYTHONPATH: [wt.codeDir, wt.worktreePath, process.env.PYTHONPATH || ""].filter(Boolean).join(path.delimiter)
-              },
-              ...(process.platform === "win32" ? { shell: "powershell.exe" } : {})
-            },
-            (error, stdout, stderr) => {
-              const combined = ((stdout || "") + (stderr ? `\n${stderr}` : "")).trim().slice(0, 4000);
-              const exitCode = error ? (error.killed ? 124 : (typeof error.code === "number" ? error.code : 1)) : 0;
-              resolve({
-                ok: exitCode === 0,
-                exitCode,
+        const execRes = await spawnCommandAsync(cmdStr, {
+          cwd: execCwd,
+          worktreePath: wt.worktreePath,
+          timeout: 90000,
+          trackKey: botId || "bot_r1",
+          onProgress: (chunk, tailOutput) => {
+            if (streamId) {
+              broadcastEvent("tool_stream", {
+                streamId,
+                threadId,
+                botId: botId || "bot_r1",
+                botName: botName || "R1",
+                command: cmdStr,
                 cwd: execCwd,
                 branch: wt.branch,
-                output: combined || `(exit ${exitCode})`
+                chunk,
+                output: tailOutput
               });
             }
-          );
+          }
         });
-        result.promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
-        return sendJson(res, 200, result);
+        ensureSharedVenvSymlinks(wt.worktreePath, wt.codeDir);
+        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+        return sendJson(res, 200, {
+          ok: execRes.exitCode === 0,
+          exitCode: execRes.exitCode,
+          cwd: execCwd,
+          branch: wt.branch,
+          promotedToRoot,
+          output: (execRes.output || `(exit ${execRes.exitCode})`).slice(-6000)
+        });
       }
 
       return sendJson(res, 400, { error: `Unknown agent tool: ${toolName}` });
@@ -2291,12 +2500,20 @@ const server = http.createServer(async (req, res) => {
       const {
         provider = "local",
         baseUrl = "http://192.168.68.102:1234/v1",
-        apiKey = "",
+        apiKey: rawApiKey = "",
+        botId = "",
         model = "",
         messages = [],
         temperature = 0.7,
         max_tokens = 3500
       } = await readJsonBody(req);
+      const apiKey = resolveVaultApiKey(provider, rawApiKey, botId);
+      if (rawApiKey && String(rawApiKey).trim() && provider !== "local") {
+        saveLocalKeysVault({
+          providers: { [String(provider).toLowerCase()]: String(rawApiKey).trim() },
+          ...(botId ? { bots: { [botId]: String(rawApiKey).trim() } } : {})
+        });
+      }
 
       const effectiveBase = (provider === "openrouter" && (!baseUrl || baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost") || baseUrl.includes("192.168.")))
         ? "https://openrouter.ai/api/v1"
@@ -2401,12 +2618,20 @@ const server = http.createServer(async (req, res) => {
       const {
         provider = "local",
         baseUrl = "http://192.168.68.102:1234/v1",
-        apiKey = "",
+        apiKey: rawApiKey = "",
+        botId = "",
         model = "",
         messages = [],
         temperature = 0.7,
         max_tokens = 3000
       } = await readJsonBody(req);
+      const apiKey = resolveVaultApiKey(provider, rawApiKey, botId);
+      if (rawApiKey && String(rawApiKey).trim() && provider !== "local") {
+        saveLocalKeysVault({
+          providers: { [String(provider).toLowerCase()]: String(rawApiKey).trim() },
+          ...(botId ? { bots: { [botId]: String(rawApiKey).trim() } } : {})
+        });
+      }
 
       const effectiveBase = (provider === "openrouter" && (!baseUrl || baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost") || baseUrl.includes("192.168.")))
         ? "https://openrouter.ai/api/v1"
@@ -2549,7 +2774,14 @@ const server = http.createServer(async (req, res) => {
   // 7. Universal Model Discovery
   if (req.method === "POST" && req.url === "/api/llm/models") {
     try {
-      const { provider = "local", baseUrl = "http://192.168.68.102:1234/v1", apiKey = "" } = await readJsonBody(req);
+      const { provider = "local", baseUrl = "http://192.168.68.102:1234/v1", apiKey: rawApiKey = "", botId = "" } = await readJsonBody(req);
+      const apiKey = resolveVaultApiKey(provider, rawApiKey, botId);
+      if (rawApiKey && String(rawApiKey).trim() && provider !== "local") {
+        saveLocalKeysVault({
+          providers: { [String(provider).toLowerCase()]: String(rawApiKey).trim() },
+          ...(botId ? { bots: { [botId]: String(rawApiKey).trim() } } : {})
+        });
+      }
       const effectiveBase = (provider === "openrouter" && (!baseUrl || baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost") || baseUrl.includes("192.168.")))
         ? "https://openrouter.ai/api/v1"
         : baseUrl;

@@ -1,6 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { exec, execFile, execFileSync, execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -476,7 +477,8 @@ const LEGACY_TEMPLATE_FILES = new Set([
 
 function ensureAgentWorktree(botId, botName, customWorkspacePath = "") {
   const botSlug = sanitizeSlug(botId, "bot");
-  const nameSlug = sanitizeSlug(botName || botId, "vanara");
+  const effectiveName = (botName && (botName !== "R1" || botId === "bot_r1")) ? botName : (botId ? botId.replace(/^bot_/, "") : "r1");
+  const nameSlug = sanitizeSlug(effectiveName, "vanara");
   const branchName = `vanara/${nameSlug}`;
   const worktreePath = path.join(WORKTREES_DIR, botSlug);
 
@@ -489,8 +491,11 @@ function ensureAgentWorktree(botId, botName, customWorkspacePath = "") {
         timeout: 10000
       });
     }
-  } catch {
-    fs.mkdirSync(worktreePath, { recursive: true });
+  } catch (err) {
+    if (fs.existsSync(worktreePath) && !fs.existsSync(path.join(worktreePath, ".git"))) {
+      try { fs.rmSync(worktreePath, { recursive: true, force: true }); } catch {}
+    }
+    throw err;
   }
 
   // Dedicated Code Workspace folder for this agent inside its isolated worktree (or custom path)
@@ -1091,18 +1096,195 @@ const server = http.createServer(async (req, res) => {
     try {
       const {
         botId = "bot_r1",
-        botName = "R1",
+        botName = "",
         customWorkspacePath = "",
         action = "list",
+        file = "",
         files = [],
         patches = [],
         fileName = "",
+        filePath = "",
         command = "",
         title = "",
         body = ""
       } = await readJsonBody(req);
 
       const wt = ensureAgentWorktree(botId, botName, customWorkspacePath);
+      const targetFile = file || fileName || filePath || "";
+
+      if (action === "diff") {
+        const fileFilter = String(targetFile || "").trim();
+        let diffStr = "";
+        const diffFiles = [];
+        try {
+          const diffArgs = ["diff", "HEAD"];
+          if (fileFilter) {
+            diffArgs.push("--", fileFilter);
+          }
+          const gitDiffOut = execFileSync("git", diffArgs, {
+            cwd: wt.worktreePath,
+            stdio: "pipe",
+            timeout: 5000
+          }).toString("utf8");
+          if (gitDiffOut) {
+            diffStr += gitDiffOut;
+          }
+        } catch {}
+
+        try {
+          const statusOut = execFileSync("git", ["status", "--porcelain"], {
+            cwd: wt.worktreePath,
+            stdio: "pipe",
+            timeout: 5000
+          }).toString("utf8");
+
+          const statusLines = statusOut.split(/\r?\n/).filter(Boolean);
+          for (const line of statusLines) {
+            const statusCode = line.slice(0, 2).trim();
+            const relFile = line.slice(3).trim();
+            if (fileFilter && relFile !== fileFilter) continue;
+
+            let fileStatus = "modified";
+            if (statusCode === "??" || statusCode === "?") fileStatus = "untracked";
+            else if (statusCode === "A") fileStatus = "added";
+            else if (statusCode === "D") fileStatus = "deleted";
+            else if (statusCode === "M") fileStatus = "modified";
+            diffFiles.push({ file: relFile, status: fileStatus });
+
+            if (statusCode === "??" || statusCode === "?") {
+              const fullUntracked = path.resolve(wt.worktreePath, relFile);
+              if (isPathInside(fullUntracked, wt.worktreePath) && fs.existsSync(fullUntracked) && fs.statSync(fullUntracked).isFile()) {
+                const untrackedContent = fs.readFileSync(fullUntracked, "utf8");
+                const uLines = untrackedContent.split(/\r?\n/);
+                const uDiff = [
+                  `diff --git a/${relFile} b/${relFile}`,
+                  `new file mode 100644`,
+                  `--- /dev/null`,
+                  `+++ b/${relFile}`,
+                  `@@ -0,0 +1,${uLines.length} @@`,
+                  ...uLines.map(l => `+${l}`)
+                ].join("\n") + "\n";
+                diffStr += (diffStr ? "\n" : "") + uDiff;
+              }
+            }
+          }
+        } catch {}
+
+        return sendJson(res, 200, {
+          ok: true,
+          action: "diff",
+          botId,
+          botName: wt.botName,
+          branch: wt.branch,
+          diff: diffStr,
+          files: diffFiles
+        });
+      }
+
+      if (action === "revert_file") {
+        const cleanFile = String(targetFile || "").trim();
+        if (!cleanFile) {
+          return sendJson(res, 400, { ok: false, error: "Missing file parameter for revert_file" });
+        }
+        if (cleanFile.includes("..")) {
+          return sendJson(res, 400, { ok: false, error: "Path traversal outside workspace blocked" });
+        }
+        const relPath = cleanFile.replace(/^\/+/, "");
+        const targetInWt = path.resolve(wt.worktreePath, relPath);
+        if (!isPathInside(targetInWt, wt.worktreePath)) {
+          return sendJson(res, 400, { ok: false, error: "Path traversal outside workspace blocked" });
+        }
+
+        let isTracked = false;
+        try {
+          execFileSync("git", ["ls-files", "--error-unmatch", relPath], {
+            cwd: wt.worktreePath,
+            stdio: "pipe",
+            timeout: 5000
+          });
+          isTracked = true;
+        } catch {}
+
+        if (isTracked) {
+          try {
+            execFileSync("git", ["checkout", "HEAD", "--", relPath], {
+              cwd: wt.worktreePath,
+              stdio: "pipe",
+              timeout: 5000
+            });
+            const targetInCode = path.resolve(wt.codeDir, relPath);
+            if (isPathInside(targetInCode, wt.codeDir) && fs.existsSync(targetInWt)) {
+              try { fs.copyFileSync(targetInWt, targetInCode); } catch {}
+            }
+          } catch (checkoutErr) {
+            return sendJson(res, 500, { ok: false, error: `Failed to checkout tracked file: ${checkoutErr.message}` });
+          }
+        } else {
+          if (fs.existsSync(targetInWt) && fs.statSync(targetInWt).isFile()) {
+            try { fs.unlinkSync(targetInWt); } catch {}
+          }
+          const targetInCode = path.resolve(wt.codeDir, relPath);
+          if (isPathInside(targetInCode, wt.codeDir) && fs.existsSync(targetInCode) && fs.statSync(targetInCode).isFile()) {
+            try { fs.unlinkSync(targetInCode); } catch {}
+          }
+          const targetInRoot = path.resolve(ROOT_DIR, relPath);
+          if (isPathInside(targetInRoot, ROOT_DIR) && fs.existsSync(targetInRoot) && fs.statSync(targetInRoot).isFile()) {
+            try { fs.unlinkSync(targetInRoot); } catch {}
+          }
+          if (fs.existsSync(WORKTREES_DIR)) {
+            try {
+              for (const ent of fs.readdirSync(WORKTREES_DIR, { withFileTypes: true })) {
+                if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
+                const sibWtPath = path.join(WORKTREES_DIR, ent.name);
+                const sibTargetInWt = path.resolve(sibWtPath, relPath);
+                if (isPathInside(sibTargetInWt, sibWtPath) && fs.existsSync(sibTargetInWt) && fs.statSync(sibTargetInWt).isFile()) {
+                  try { fs.unlinkSync(sibTargetInWt); } catch {}
+                }
+                const sibAwDir = path.join(sibWtPath, "agent_workspace");
+                if (fs.existsSync(sibAwDir)) {
+                  try {
+                    for (const sub of fs.readdirSync(sibAwDir, { withFileTypes: true })) {
+                      if (sub.isDirectory() && !sub.name.startsWith(".")) {
+                        const subCodeDir = path.join(sibAwDir, sub.name);
+                        const subTarget = path.resolve(subCodeDir, relPath);
+                        if (isPathInside(subTarget, subCodeDir) && fs.existsSync(subTarget) && fs.statSync(subTarget).isFile()) {
+                          try { fs.unlinkSync(subTarget); } catch {}
+                        }
+                      }
+                    }
+                  } catch {}
+                  const sibDirectAw = path.resolve(sibAwDir, relPath);
+                  if (isPathInside(sibDirectAw, sibAwDir) && fs.existsSync(sibDirectAw) && fs.statSync(sibDirectAw).isFile()) {
+                    try { fs.unlinkSync(sibDirectAw); } catch {}
+                  }
+                }
+              }
+            } catch {}
+          }
+          const rootAwDir = path.join(ROOT_DIR, "agent_workspace");
+          if (fs.existsSync(rootAwDir)) {
+            try {
+              for (const sub of fs.readdirSync(rootAwDir, { withFileTypes: true })) {
+                if (sub.isDirectory() && !sub.name.startsWith(".")) {
+                  const subCodeDir = path.join(rootAwDir, sub.name);
+                  const subTarget = path.resolve(subCodeDir, relPath);
+                  if (isPathInside(subTarget, subCodeDir) && fs.existsSync(subTarget) && fs.statSync(subTarget).isFile()) {
+                    try { fs.unlinkSync(subTarget); } catch {}
+                  }
+                }
+              }
+            } catch {}
+          }
+        }
+
+        return sendJson(res, 200, {
+          ok: true,
+          action: "revert_file",
+          botId,
+          file: relPath,
+          message: `Successfully reverted ${relPath}`
+        });
+      }
 
       if (action === "apply_patch" && Array.isArray(patches)) {
         const appliedPatches = [];
@@ -1680,7 +1862,11 @@ const server = http.createServer(async (req, res) => {
         content,
         mcpCommand,
         streamId = "",
-        threadId = ""
+        threadId = "",
+        isRegex,
+        path: pathParam,
+        dir,
+        directory
       } = await readJsonBody(req);
       const toolName = tool || action;
       const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
@@ -1797,7 +1983,6 @@ const server = http.createServer(async (req, res) => {
           }
         }
         const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-        await safeGitCommitAsync(wt.worktreePath, `feat(${slug}): write ${cleanRel} in agent workspace`, 5000);
         const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
         return sendJson(res, 200, {
           ok: true,
@@ -1896,9 +2081,331 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
+      if (toolName === "grep_search") {
+        const pattern = content !== undefined ? content : (args.pattern ?? args.query ?? args.content);
+        if (pattern === undefined || pattern === null || String(pattern).length === 0) {
+          return sendJson(res, 400, { ok: false, error: "Search pattern cannot be empty" });
+        }
+        const patternStr = String(pattern);
+        const isRegexFlag = Boolean(isRegex || args.isRegex);
+        let regexObj = null;
+        if (isRegexFlag) {
+          try {
+            regexObj = new RegExp(patternStr);
+          } catch (regErr) {
+            return sendJson(res, 400, { ok: false, error: `Invalid regular expression: ${regErr.message}` });
+          }
+        }
+
+        const rawSearchPath = String(pathParam || dir || directory || args.path || args.dir || filePath || "").trim();
+        let targetSearchDir = wt.worktreePath;
+        if (rawSearchPath) {
+          if (rawSearchPath.includes("..")) {
+            const probe = path.resolve(wt.worktreePath, rawSearchPath);
+            if (!isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
+              return sendJson(res, 400, { ok: false, error: `Path traversal outside workspace blocked: ${rawSearchPath}` });
+            }
+          }
+          const resolvedSub = path.resolve(wt.worktreePath, rawSearchPath);
+          if (!isPathInside(resolvedSub, wt.worktreePath) && !isPathInside(resolvedSub, ROOT_DIR)) {
+            return sendJson(res, 400, { ok: false, error: `Path outside workspace blocked: ${rawSearchPath}` });
+          }
+          if (fs.existsSync(resolvedSub)) {
+            targetSearchDir = resolvedSub;
+          }
+        }
+
+        const matches = [];
+        let usedGitGrep = false;
+        try {
+          const gitGrepArgs = ["grep", "-n", "-I", "--untracked"];
+          if (isRegexFlag) gitGrepArgs.push("-E");
+          else gitGrepArgs.push("-F");
+          gitGrepArgs.push(patternStr);
+
+          const gitGrepOut = execFileSync("git", gitGrepArgs, {
+            cwd: targetSearchDir,
+            stdio: "pipe",
+            timeout: 8000
+          }).toString("utf8");
+
+          const lines = gitGrepOut.split(/\r?\n/).filter(Boolean);
+          for (const l of lines) {
+            const firstColon = l.indexOf(":");
+            if (firstColon === -1) continue;
+            const secondColon = l.indexOf(":", firstColon + 1);
+            if (secondColon === -1) continue;
+            const matchFile = l.slice(0, firstColon);
+            const lineNum = parseInt(l.slice(firstColon + 1, secondColon), 10);
+            const lineText = l.slice(secondColon + 1);
+            matches.push({ file: matchFile, line: lineNum, text: lineText });
+          }
+          usedGitGrep = true;
+        } catch (gitErr) {
+          if (gitErr.status === 1) {
+            usedGitGrep = true; // Git exit 1 means no matches
+          }
+        }
+
+        if (!usedGitGrep) {
+          const ignoreNames = new Set(["node_modules", ".git", ".venv", "target", "dist", ".cache"]);
+          function walkDir(d, relPrefix = "") {
+            if (matches.length >= 250) return;
+            let entries = [];
+            try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+            for (const ent of entries) {
+              if (ignoreNames.has(ent.name) || ent.name.startsWith(".")) continue;
+              const fullP = path.join(d, ent.name);
+              const relP = relPrefix ? `${relPrefix}/${ent.name}` : ent.name;
+              if (ent.isDirectory()) {
+                walkDir(fullP, relP);
+              } else if (ent.isFile()) {
+                try {
+                  const stat = fs.statSync(fullP);
+                  if (stat.size > 1000000) continue;
+                  const fileStr = fs.readFileSync(fullP, "utf8");
+                  const fileLines = fileStr.split(/\r?\n/);
+                  for (let i = 0; i < fileLines.length; i++) {
+                    const lineContent = fileLines[i];
+                    let hit = false;
+                    if (isRegexFlag && regexObj) {
+                      hit = regexObj.test(lineContent);
+                    } else {
+                      hit = lineContent.includes(patternStr);
+                    }
+                    if (hit) {
+                      matches.push({ file: relP, line: i + 1, text: lineContent });
+                      if (matches.length >= 250) break;
+                    }
+                  }
+                } catch {}
+              }
+            }
+          }
+          walkDir(targetSearchDir);
+        }
+
+        const outputLines = matches.slice(0, 100).map(m => `${m.file}:${m.line}: ${m.text}`);
+        const formattedOut = outputLines.length > 0 ? outputLines.join("\n") : "(no matches found)";
+
+        return sendJson(res, 200, {
+          ok: true,
+          tool: "grep_search",
+          matches,
+          output: formattedOut
+        });
+      }
+
+      if (toolName === "find_files") {
+        const query = content !== undefined ? String(content) : (args.query || args.content || args.pattern || "");
+        if (query.includes("..")) {
+          return sendJson(res, 400, { ok: false, error: "Path traversal outside workspace blocked" });
+        }
+
+        let allFiles = [];
+        try {
+          const lsOut = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
+            cwd: wt.worktreePath,
+            stdio: "pipe",
+            timeout: 5000
+          }).toString("utf8");
+          allFiles = lsOut.split(/\r?\n/).filter(Boolean);
+        } catch {}
+
+        if (allFiles.length === 0) {
+          const ignoreNames = new Set(["node_modules", ".git", ".venv", "target", "dist", ".cache"]);
+          function walk(d, prefix = "") {
+            let entries = [];
+            try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+            for (const ent of entries) {
+              if (ignoreNames.has(ent.name) || ent.name.startsWith(".")) continue;
+              const fullP = path.join(d, ent.name);
+              const relP = prefix ? `${prefix}/${ent.name}` : ent.name;
+              if (ent.isDirectory()) walk(fullP, relP);
+              else if (ent.isFile()) allFiles.push(relP);
+            }
+          }
+          walk(wt.worktreePath);
+        }
+
+        if (fs.existsSync(wt.codeDir)) {
+          for (const cf of listAgentCodeFiles(wt.codeDir)) {
+            const relInWt = path.relative(wt.worktreePath, path.join(wt.codeDir, cf.name));
+            if (!allFiles.includes(cf.name) && !allFiles.includes(relInWt)) {
+              allFiles.push(cf.name);
+            }
+          }
+        }
+
+        let filtered = [];
+        if (!query.trim()) {
+          filtered = allFiles;
+        } else {
+          const cleanQ = query.trim();
+          const hasWildcard = cleanQ.includes("*") || cleanQ.includes("?");
+          if (hasWildcard) {
+            try {
+              const globRx = new RegExp("^" + cleanQ.replace(/([.+^$[\]\\(){}|])/g, "\\$1").replace(/\*/g, ".*").replace(/\?/g, ".") + "$", "i");
+              filtered = allFiles.filter(f => globRx.test(f) || globRx.test(path.basename(f)));
+            } catch {
+              filtered = allFiles.filter(f => f.toLowerCase().includes(cleanQ.toLowerCase()));
+            }
+          } else {
+            const lowerQ = cleanQ.toLowerCase();
+            filtered = allFiles.filter(f => f.toLowerCase().includes(lowerQ));
+          }
+        }
+
+        return sendJson(res, 200, {
+          ok: true,
+          tool: "find_files",
+          files: filtered,
+          output: filtered.length > 0 ? filtered.join("\n") : "(no files found)"
+        });
+      }
+
       return sendJson(res, 400, { error: `Unknown agent tool: ${toolName}` });
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // 2D-2. Host MCP Ecosystem Auto-Discovery (/api/mcp/discover)
+  if ((req.method === "GET" || req.method === "POST") && req.url === "/api/mcp/discover") {
+    try {
+      const discovered = [];
+      const home = os.homedir();
+
+      function sanitizeServer(srv) {
+        const clean = {
+          name: String(srv.name || "mcp-server"),
+          source: String(srv.source || "Local Config"),
+          command: String(srv.command || ""),
+          args: Array.isArray(srv.args) ? srv.args.map(a => {
+            let s = String(a);
+            s = s.replace(/sk-[a-zA-Z0-9_-]{10,}/gi, "***REDACTED***");
+            s = s.replace(/ghp_[a-zA-Z0-9]{10,}/gi, "***REDACTED***");
+            s = s.replace(/AIzaSy[a-zA-Z0-9_-]{10,}/gi, "***REDACTED***");
+            return s;
+          }) : [],
+          env: {}
+        };
+
+        if (srv.env && typeof srv.env === "object") {
+          for (const [key, val] of Object.entries(srv.env)) {
+            const lowerKey = key.toLowerCase();
+            const valStr = String(val ?? "");
+            if (
+              lowerKey.includes("key") ||
+              lowerKey.includes("token") ||
+              lowerKey.includes("secret") ||
+              lowerKey.includes("password") ||
+              lowerKey.includes("auth") ||
+              /sk-[a-zA-Z0-9_-]+/i.test(valStr) ||
+              /ghp_[a-zA-Z0-9]+/i.test(valStr) ||
+              /AIzaSy[a-zA-Z0-9_-]+/i.test(valStr)
+            ) {
+              clean.env[key] = "***REDACTED***";
+            } else {
+              clean.env[key] = valStr;
+            }
+          }
+        }
+        return clean;
+      }
+
+      // 1. Cursor MCP: ~/.cursor/mcp.json
+      const cursorPath = path.join(home, ".cursor", "mcp.json");
+      if (fs.existsSync(cursorPath)) {
+        try {
+          const cfg = JSON.parse(fs.readFileSync(cursorPath, "utf8"));
+          const servers = cfg.mcpServers || cfg.servers || {};
+          for (const [name, def] of Object.entries(servers)) {
+            if (def && typeof def === "object") {
+              discovered.push(sanitizeServer({
+                name,
+                source: "Cursor",
+                command: def.command || "",
+                args: def.args || [],
+                env: def.env || {}
+              }));
+            }
+          }
+        } catch {}
+      }
+
+      // 2. Claude Desktop & Claude Code
+      const claudeDesktopPaths = [
+        path.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json"),
+        path.join(home, ".config", "Claude", "claude_desktop_config.json"),
+        path.join(home, ".claude.json")
+      ];
+      for (const cp of claudeDesktopPaths) {
+        if (fs.existsSync(cp)) {
+          try {
+            const cfg = JSON.parse(fs.readFileSync(cp, "utf8"));
+            const servers = cfg.mcpServers || cfg.servers || {};
+            for (const [name, def] of Object.entries(servers)) {
+              if (def && typeof def === "object") {
+                if (!discovered.some(d => d.name === name)) {
+                  discovered.push(sanitizeServer({
+                    name,
+                    source: "Claude",
+                    command: def.command || "",
+                    args: def.args || [],
+                    env: def.env || {}
+                  }));
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+
+      // 3. Google Antigravity: ~/.gemini/antigravity/mcp/
+      const antigravityDir = path.join(home, ".gemini", "antigravity", "mcp");
+      if (fs.existsSync(antigravityDir)) {
+        try {
+          const entries = fs.readdirSync(antigravityDir, { withFileTypes: true });
+          for (const ent of entries) {
+            if (ent.isDirectory() && !ent.name.startsWith(".")) {
+              if (!discovered.some(d => d.name === ent.name)) {
+                discovered.push(sanitizeServer({
+                  name: ent.name,
+                  source: "Google Antigravity",
+                  command: "npx",
+                  args: ["-y", `@modelcontextprotocol/server-${ent.name}`],
+                  env: {}
+                }));
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // Fallback default options if none found
+      if (discovered.length === 0) {
+        discovered.push(
+          sanitizeServer({
+            name: "filesystem",
+            source: "Default MCP",
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-filesystem", ROOT_DIR],
+            env: {}
+          }),
+          sanitizeServer({
+            name: "fetch",
+            source: "Default MCP",
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-fetch"],
+            env: {}
+          })
+        );
+      }
+
+      return sendJson(res, 200, { ok: true, servers: discovered });
+    } catch (e) {
+      return sendJson(res, 500, { ok: false, error: e.message });
     }
   }
 

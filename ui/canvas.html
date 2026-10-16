@@ -1486,6 +1486,15 @@
         </div>
       </header>
 
+      <!-- Live Multi-Agent Status Strip (R5) -->
+      <div id="multiAgentStatusStrip" class="multiAgentStatusStrip hidden" style="display:none; padding:7px 16px; background:rgba(20,20,30,0.96); border-bottom:1px solid rgba(255,255,255,0.08); font-size:12px; color:#e2e8f0; align-items:center; justify-content:space-between; gap:10px; z-index:10;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="width:8px; height:8px; border-radius:50%; background:#10b981; display:inline-block;"></span>
+          <span id="multiAgentStatusText" style="font-weight:600;">Multi-Agent Squad Status</span>
+        </div>
+        <div id="multiAgentActiveBadges" style="display:flex; align-items:center; gap:6px;"></div>
+      </div>
+
       <!-- Messages Scroll Container -->
       <div id="messagesContainer" class="messages-scroll">
         <div id="messagesInner" class="messages-inner"></div>
@@ -1663,6 +1672,7 @@
             <button onclick="setDrawerMode('source')" id="btnModeSource" class="seg-tab-btn active">Code</button>
             <button onclick="setDrawerMode('preview')" id="btnModePreview" class="seg-tab-btn">Preview</button>
             <button onclick="setDrawerMode('vnc')" id="btnModeVnc" class="seg-tab-btn">Web</button>
+            <button onclick="setDrawerMode('diff')" id="btnModeDiff" class="seg-tab-btn">Diff</button>
           </div>
           <div style="display:flex; align-items:center; gap:5px;">
             <button onclick="createNewFileInAgentWorkspace()" class="btn-secondary" style="height:26px; padding:0 8px; font-size:11px;" title="Create new file">+ File</button>
@@ -1700,6 +1710,26 @@
             <button onclick="verifyActiveAgentWebUrl()" class="btn-secondary" style="height:25px; padding:0 8px; font-size:11px;">✓ Verify</button>
           </div>
           <iframe id="deliverableVncFrame" style="flex:1; width:100%; border:none; background:#ffffff;"></iframe>
+        </div>
+
+        <!-- Diff Viewer with Accept & Revert Controls (R3) -->
+        <div id="deliverableDiffWrap" class="hidden" style="flex:1; display:flex; flex-direction:column; background:var(--bg-code); overflow:hidden;">
+          <div style="padding:6px 10px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; gap:6px; background:var(--bg-surface-subtle);">
+            <div style="display:flex; align-items:center; gap:6px; min-width:0;">
+              <span style="font-size:11px; font-weight:700; color:var(--text-primary);">Unified Git Diff</span>
+              <span id="diffFilesSummary" class="mono" style="font-size:10.5px; color:var(--text-muted); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">(live worktree changes)</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <button onclick="acceptMergeActiveAgentWorkspace()" class="btn-primary" style="height:25px; padding:0 10px; font-size:11px; background:#10b981; border-color:#059669;" title="Accept and Merge agent worktree to main">
+                <span>Accept &amp; Merge to Main</span>
+              </button>
+              <button onclick="revertActiveWorkspaceFile()" class="btn-secondary" style="height:25px; padding:0 8px; font-size:11px; color:#ef4444; border-color:rgba(239,68,68,0.3);" title="Revert current file">
+                <span>Revert File</span>
+              </button>
+              <button onclick="loadActiveWorktreeDiff()" class="btn-secondary" style="height:25px; padding:0 8px; font-size:11px;" title="Refresh diff">🔄</button>
+            </div>
+          </div>
+          <div id="deliverableDiffViewer" class="mono" style="flex:1; overflow:auto; padding:12px; font-size:12px; line-height:1.5; white-space:pre-wrap; background:#0d1117; color:#c9d1d9;">(No uncommitted changes in worktree)</div>
         </div>
       </div>
 
@@ -1905,6 +1935,24 @@ Auto-save: enabled</pre>
             <div>
               <label class="field-label">`PreToolUse` Disabled Tools Blacklist (`mcpDisabledTools`)</label>
               <input id="botMcpDisabledToolsInput" type="text" placeholder="e.g. rm_rf, drop_table" class="field-input mono" style="font-size:12px;">
+            </div>
+
+            <!-- Host MCP Ecosystem Auto-Discovery (R4) -->
+            <div style="border-top:1px solid var(--border-subtle); padding-top:10px; display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-size:12px; font-weight:700; color:var(--text-primary);">Host MCP Ecosystem Auto-Discovery</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Auto-discover configured MCP servers from Cursor, Claude Code, and Antigravity</div>
+                </div>
+                <button type="button" onclick="discoverHostMcpServers()" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11px; color:var(--accent-blue);">🔍 Discover Host MCP</button>
+              </div>
+              <div id="mcpDiscoveryContainer" class="hidden" style="display:flex; flex-direction:column; gap:6px;">
+                <label class="field-label">Discovered MCP Servers (1-Click Import)</label>
+                <select id="mcpDiscoveredSelect" onchange="importSelectedMcpServer(this.value)" class="field-input mono" style="font-size:11.5px; height:32px;">
+                  <option value="">Select a discovered server to import...</option>
+                </select>
+                <div id="mcpDiscoveredDetails" class="mono" style="font-size:11px; color:var(--text-muted);"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -2321,6 +2369,8 @@ Auto-save: enabled</pre>
     const AVAILABLE_AGENT_TOOLS = [
       { id: "fs_read", label: "Read Files" },
       { id: "fs_write", label: "Write Files" },
+      { id: "grep_search", label: "Grep Search" },
+      { id: "find_files", label: "Find Files" },
       { id: "shell_exec", label: "Run Shell" },
       { id: "git_status", label: "Git Status" },
       { id: "git_diff", label: "Git Diff" },
@@ -3811,6 +3861,37 @@ Auto-save: enabled</pre>
     // =========================================================================
     function onComposerInput(val) {
       const popup = document.getElementById("mentionAutocompletePopup");
+
+      // Check for @file: mention (R2)
+      const fileMatch = val.match(/(?:^|\s)@file:([^\s]*)$/i);
+      if (fileMatch) {
+        const fileQuery = (fileMatch[1] || "").toLowerCase();
+        const availableFiles = Array.isArray(activeCodeWorkspaceFiles) && activeCodeWorkspaceFiles.length > 0
+          ? activeCodeWorkspaceFiles.map(f => f.name || f)
+          : ["ui/server.mjs", "ui/index.html", "app.py", "setup.sh", "README.md", "vanaras-cli.mjs"];
+
+        const matchedFiles = availableFiles
+          .filter(f => !fileQuery || f.toLowerCase().includes(fileQuery))
+          .slice(0, 10);
+
+        if (matchedFiles.length === 0) {
+          popup.classList.add("hidden");
+          return;
+        }
+
+        popup.innerHTML = matchedFiles.map(f => `
+          <button onclick="insertFileMention('${f.replace(/'/g, "\\'")}')" class="popover-item">
+            <span style="font-size:14px; margin-right:6px;">📄</span>
+            <div style="min-width:0; flex:1;">
+              <div class="popover-title">@file:${escapeHtml(f)}</div>
+              <div class="popover-sub">Workspace Grounded File Context</div>
+            </div>
+          </button>
+        `).join("");
+        popup.classList.remove("hidden");
+        return;
+      }
+
       const atMatch = val.match(/(?:^|\s)@([a-zA-Z0-9_-]*)$/);
       if (!atMatch) {
         popup.classList.add("hidden");
@@ -3845,6 +3926,13 @@ Auto-save: enabled</pre>
     function insertMentionHandle(name) {
       const input = document.getElementById("chatComposerInput");
       input.value = input.value.replace(/(?:^|\s)@([a-zA-Z0-9_-]*)$/, ` @${name} `);
+      document.getElementById("mentionAutocompletePopup").classList.add("hidden");
+      input.focus();
+    }
+
+    function insertFileMention(filePath) {
+      const input = document.getElementById("chatComposerInput");
+      input.value = input.value.replace(/(?:^|\s)@file:[^\s]*$/, ` @file:${filePath} `);
       document.getElementById("mentionAutocompletePopup").classList.add("hidden");
       input.focus();
     }
@@ -4009,7 +4097,7 @@ NEVER output a placeholder message like "Let me first inspect the current state 
 <replacement lines>
 >>>>>>> REPLACE
 ===END_PATCH===
-4. Only when you explicitly need to run a shell command or read an extra file in your worktree, include an exact tag such as [TOOL: fs_read | <path>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
+4. Only when you explicitly need to run a shell command, search the codebase, or read an extra file in your worktree, include an exact tag such as [TOOL: fs_read | <path>], [TOOL: grep_search | <pattern>], [TOOL: find_files | <query>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
 ${handoffRule}
 6. Keep any internal thinking (<think>) brief (under 120 words — high-level bullet plan only). NEVER write full source code files inside <think> or internal reasoning; close </think> immediately and output all code and explanations in your visible answer.
 7. To persist an important architectural decision or project convention into your private disk memory across sessions, include \`[REMEMBER: <concise fact>]\`.`;
@@ -4174,7 +4262,7 @@ ${handoffRule}
       const toolCheckRx = /\[TOOL:\s*[a-z_]+(?:\s*\|\s*[^\]\n]+)?\]/i;
       if (!toolCheckRx.test(scanSource) && reasoningText) {
         const tailReasoning = normalizeLooseToolSyntax(String(reasoningText).slice(-800));
-        const reasoningTools = tailReasoning.match(/\[TOOL:\s*(?:fs_read|fs_write|shell_exec|shell|git_status|git_diff|git_commit)(?:\s*\|\s*[^\]<.\n][^\]<\n]*)?\]/gi);
+        const reasoningTools = tailReasoning.match(/\[TOOL:\s*(?:fs_read|fs_write|grep_search|find_files|shell_exec|shell|git_status|git_diff|git_commit)(?:\s*\|\s*[^\]<.\n][^\]<\n]*)?\]/gi);
         if (reasoningTools && reasoningTools.length > 0) {
           scanSource = `${scanSource}\n${reasoningTools.join("\n")}`.trim();
         }
@@ -4312,6 +4400,46 @@ ${handoffRule}
             observationsOut.push({ tool: `fs_read(${targetReadPath})`, output: readOut.slice(0, 24000) });
             executedTools.push(`fs_read: ${targetReadPath}`);
             hooksTrace.push(`PostToolUse(fs_read)`);
+          } else if (normalizedTool === "grep_search" && arg1) {
+            const query = arg1;
+            const res = await fetch("/api/agent/tool", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "grep_search", botId: bot.id, botName: bot.name, content: query })
+            });
+            const data = await res.json();
+            const matchesText = Array.isArray(data.matches)
+              ? (data.matches.map(m => `${m.file}:${m.line}: ${m.text}`).join("\n") || "(no matches)")
+              : (data.output || data.error || "(no matches)");
+            insertTerminalBeforeStreaming(thread, {
+              senderType: "terminal",
+              command: `[${bot.name} worktree] grep_search "${query}"`,
+              exitCode: res.ok && data.ok !== false ? 0 : 1,
+              text: matchesText.slice(0, 2400)
+            });
+            observationsOut.push({ tool: `grep_search(${query})`, output: matchesText.slice(0, 24000) });
+            executedTools.push(`grep_search: ${query}`);
+            hooksTrace.push(`PostToolUse(grep_search)`);
+          } else if (normalizedTool === "find_files") {
+            const query = arg1 || "";
+            const res = await fetch("/api/agent/tool", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "find_files", botId: bot.id, botName: bot.name, content: query })
+            });
+            const data = await res.json();
+            const filesText = Array.isArray(data.files)
+              ? (data.files.join("\n") || "(no files found)")
+              : (data.output || data.error || "(no files found)");
+            insertTerminalBeforeStreaming(thread, {
+              senderType: "terminal",
+              command: `[${bot.name} worktree] find_files "${query}"`,
+              exitCode: res.ok && data.ok !== false ? 0 : 1,
+              text: filesText.slice(0, 2400)
+            });
+            observationsOut.push({ tool: `find_files(${query})`, output: filesText.slice(0, 24000) });
+            executedTools.push(`find_files: ${query}`);
+            hooksTrace.push(`PostToolUse(find_files)`);
           } else if (normalizedTool === "fs_write" && arg1 && arg2) {
             const res = await fetch("/api/agent/tool", {
               method: "POST",
@@ -4634,19 +4762,42 @@ ${handoffRule}
         })
       }).catch(() => {});
 
-      const explicitMentions = resolveExplicitMentionedBotsForPrompt(thread, firstTask);
-      if (explicitMentions.length > 1 && thread.type === "group") {
-        pendingMentionQueue[thread.id] = explicitMentions.slice(1).map(b => ({
-          botId: b.id,
-          prompt: firstTask
-        }));
-      } else {
-        delete pendingMentionQueue[thread.id];
+      // Ground inline @file:<path> mentions with workspace file content (R2)
+      let groundedPrompt = firstTask;
+      const fileMentionMatches = [...firstTask.matchAll(/@file:([^\s]+)/gi)];
+      if (fileMentionMatches.length > 0) {
+        const fileContents = [];
+        for (const fm of fileMentionMatches) {
+          const rawPath = fm[1];
+          try {
+            const res = await fetch("/api/agent/tool", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "fs_read", filePath: rawPath })
+            });
+            const data = await res.json();
+            if (data && (data.output || data.text)) {
+              fileContents.push(`\n=== GROUNDED FILE CONTEXT: ${rawPath} ===\n${(data.output || data.text).slice(0, 8000)}\n=== END FILE ===`);
+            }
+          } catch {}
+        }
+        if (fileContents.length > 0) {
+          groundedPrompt = `${firstTask}\n\n${fileContents.join("\n")}`;
+        }
       }
 
-      const targetBot = explicitMentions[0] || resolveInitialTargetBotForPrompt(thread, firstTask);
-      if (targetBot) {
-        await runBotTurnInThread(thread.id, targetBot, firstTask, 0);
+      // Parallel Multi-Agent Dispatch (R5)
+      const explicitMentions = resolveExplicitMentionedBotsForPrompt(thread, firstTask);
+      if (explicitMentions.length > 1 && thread.type === "group") {
+        delete pendingMentionQueue[thread.id];
+        // Concurrent execution across all mentioned agents without turn clobbering
+        await Promise.all(explicitMentions.map(b => runBotTurnInThread(thread.id, b, groundedPrompt, 0, { allowConcurrent: true })));
+      } else {
+        delete pendingMentionQueue[thread.id];
+        const targetBot = explicitMentions[0] || resolveInitialTargetBotForPrompt(thread, firstTask);
+        if (targetBot) {
+          await runBotTurnInThread(thread.id, targetBot, groundedPrompt, 0);
+        }
       }
     }
 
@@ -4682,25 +4833,34 @@ ${handoffRule}
       await runBotTurnInThread(thread.id, leadBot, `${goal.trim()}\n\n(Autonomous Mode: execute any helpful [TOOL: ...] in your worktree and include ${handoffTags} when ready for the next specialist.)`, 0);
     }
 
-    async function runBotTurnInThread(threadId, targetBot, triggerText, chainDepth = 0) {
+    async function runBotTurnInThread(threadId, targetBot, triggerText, chainDepth = 0, options = {}) {
       const targetThread = state.threads.find(t => t.id === threadId);
       if (!targetThread || !targetBot) return;
 
-      // Always abort and finalize any previous turn on this thread so no stale turn can ever stream above a newer user message
-      cancelActiveTurnForThread(targetThread, false);
+      const isConcurrent = Boolean(options.allowConcurrent);
+      if (!isConcurrent) {
+        cancelActiveTurnForThread(targetThread, false);
+      }
 
       const turnController = new AbortController();
       const turnCtx = {
         turnId: "turn_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
         controller: turnController,
         abortController: turnController,
+        botId: targetBot.id,
+        botName: targetBot.name,
+        isConcurrent,
+        status: "thinking",
         aborted: false
       };
       activeTurnState[threadId] = turnCtx;
+      activeTurnState[`${threadId}_${targetBot.id}`] = turnCtx;
       if (!Array.isArray(allActiveTurnContexts[threadId])) {
         allActiveTurnContexts[threadId] = [];
       }
       allActiveTurnContexts[threadId].push(turnCtx);
+
+      const isStillActive = () => !turnCtx.aborted && (isConcurrent || activeTurnState[threadId] === turnCtx);
 
       const queuedCount = Array.isArray(pendingBatchQueue[threadId]) ? pendingBatchQueue[threadId].length : 0;
       const depthLabel = chainDepth > 0 ? ` (Auto-Turn ${chainDepth + 1})` : "";
@@ -4708,6 +4868,7 @@ ${handoffRule}
       activeWorkingThreads[threadId] = `${targetBot.name} working in ${targetBot.worktreeBranch || "worktree"}${depthLabel}${queueLabel}...`;
       renderThreadList();
       updateComposerStopButton();
+      updateMultiAgentStatusStrip(threadId);
 
       let nextAutoBot = null;
       let nextAutoPrompt = "";
@@ -4731,7 +4892,7 @@ ${handoffRule}
 
       try {
         await ensureAgentWorktreeOnServer(targetBot);
-        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+        if (!isStillActive()) return;
 
         // Vanaras Hook 0: Non-destructive Automatic PreCompactRequest when conversation history grows > 12 messages
         if (targetThread.messages.length > 13) {
@@ -4740,7 +4901,8 @@ ${handoffRule}
             botName: targetBot.name,
             messages: targetThread.messages.slice(0, -1)
           });
-          if (!turnCtx.aborted && activeTurnState[threadId] === turnCtx && compactRes && compactRes.compactedCount > 0 && compactRes.compactDigest) {
+          if (!isStillActive()) return;
+          if (compactRes && compactRes.compactedCount > 0 && compactRes.compactDigest) {
             targetThread.compressedDigest = compactRes.compactDigest;
             targetThread.lastCompactedCount = compactRes.compactedCount;
             hooksTrace.push("PreCompact");
@@ -4754,11 +4916,11 @@ ${handoffRule}
           prompt: triggerText,
           mcpCustomInstructions: targetBot.mcpCustomInstructions || ""
         });
-        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+        if (!isStillActive()) return;
         hooksTrace.push("BeforeSubmitPrompt");
 
         const folderSummary = await ensureFolderSnapshot(targetThread.mountPath, targetBot);
-        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+        if (!isStillActive()) return;
         ensureLiveMessageAtBottom(targetThread, liveMsg);
         const liveIdx = targetThread.messages.indexOf(liveMsg);
         const allBeforeLive = liveIdx >= 0 ? targetThread.messages.slice(0, liveIdx) : targetThread.messages.slice(0, -1);
@@ -4784,7 +4946,7 @@ ${handoffRule}
         let priorStepsVisibleText = "";
 
         const onStreamProgress = (partialContent, partialReasoning) => {
-          if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+          if (!isStillActive()) return;
           ensureLiveMessageAtBottom(targetThread, liveMsg);
           const split = extractInlineThinkBlocks(partialContent || "", partialReasoning || "");
           const currentStepReasoning = split.thoughtText || "";
@@ -4816,14 +4978,14 @@ ${handoffRule}
 
         // Capability #1: Multi-Step ReAct Tool Loop inside a single turn (configurable per-agent via targetBot.maxReactSteps)
         let reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 8192, onStreamProgress, turnController.signal);
-        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+        if (!isStillActive()) return;
         let accumulatedReasoning = [reply.reasoning || "", liveMsg.reasoning || ""].filter(Boolean)[0] || "";
         const maxSteps = Math.max(1, Math.min(8, Number(targetBot.maxReactSteps) || 6));
         let savedFilesInReactLoop = [];
         let savedPatchesInReactLoop = [];
 
         for (let reactStep = 0; reactStep < maxSteps; reactStep++) {
-          if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+          if (!isStillActive()) return;
           const stepHook = await invokeAgentLifecycleHook("AfterAgentThoughtRequest", {
             botId: targetBot.id,
             botName: targetBot.name,
@@ -4885,7 +5047,7 @@ ${handoffRule}
           const obsDigest = stepObservations.map(o => `[Tool Output: ${o.tool}]\n${o.output}`).join("\n\n");
           currentPrompt += `\n\nReal execution & tool output from your worktree (${targetBot.worktreeBranch}):\n${obsDigest}\n\nUse the real tool output above to continue. If another command/tool is needed to complete the task, emit the next [TOOL: ...] call now; if code changes are needed, output ===FILE: <filename>=== or ===PATCH: <filename>===; otherwise report the real result clearly to the user (including any generated file paths like output/*.wav so the inline media player renders):`;
           reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 8192, onStreamProgress, turnController.signal);
-          if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+          if (!isStillActive()) return;
 
           // If this was the final allowed iteration and the model still emitted a [TOOL: ...] call, execute it so no tool call leaks unexecuted
           if (reactStep === maxSteps - 1) {
@@ -4902,7 +5064,7 @@ ${handoffRule}
           rawOutput: reply.content,
           reasoning: reply.reasoning || ""
         });
-        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+        if (!isStillActive()) return;
         hooksTrace.push("AfterAgentThought");
         const finalStepReasoning = thoughtHook.reasoning || [
           reply.reasoning || "",
@@ -5003,7 +5165,7 @@ ${handoffRule}
         });
         hooksTrace.push("NotifyTurnFinished");
 
-        if (turnCtx.aborted || activeTurnState[threadId] !== turnCtx) return;
+        if (!isStillActive()) return;
         ensureLiveMessageAtBottom(targetThread, liveMsg);
 
         const strippedPostThought = stripAllToolDirectives(postThoughtContent)
@@ -5184,8 +5346,11 @@ ${handoffRule}
         if (Array.isArray(allActiveTurnContexts[threadId])) {
           allActiveTurnContexts[threadId] = allActiveTurnContexts[threadId].filter(ctx => ctx !== turnCtx);
         }
+        delete activeTurnState[`${threadId}_${targetBot.id}`];
         if (activeTurnState[threadId] === turnCtx) {
           delete activeTurnState[threadId];
+        }
+        if (!allActiveTurnContexts[threadId] || allActiveTurnContexts[threadId].length === 0) {
           delete activeWorkingThreads[threadId];
         }
         saveState();
@@ -7266,9 +7431,11 @@ ${handoffRule}
       const btnSource = document.getElementById("btnModeSource");
       const btnPreview = document.getElementById("btnModePreview");
       const btnVnc = document.getElementById("btnModeVnc");
+      const btnDiff = document.getElementById("btnModeDiff");
       if (btnSource) btnSource.classList.toggle("active", drawerMode === "source" || drawerMode === "code");
       if (btnPreview) btnPreview.classList.toggle("active", drawerMode === "preview");
       if (btnVnc) btnVnc.classList.toggle("active", drawerMode === "vnc");
+      if (btnDiff) btnDiff.classList.toggle("active", drawerMode === "diff");
 
       tabs.innerHTML = deliverables.map((f, i) => `
         <button onclick="activeDeliverableIdx=${i}; renderDeliverableDrawer();" style="display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:6px; font-size:12px; font-weight:${i === activeDeliverableIdx ? '700' : '500'}; background:${i === activeDeliverableIdx ? 'var(--bg-surface)' : 'transparent'}; color:${i === activeDeliverableIdx ? 'var(--text-primary)' : 'var(--text-secondary)'}; border:1px solid ${i === activeDeliverableIdx ? 'var(--border-card)' : 'transparent'};">
@@ -7278,9 +7445,23 @@ ${handoffRule}
       `).join("");
 
       const active = deliverables[activeDeliverableIdx] || deliverables[0];
+      const diffWrap = document.getElementById("deliverableDiffWrap");
+
+      if (drawerMode === "diff") {
+        if (gutterWrap) gutterWrap.classList.add("hidden");
+        if (vncWrap) vncWrap.classList.add("hidden");
+        if (frame) frame.classList.add("hidden");
+        if (diffWrap) {
+          diffWrap.classList.remove("hidden");
+          loadActiveWorktreeDiff();
+        }
+        return;
+      }
+
       if (!active) return;
 
       if (drawerMode === "vnc") {
+        if (diffWrap) diffWrap.classList.add("hidden");
         if (gutterWrap) gutterWrap.classList.add("hidden");
         frame.classList.add("hidden");
         if (vncWrap) {
@@ -7291,6 +7472,7 @@ ${handoffRule}
           }
         }
       } else if (drawerMode === "preview") {
+        if (diffWrap) diffWrap.classList.add("hidden");
         if (gutterWrap) gutterWrap.classList.add("hidden");
         if (vncWrap) vncWrap.classList.add("hidden");
         frame.classList.remove("hidden");
@@ -7299,6 +7481,7 @@ ${handoffRule}
           ? htmlFile.content
           : `<body style="font-family:-apple-system,sans-serif; padding:24px; background:#fff; color:#111;"><pre style="white-space:pre-wrap;">${escapeHtml(active.content)}</pre></body>`;
       } else {
+        if (diffWrap) diffWrap.classList.add("hidden");
         frame.classList.add("hidden");
         if (vncWrap) vncWrap.classList.add("hidden");
         if (gutterWrap) gutterWrap.classList.remove("hidden");
@@ -7310,6 +7493,170 @@ ${handoffRule}
     function setDrawerMode(mode) {
       drawerMode = mode;
       renderDeliverableDrawer();
+    }
+
+    // =========================================================================
+    // 10B. PARITY UPGRADE HELPERS (DIFF, MCP DISCOVERY, MULTI-AGENT STATUS)
+    // =========================================================================
+    async function loadActiveWorktreeDiff() {
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      const diffViewer = document.getElementById("deliverableDiffViewer");
+      const diffSummary = document.getElementById("diffFilesSummary");
+      if (!diffViewer) return;
+      diffViewer.textContent = "Loading unified git diff from agent worktree...";
+      try {
+        const res = await fetch("/api/agent/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "diff", botId: bot?.id || "bot_r1" })
+        });
+        const data = await res.json();
+        const rawDiff = data.diff || "";
+        if (diffSummary) {
+          const filesCount = Array.isArray(data.files) ? data.files.length : 0;
+          diffSummary.textContent = filesCount > 0 ? `(${filesCount} changed file${filesCount === 1 ? '' : 's'})` : "(clean worktree)";
+        }
+        if (!rawDiff.trim()) {
+          diffViewer.innerHTML = `<div style="color:var(--text-muted); padding:24px; text-align:center;">✓ Clean worktree — no unstaged or uncommitted changes on branch <b>${data.branch || "vanara/r1"}</b></div>`;
+          return;
+        }
+
+        const escaped = escapeHtml(rawDiff);
+        const lines = escaped.split("\n");
+        const rendered = lines.map(line => {
+          if (line.startsWith("+") && !line.startsWith("+++")) {
+            return `<div style="color:#3fb950; background:rgba(46,160,67,0.15); padding:1px 4px; border-radius:2px;">${line}</div>`;
+          } else if (line.startsWith("-") && !line.startsWith("---")) {
+            return `<div style="color:#f85149; background:rgba(248,81,73,0.15); padding:1px 4px; border-radius:2px;">${line}</div>`;
+          } else if (line.startsWith("@@")) {
+            return `<div style="color:#79c0ff; font-weight:600; padding:2px 0;">${line}</div>`;
+          } else if (line.startsWith("diff --git") || line.startsWith("index ")) {
+            return `<div style="color:#8b949e; font-weight:700; margin-top:8px;">${line}</div>`;
+          }
+          return `<div>${line}</div>`;
+        }).join("");
+        diffViewer.innerHTML = rendered;
+      } catch (err) {
+        diffViewer.textContent = `Error loading diff: ${err.message}`;
+      }
+    }
+
+    async function acceptMergeActiveAgentWorkspace() {
+      await mergeActiveAgentWorkspaceToMain();
+      await loadActiveWorktreeDiff();
+    }
+
+    async function revertActiveWorkspaceFile() {
+      const bot = getBot(activeWorkspaceBotId) || state.bots[0];
+      const active = deliverables[activeDeliverableIdx];
+      const targetFileName = active?.name || "";
+      if (!targetFileName) {
+        showToast("No active file selected to revert");
+        return;
+      }
+      const confirmRevert = confirm(`Are you sure you want to revert "${targetFileName}" in ${bot.name}'s worktree? All uncommitted edits will be discarded.`);
+      if (!confirmRevert) return;
+
+      try {
+        const res = await fetch("/api/agent/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "revert_file", botId: bot.id, file: targetFileName })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(`Reverted ${targetFileName} in ${bot.name}'s workspace`);
+          await loadActiveWorktreeDiff();
+          await loadAgentCodeWorkspaceFromServer(bot.id);
+        } else {
+          showToast(`Revert failed: ${data.error || "unknown error"}`);
+        }
+      } catch (err) {
+        showToast(`Revert error: ${err.message}`);
+      }
+    }
+
+    let discoveredHostMcpServers = [];
+
+    async function discoverHostMcpServers() {
+      const container = document.getElementById("mcpDiscoveryContainer");
+      const select = document.getElementById("mcpDiscoveredSelect");
+      const details = document.getElementById("mcpDiscoveredDetails");
+      if (!container || !select) return;
+
+      container.classList.remove("hidden");
+      select.innerHTML = `<option value="">Discovering local host MCP servers...</option>`;
+      if (details) details.textContent = "Scanning ~/.cursor/mcp.json, Claude desktop/code configs, and Antigravity...";
+
+      try {
+        const res = await fetch("/api/mcp/discover");
+        const data = await res.json();
+        discoveredHostMcpServers = data.servers || [];
+
+        if (discoveredHostMcpServers.length === 0) {
+          select.innerHTML = `<option value="">No host MCP servers discovered</option>`;
+          if (details) details.textContent = "No configured MCP servers found in Cursor, Claude, or Antigravity.";
+          return;
+        }
+
+        select.innerHTML = `
+          <option value="">Select an MCP server to import (${discoveredHostMcpServers.length} discovered)...</option>
+          ${discoveredHostMcpServers.map(s => `
+            <option value="${escapeHtml(s.name)}">[${escapeHtml(s.source)}] ${escapeHtml(s.name)} (${escapeHtml(s.command)})</option>
+          `).join("")}
+        `;
+        if (details) details.textContent = `Found ${discoveredHostMcpServers.length} host MCP servers with tokens safely redacted.`;
+      } catch (err) {
+        select.innerHTML = `<option value="">Error discovering MCP servers</option>`;
+        if (details) details.textContent = `Discovery error: ${err.message}`;
+      }
+    }
+
+    function importSelectedMcpServer(serverName) {
+      if (!serverName) return;
+      const srv = discoveredHostMcpServers.find(s => s.name === serverName);
+      if (!srv) return;
+
+      const input = document.getElementById("botMcpCommandInput");
+      const details = document.getElementById("mcpDiscoveredDetails");
+      const fullCmd = [srv.command, ...(srv.args || [])].filter(Boolean).join(" ");
+      if (input) input.value = fullCmd;
+
+      if (details) {
+        const envKeys = Object.keys(srv.env || {});
+        const envSummary = envKeys.length > 0 ? ` (Env vars: ${envKeys.join(", ")})` : "";
+        details.textContent = `Imported from ${srv.source}: ${srv.name}${envSummary}. Click Probe or Save to activate.`;
+      }
+      showToast(`Imported ${srv.name} from ${srv.source}`);
+    }
+
+    function updateMultiAgentStatusStrip(threadId) {
+      const stripEl = document.getElementById("multiAgentStatusStrip");
+      if (!stripEl) return;
+      const activeContexts = (allActiveTurnContexts[threadId] || []).filter(c => c && !c.aborted);
+      if (activeContexts.length === 0) {
+        stripEl.classList.add("hidden");
+        stripEl.style.display = "none";
+        return;
+      }
+      stripEl.classList.remove("hidden");
+      stripEl.style.display = "flex";
+
+      const badgesEl = document.getElementById("multiAgentActiveBadges");
+      const statusTextEl = document.getElementById("multiAgentStatusText");
+      if (statusTextEl) {
+        statusTextEl.textContent = activeContexts.length > 1
+          ? `Parallel Execution: ${activeContexts.length} agents working concurrently in isolated worktrees`
+          : `${activeContexts[0].botName || "Agent"} executing turn in worktree`;
+      }
+      if (badgesEl) {
+        badgesEl.innerHTML = activeContexts.map(c => {
+          const b = getBot(c.botId);
+          return `<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:12px; background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.3); font-size:11px; font-weight:600; color:#60a5fa;">
+            ${b?.name ? `@${b.name}` : "Agent"} (${c.status || "active"})
+          </span>`;
+        }).join("");
+      }
     }
 
     // =========================================================================

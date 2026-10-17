@@ -1053,6 +1053,10 @@ function copyIfNewer(srcAbs, srcMtimeMs, destAbs) {
     }
     fs.mkdirSync(path.dirname(destAbs), { recursive: true });
     fs.copyFileSync(srcAbs, destAbs);
+    // A replica must carry the mtime of the content's origin. copyFileSync stamps "now", which would make
+    // a stale replica look newer than a later real edit elsewhere and get promoted over it on the next pass.
+    const srcStat = fs.statSync(srcAbs);
+    fs.utimesSync(destAbs, srcStat.atime, srcStat.mtime);
     return true;
   } catch {
     return false;

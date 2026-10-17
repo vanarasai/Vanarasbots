@@ -3810,6 +3810,20 @@ Auto-save: enabled</pre>
       }
 
       const msgInner = document.getElementById("messagesInner");
+      const scrollBox = document.getElementById("messagesContainer");
+      // This runs on every poll and progress event. Rebuilding rows used to recreate each audio/video player
+      // and web preview (stopping playback mid-click) and jump to the bottom (moving whatever the user was
+      // about to click). Keep the existing media cards and the scroll position unless the user is at the end.
+      const sameThread = lastRenderedThreadId === thread.id;
+      const wasNearBottom = !sameThread || !scrollBox || (scrollBox.scrollHeight - scrollBox.scrollTop - scrollBox.clientHeight) < 120;
+      const prevScrollTop = scrollBox ? scrollBox.scrollTop : 0;
+      const liveMediaCards = new Map();
+      if (sameThread) {
+        msgInner.querySelectorAll(".inline-media-card").forEach(card => {
+          liveMediaCards.set(mediaCardKey(card), card);
+        });
+      }
+      lastRenderedThreadId = thread.id;
       msgInner.innerHTML = "";
 
       thread.messages.forEach((m, idx) => {
@@ -3965,8 +3979,26 @@ Auto-save: enabled</pre>
         }
       });
 
-      const scrollBox = document.getElementById("messagesContainer");
-      scrollBox.scrollTop = scrollBox.scrollHeight;
+      if (liveMediaCards.size > 0) {
+        msgInner.querySelectorAll(".inline-media-card").forEach(card => {
+          const kept = liveMediaCards.get(mediaCardKey(card));
+          if (kept && kept !== card) card.replaceWith(kept);
+        });
+      }
+
+      if (scrollBox) {
+        scrollBox.scrollTop = wasNearBottom ? scrollBox.scrollHeight : prevScrollTop;
+      }
+    }
+
+    var lastRenderedThreadId = null;
+
+    // A media card is the same card across renders when it belongs to the same message and shows the same file.
+    function mediaCardKey(card) {
+      const row = card.closest("[data-msg-id]");
+      const label = card.querySelector(".mono")?.textContent || "";
+      const media = card.querySelector("audio, video, img, iframe");
+      return `${row ? row.getAttribute("data-msg-id") : ""}|${label}|${media ? media.getAttribute("src") || "" : ""}`;
     }
 
     function reactToMessage(idx, emoji) {

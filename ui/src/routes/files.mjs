@@ -212,37 +212,16 @@ export async function handleFilesRoutes(req, res) {
         });
         clearTimeout(fetchTimer);
 
-        const contentType = upstream.headers.get("content-type") || "text/html; charset=utf-8";
-        if (contentType.includes("text/html")) {
-          let html = await upstream.text();
-          const baseTag = `<base href="http://localhost:${targetPort}/">`;
-          if (/<head\b[^>]*>/i.test(html)) {
-            html = html.replace(/(<head\b[^>]*>)/i, `$1\n  ${baseTag}`);
-          } else {
-            html = `<head>${baseTag}</head>\n${html}`;
-          }
-          res.writeHead(upstream.status, {
-            "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": "no-cache"
-          });
-          res.end(html);
-          return;
-        } else {
-          res.writeHead(upstream.status, {
-            "Content-Type": contentType,
-            "Cache-Control": "no-cache"
-          });
-          if (upstream.body) {
-            const reader = upstream.body.getReader();
-            while (true) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              res.write(value);
-            }
-          }
-          res.end();
-          return;
-        }
+        try { await upstream.body?.cancel(); } catch {}
+        // The server answers: send the preview to it directly. Serving its HTML from this origin (the old
+        // proxy) made every request the page sends to its own API cross-origin, so CORS blocked them and
+        // apps that load data rendered broken. Only loopback targets are ever produced here.
+        res.writeHead(302, {
+          Location: `http://localhost:${targetPort}${backendPath}`,
+          "Cache-Control": "no-cache"
+        });
+        res.end();
+        return;
       } catch (proxyErr) {
         // Fallback: Return clean auto-refreshing loading shell so the iframe never appears as a blank white box
         const loadingHtml = `<!DOCTYPE html>

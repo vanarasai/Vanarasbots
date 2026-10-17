@@ -2774,7 +2774,11 @@ Auto-save: enabled</pre>
     // Server-run turns started by this window, keyed `${threadId}_${botId}`: their relay depth, so the squad
     // chain can continue when the server reports turn_complete.
     let serverTurnChains = {};
-    const SERVER_TURN_MAX_STEPS = 30;
+    // Default step budget for one server-run turn. A diagnose-repair-verify task (R1 rebuilding a broken
+    // venv, reinstalling, then running the tests) used all of 30; 60 leaves room to finish and verify.
+    const SERVER_TURN_MAX_STEPS = 60;
+    // The server runner's own hard cap (session-runner.mjs clamps to 100).
+    const SERVER_TURN_STEP_CEILING = 100;
 
     function saveApiKeysToLocalStore() {
       try {
@@ -5039,7 +5043,7 @@ ${handoffRule}
             prompt: triggerText,
             turnId: turnCtx.turnId,
             systemPrompt: targetBot.systemPrompt || buildGroundedSystemPrompt(targetBot, targetThread, folderSummary),
-            maxSteps: Math.min(60, Math.max(SERVER_TURN_MAX_STEPS, Number(targetBot.maxReactSteps) || 0))
+            maxSteps: Math.min(SERVER_TURN_STEP_CEILING, Math.max(SERVER_TURN_MAX_STEPS, Number(targetBot.maxReactSteps) || 0))
           })
         });
         const data = await res.json();

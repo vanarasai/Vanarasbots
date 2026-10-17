@@ -2964,8 +2964,10 @@ async function executeAgentToolInternal(params = {}) {
 
   // 10. FIND FILES
   if (toolName === "find_files") {
-    const query = content !== undefined ? String(content) : (args.query || args.content || args.pattern || "");
-    if (query.includes("..")) {
+    const fileQuery = content !== undefined
+      ? String(content)
+      : String(query ?? args.query ?? args.content ?? args.pattern ?? "");
+    if (fileQuery.includes("..")) {
       return { status: 400, data: { ok: false, error: "Path traversal outside workspace blocked" } };
     }
 
@@ -3005,10 +3007,10 @@ async function executeAgentToolInternal(params = {}) {
     }
 
     let filtered = [];
-    if (!query.trim()) {
+    if (!fileQuery.trim()) {
       filtered = allFiles;
     } else {
-      const cleanQ = query.trim();
+      const cleanQ = fileQuery.trim();
       const hasWildcard = cleanQ.includes("*") || cleanQ.includes("?");
       if (hasWildcard) {
         try {

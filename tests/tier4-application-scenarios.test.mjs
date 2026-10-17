@@ -92,8 +92,11 @@ export function registerTier4Tests(runner) {
     const serverMatch = res.body.matches.find(m => m.file?.includes("server.mjs"));
     assert(serverMatch, "Must find symbol occurrence in server.mjs");
 
-    // Verify file and line grounding against actual filesystem content
-    const targetFilePath = path.resolve(VANARAS_ROOT, serverMatch.file);
+    // Verify file and line grounding against the tree that was actually searched. Paths are relative to
+    // the agent's worktree (searchRoot), which can legitimately lag the main checkout.
+    const searchRoot = res.body?.searchRoot;
+    assert(typeof searchRoot === "string" && searchRoot.length > 0, "grep_search must report its searchRoot");
+    const targetFilePath = path.resolve(searchRoot, serverMatch.file);
     assert(fs.existsSync(targetFilePath), `Reported file ${targetFilePath} must exist on disk`);
 
     const fileContent = fs.readFileSync(targetFilePath, "utf8");

@@ -187,4 +187,48 @@ export function registerTier2Tests(runner) {
       `Malformed JSON should return HTTP 400 or 500 error response, got ${res.status}`
     );
   });
+
+  // T2.11: find_files must honor the parameter shape advertised in the native tool schema (`query`)
+  runner.register(2, "M2", "F3", "T2.11_find_files_honors_schema_query_param", async () => {
+    const all = await requestJson("POST", "/api/agent/tool", { tool: "find_files", botId: "bot_r1" });
+    assertEqual(all.status, 200, "unfiltered find_files must succeed");
+    const searchRoot = all.body.searchRoot;
+    assert(typeof searchRoot === "string" && fs.existsSync(searchRoot), "find_files must report an existing searchRoot");
+
+    const needle = `vx_citest_findme_${process.pid}_${Date.now()}.txt`;
+    const planted = path.join(searchRoot, needle);
+    fs.writeFileSync(planted, "planted by T2.11\n", "utf8");
+    try {
+      for (const shape of [{ query: needle }, { args: { query: needle } }, { content: needle }]) {
+        const res = await requestJson("POST", "/api/agent/tool", { tool: "find_files", botId: "bot_r1", ...shape });
+        assertEqual(res.status, 200, `find_files ${JSON.stringify(shape)} must succeed`);
+        assertEqual(JSON.stringify(res.body.files), JSON.stringify([needle]), `find_files ${JSON.stringify(shape)} must return exactly the planted file`);
+      }
+    } finally {
+      fs.rmSync(planted, { force: true });
+    }
+  });
+
+  // T2.12: grep_search must honor the parameter shape advertised in the native tool schema (`pattern`)
+  runner.register(2, "M2", "F2", "T2.12_grep_search_honors_schema_pattern_param", async () => {
+    const probe = await requestJson("POST", "/api/agent/tool", { tool: "grep_search", botId: "bot_r1", pattern: "ensureAgentWorktree" });
+    const searchRoot = probe.body?.searchRoot;
+    assert(typeof searchRoot === "string" && fs.existsSync(searchRoot), "grep_search must report an existing searchRoot");
+
+    const marker = `VX_CITEST_MARKER_${process.pid}_${Date.now()}`;
+    const fileName = "vx_citest_grep_marker.txt";
+    const planted = path.join(searchRoot, fileName);
+    fs.writeFileSync(planted, `line one\n${marker}\nline three\n`, "utf8");
+    try {
+      for (const shape of [{ pattern: marker }, { args: { pattern: marker } }, { content: marker }]) {
+        const res = await requestJson("POST", "/api/agent/tool", { tool: "grep_search", botId: "bot_r1", ...shape });
+        assertEqual(res.status, 200, `grep_search ${JSON.stringify(shape)} must succeed`);
+        assertEqual(res.body.matches.length, 1, `grep_search ${JSON.stringify(shape)} must return exactly the planted line`);
+        assertEqual(res.body.matches[0].file, fileName, "match must point at the planted file");
+        assertEqual(res.body.matches[0].line, 2, "match must report the planted line number");
+      }
+    } finally {
+      fs.rmSync(planted, { force: true });
+    }
+  });
 }

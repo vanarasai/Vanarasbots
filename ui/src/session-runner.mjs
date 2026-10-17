@@ -55,21 +55,23 @@ export function resolveAgentModel(botId, state = loadWorkspaceDiskState() || {})
 }
 
 // A failed model call used to read as an empty reply, which ended the turn as if the agent had finished.
-// Retry transient failures (rate limits, 5xx, dropped connections) once, then fail the turn with the reason.
-export async function queryModelWithRetry(params) {
+// Retry transient failures (rate limits, overloaded providers, 5xx, dropped connections) with growing waits,
+// then fail with the reason. `retries` is how many extra attempts to make (default one).
+export async function queryModelWithRetry(params, { retries = 1 } = {}) {
+  const wait = (attempt) => new Promise(r => setTimeout(r, Math.min(20000, 3000 * 2 ** (attempt - 1))));
   for (let attempt = 1; ; attempt++) {
     let res;
     try {
       res = await queryLLMInternal(params);
     } catch (err) {
-      if (params.signal?.aborted || attempt >= 2) throw err;
-      await new Promise(r => setTimeout(r, 3000));
+      if (params.signal?.aborted || attempt > retries) throw err;
+      await wait(attempt);
       continue;
     }
     if (res && res.ok === false) {
-      const transient = res.status === 429 || res.status >= 500;
-      if (transient && attempt < 2 && !params.signal?.aborted) {
-        await new Promise(r => setTimeout(r, 3000));
+      const transient = res.status === 408 || res.status === 429 || res.status >= 500;
+      if (transient && attempt <= retries && !params.signal?.aborted) {
+        await wait(attempt);
         continue;
       }
       throw new Error(`Model request failed: ${String(res.error || `HTTP ${res.status}`).slice(0, 500)}`);

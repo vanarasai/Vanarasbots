@@ -331,6 +331,15 @@ export async function queryLLMInternal(params = {}) {
   if (!upstream.ok) {
     return { ok: false, status: upstream.status, error: `Upstream HTTP ${upstream.status}: ${raw}` };
   }
+  // OpenRouter reports provider failures (overloaded free models, upstream 5xx) as HTTP 200 with an
+  // {"error": {...}} body and no choices. Read as a reply, that became an empty answer with no reason.
+  try {
+    const peek = JSON.parse(raw);
+    if (peek && peek.error && !Array.isArray(peek.choices)) {
+      const code = Number(peek.error.code) || 502;
+      return { ok: false, status: code, error: `Upstream error ${code}: ${peek.error.message || JSON.stringify(peek.error)}` };
+    }
+  } catch {}
 
   let parsedChat = null;
   let msg = null;

@@ -48,7 +48,8 @@ function modelFor(botId) {
 // a tight budget the visible answer comes back empty. Budgets below leave room for that, and an empty answer
 // gets one retry with double the budget and a nudge to answer directly.
 async function ask(llm, messages, { temperature, max_tokens, signal }) {
-  const res = await queryModelWithRetry({ ...llm, messages, temperature, max_tokens, enableReasoning: false, signal });
+  // Free and shared models are often briefly overloaded; a panel makes many calls, so it retries harder.
+  const res = await queryModelWithRetry({ ...llm, messages, temperature, max_tokens, enableReasoning: false, signal }, { retries: 3 });
   const content = String(res?.content || "").trim();
   if (content || signal?.aborted) return content;
   const retry = await queryModelWithRetry({
@@ -58,7 +59,7 @@ async function ask(llm, messages, { temperature, max_tokens, signal }) {
     max_tokens: max_tokens * 2,
     enableReasoning: false,
     signal
-  });
+  }, { retries: 3 });
   return String(retry?.content || "").trim();
 }
 
@@ -228,6 +229,17 @@ export function startPanelRun({ threadId, topic, mode = "debate", rounds = 1, pa
   executePanel(run).catch(err => {
     run.status = run.abortController.signal.aborted ? "stopped" : "error";
     run.error = err.message;
+    if (run.status === "error") {
+      addMessage(run, {
+        id: `msg_${run.runId}_error`,
+        senderType: "bot",
+        panelist: { id: "moderator", name: "Moderator" },
+        panelRunId: run.runId,
+        isPanelSummary: true,
+        text: `**Panel stopped:** ${err.message}`,
+        timestamp: new Date().toISOString()
+      });
+    }
     emitStatus(run);
     writeRunFile(run);
   });
@@ -259,6 +271,7 @@ async function executePanel(run) {
         othersDigest: round > 1 ? digestAnswers(previous, { excludeName: p.name }) : ""
       });
       let text;
+      let failed = false;
       try {
         // Existing agents keep their own model; generated personas use the panel's model.
         text = await ask(p.botId ? modelFor(p.botId) : panelModel, [
@@ -267,10 +280,16 @@ async function executePanel(run) {
         ], { temperature: 0.8, max_tokens: 2000, signal });
       } catch (err) {
         if (signal.aborted) return;
+        failed = true;
         text = `(No answer: ${err.message})`;
       }
       if (signal.aborted) return;
-      answers[i] = { name: p.name, text };
+      if (!text) {
+        failed = true;
+        text = "(No answer: the model returned an empty reply)";
+      }
+      // A failed call is not an opinion: it is shown in the room but kept out of digests, tallies and the summary.
+      answers[i] = { name: p.name, text, failed };
       run.answeredThisRound++;
       addMessage(run, {
         id: `msg_${run.runId}_r${round}_${p.id}`,
@@ -278,12 +297,14 @@ async function executePanel(run) {
         panelist: { id: p.id, name: p.name, botId: p.botId },
         panelRunId: run.runId,
         round,
-        text: text || "(empty answer)",
+        failed,
+        text,
         timestamp: new Date().toISOString()
       });
       emitStatus(run);
     }, signal);
-    latest = answers.filter(Boolean);
+    latest = answers.filter(a => a && !a.failed);
+    run.unanswered = answers.filter(a => a && a.failed).length;
   }
   if (signal.aborted) {
     run.status = "stopped";
@@ -298,6 +319,9 @@ async function executePanel(run) {
   run.rating = rating;
   run.status = "summarizing";
   emitStatus(run);
+  if (latest.length === 0) {
+    throw new Error(`No panelist answered in the last round (${run.unanswered || run.panelists.length} model errors). Check the model, or lower "Answer in parallel" for free or rate-limited models.`);
+  }
   const transcript = digestAnswers(latest, { budgetChars: 30000 });
   let summary;
   try {
@@ -306,11 +330,13 @@ async function executePanel(run) {
     if (signal.aborted) throw err;
     summary = `(The moderator could not summarise: ${err.message})`;
   }
+  if (!summary) summary = "(The moderator returned an empty summary.)";
+  const missing = run.unanswered ? ` · ${run.unanswered} did not answer (model errors)` : "";
   const header = tally
-    ? `**Panel result** — ${run.panelists.length} panelists, ${run.rounds} round${run.rounds > 1 ? "s" : ""}\n\n${formatTallyMarkdown(tally, run.options)}\n\n`
+    ? `**Panel result** — ${run.panelists.length} panelists, ${run.rounds} round${run.rounds > 1 ? "s" : ""}${missing}\n\n${formatTallyMarkdown(tally, run.options)}\n\n`
     : rating
-      ? `**Panel result** — ${run.panelists.length} panelists · average rating **${rating.average.toFixed(1)}/10** (${rating.count} rated)\n\n`
-      : `**Panel result** — ${run.panelists.length} panelists, ${run.rounds} round${run.rounds > 1 ? "s" : ""}\n\n`;
+      ? `**Panel result** — ${run.panelists.length} panelists · average rating **${rating.average.toFixed(1)}/10** (${rating.count} rated)${missing}\n\n`
+      : `**Panel result** — ${run.panelists.length} panelists, ${run.rounds} round${run.rounds > 1 ? "s" : ""}${missing}\n\n`;
   addMessage(run, {
     id: `msg_${run.runId}_summary`,
     senderType: "bot",

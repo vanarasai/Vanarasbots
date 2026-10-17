@@ -161,7 +161,8 @@ export function registerTier4Tests(runner) {
           : script.replies[Math.min(seen[payload.model].length - 1, script.replies.length - 1)];
         if (script.delayMs) await new Promise(r => setTimeout(r, script.delayMs));
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: step.content || "", tool_calls: step.tool_calls } }] }));
+        // step.raw sends a body as-is (e.g. OpenRouter's HTTP 200 + {"error": ...} for an overloaded provider).
+        res.end(step.raw !== undefined ? step.raw : JSON.stringify({ choices: [{ message: { role: "assistant", content: step.content || "", tool_calls: step.tool_calls } }] }));
       });
     });
     await new Promise(r => server.listen(0, "127.0.0.1", r));
@@ -290,6 +291,46 @@ export function registerTier4Tests(runner) {
       const summary = run.messages.find(m => m.isPanelSummary);
       assert(summary && /\| B — Upbeat \| 2 \| 67% \|/.test(summary.text), `summary must carry the computed tally: ${summary?.text}`);
       assertMatch(summary.text, /MODERATOR SUMMARY\. Saw tally: yes/, "moderator must be given the computed tally");
+    });
+  });
+
+  // T4.8: A provider that answers HTTP 200 with an {"error"} body (OpenRouter overload) is retried, and a panelist
+  // whose calls keep failing is reported as not answering instead of being shown, tallied or summarised as "".
+  runner.register(4, "M6", "F12", "T4.8_panel_retries_overloaded_provider_and_reports_failures", async () => {
+    const calls = {};
+    const overloaded = '\n   \n{"id":"gen-1","error":{"message":"Upstream error from Nvidia: Service temporarily overloaded","code":503}}';
+    await withFakeModel({
+      flaky: {
+        reply: (payload) => {
+          const sys = String(payload.messages?.[0]?.content || "");
+          if (/moderator/.test(sys)) return { content: "SUMMARY OK" };
+          const who = /^You are ([^.]+\.)/.exec(sys)?.[1] || "?";
+          calls[who] = (calls[who] || 0) + 1;
+          if (who === "Gone Z.") return { raw: overloaded };
+          return calls[who] === 1 ? { raw: overloaded } : { content: `${who} has a view.\nPOSITION: yes` };
+        }
+      }
+    }, async (baseUrl) => {
+      const modelBotId = "bot_e2e_flaky_model";
+      await configureFakeAgent(modelBotId, baseUrl, "flaky");
+      const threadId = `thread_e2e_flaky_${Date.now()}`;
+      const start = await requestJson("POST", "/api/panels/run", {
+        threadId, topic: "Ship it?", mode: "debate", rounds: 1, concurrency: 3, modelBotId,
+        panelists: [{ id: "a", name: "Kept A.", persona: "engineer" }, { id: "g", name: "Gone Z.", persona: "designer" }]
+      });
+      assertEqual(start.status, 200, `panel start: ${start.raw}`);
+      let run = null;
+      for (let i = 0; i < 240 && !(run && ["completed", "error", "stopped"].includes(run.status)); i++) {
+        await new Promise(r => setTimeout(r, 250));
+        run = (await requestJson("GET", `/api/panels/status?runId=${encodeURIComponent(start.body.runId)}`)).body.runs?.[0] || null;
+      }
+      assertEqual(run?.status, "completed", `panel must complete: ${JSON.stringify(run && { status: run.status, error: run.error })}`);
+      const kept = run.messages.find(m => m.panelist.name === "Kept A.");
+      assertMatch(kept.text, /has a view/, "a transient overload must be retried until the answer arrives");
+      const gone = run.messages.find(m => m.panelist.name === "Gone Z.");
+      assert(gone.failed && /overloaded/.test(gone.text), `a persistent overload must show its reason: ${gone.text}`);
+      const summary = run.messages.find(m => m.isPanelSummary);
+      assertMatch(summary.text, /1 did not answer \(model errors\)[\s\S]*SUMMARY OK/, "the result must report who did not answer");
     });
   });
 }

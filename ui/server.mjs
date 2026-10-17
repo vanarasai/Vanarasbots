@@ -1196,7 +1196,10 @@ function callStdioMcpServer({ commandLine, cwd, method = "tools/list", params = 
     if (!bin) return resolve({ ok: false, error: "Empty MCP command" });
 
     let stdoutBuf = "";
+    let stderrBuf = "";
     let resolved = false;
+    let initHandshakeSent = false;
+
     const finish = (res) => {
       if (resolved) return;
       resolved = true;
@@ -1211,12 +1214,33 @@ function callStdioMcpServer({ commandLine, cwd, method = "tools/list", params = 
     });
 
     const timer = setTimeout(() => {
-      finish({ ok: false, error: "MCP server timed out after 6s", raw: stdoutBuf.slice(0, 600) });
-    }, 6000);
+      finish({
+        ok: false,
+        error: "MCP server timed out after 12s",
+        raw: stdoutBuf.slice(0, 800),
+        stderr: stderrBuf.slice(0, 800)
+      });
+    }, 12000);
 
     child.on("error", (err) => {
       clearTimeout(timer);
-      finish({ ok: false, error: err.message });
+      finish({ ok: false, error: err.message, stderr: stderrBuf });
+    });
+
+    child.on("close", (code) => {
+      if (!resolved) {
+        clearTimeout(timer);
+        finish({
+          ok: false,
+          error: `MCP server exited with code ${code}`,
+          stderr: stderrBuf,
+          stdout: stdoutBuf
+        });
+      }
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderrBuf += chunk.toString("utf8");
     });
 
     child.stdout.on("data", (chunk) => {
@@ -1227,7 +1251,8 @@ function callStdioMcpServer({ commandLine, cwd, method = "tools/list", params = 
         if (!trimmed.startsWith("{")) continue;
         try {
           const msg = JSON.parse(trimmed);
-          if (msg.id === 1) {
+          if (msg.id === 1 && !initHandshakeSent) {
+            initHandshakeSent = true;
             const initializedNotif = JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n";
             const req2 = JSON.stringify({ jsonrpc: "2.0", id: 2, method, params }) + "\n";
             child.stdin.write(initializedNotif + req2);
@@ -2400,6 +2425,8 @@ async function executeAgentToolInternal(params = {}) {
     mcpCommand,
     streamId = "",
     threadId = "",
+    pattern,
+    query,
     isRegex,
     path: pathParam,
     dir,
@@ -2434,19 +2461,28 @@ async function executeAgentToolInternal(params = {}) {
     };
   }
 
+  const cmdFromArgs = String(args.mcpCommand || params.mcpCommand || mcpCommand || "").trim();
+  const effectiveMcpCmd = cmdFromArgs || effectiveMcpCommand;
+
   // 1. MCP PROBE
-  if (toolName === "mcp_probe" && effectiveMcpCommand) {
-    const mcpRes = await callStdioMcpServer({ commandLine: effectiveMcpCommand, cwd: wt.worktreePath, method: "tools/list" });
+  if (toolName === "mcp_probe") {
+    if (!effectiveMcpCmd) {
+      return { status: 400, data: { ok: false, error: "Missing MCP command: provide mcpCommand in tool args or configure the agent's MCP Server in Agent Studio" } };
+    }
+    const mcpRes = await callStdioMcpServer({ commandLine: effectiveMcpCmd, cwd: wt.worktreePath, method: "tools/list" });
     const tools = mcpRes.result?.tools || [];
     return { status: 200, data: { ...mcpRes, tools } };
   }
 
   // 2. MCP CALL
-  if (toolName === "mcp_call" && effectiveMcpCommand) {
-    const targetMcpTool = requestedMcpToolName || args.name || "";
-    const targetMcpArgs = requestedMcpToolArgs || args.arguments || {};
+  if (toolName === "mcp_call") {
+    if (!effectiveMcpCmd) {
+      return { status: 400, data: { ok: false, error: "Missing MCP command: provide mcpCommand in tool args or configure the agent's MCP Server in Agent Studio" } };
+    }
+    const targetMcpTool = requestedMcpToolName || args.name || args.toolName || "";
+    const targetMcpArgs = requestedMcpToolArgs || args.arguments || args.args || {};
     const mcpRes = await callStdioMcpServer({
-      commandLine: effectiveMcpCommand,
+      commandLine: effectiveMcpCmd,
       cwd: wt.worktreePath,
       method: "tools/call",
       params: { name: targetMcpTool, arguments: targetMcpArgs }
@@ -2808,11 +2844,11 @@ async function executeAgentToolInternal(params = {}) {
 
   // 9. GREP SEARCH
   if (toolName === "grep_search") {
-    const pattern = content !== undefined ? content : (args.pattern ?? args.query ?? args.content);
-    if (pattern === undefined || pattern === null || String(pattern).length === 0) {
+    const rawPattern = pattern !== undefined ? pattern : (content !== undefined ? content : (args.pattern ?? args.query ?? args.content));
+    if (rawPattern === undefined || rawPattern === null || String(rawPattern).length === 0) {
       return { status: 400, data: { ok: false, error: "Search pattern cannot be empty" } };
     }
-    const patternStr = String(pattern);
+    const patternStr = String(rawPattern);
     const isRegexFlag = Boolean(isRegex || args.isRegex);
     let regexObj = null;
     if (isRegexFlag) {
@@ -4395,6 +4431,35 @@ async function executeAgentToolInternal(params = {}) {
         parameters: {
           type: "object",
           properties: {}
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "mcp_probe",
+        description: "Probe an external Model Context Protocol (MCP) server over stdio to list available tools and schemas.",
+        parameters: {
+          type: "object",
+          properties: {
+            mcpCommand: { type: "string", description: "Command line to launch the stdio MCP server (e.g. 'npx -y @modelcontextprotocol/server-filesystem /path' or 'python -m mcp_server')" }
+          }
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "mcp_call",
+        description: "Execute a tool provided by an external Model Context Protocol (MCP) server over stdio.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "Name of the MCP tool to execute" },
+            arguments: { type: "object", description: "Arguments dictionary for the MCP tool" },
+            mcpCommand: { type: "string", description: "Optional MCP server command (uses agent's configured MCP server if omitted)" }
+          },
+          required: ["name"]
         }
       }
     }

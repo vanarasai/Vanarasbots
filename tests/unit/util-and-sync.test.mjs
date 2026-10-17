@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { sanitizeSlug, isPathInside, getAgentAssignedPort } from "../../ui/src/util.mjs";
-import { copyIfNewer, isDeliverableRelPathAllowed } from "../../ui/src/worktree.mjs";
+import { copyIfNewer, isDeliverableRelPathAllowed, getRootDirTrackedFiles } from "../../ui/src/worktree.mjs";
 
 test("sanitizeSlug", () => {
   assert.equal(sanitizeSlug("Hello World!"), "hello-world");
@@ -113,4 +113,12 @@ test("copyIfNewer: copying a file onto itself is a no-op; a missing source fails
   const f = file("c6/f.txt", "x", 5);
   assert.equal(copyIfNewer(f, mtimeOf(f), f), false);
   assert.equal(copyIfNewer(path.join(SANDBOX, "nope"), Date.now(), path.join(SANDBOX, "sync", "c6", "d.txt")), false);
+});
+
+test("getRootDirTrackedFiles: includes repository tracked files and excludes uncommitted untracked files", () => {
+  const tracked = getRootDirTrackedFiles();
+  assert.ok(tracked instanceof Set, "must return a Set");
+  assert.ok(tracked.has("Cargo.toml") || tracked.has("README.md") || tracked.has("app.py"), "must include tracked root files");
+  assert.equal(tracked.has(".git"), false, ".git directory must not be in tracked files");
+  assert.equal(tracked.has("nonexistent_random_canary_file.txt"), false);
 });

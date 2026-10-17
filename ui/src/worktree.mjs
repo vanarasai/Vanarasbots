@@ -253,6 +253,27 @@ export function recoverTruncatedWorkspaceFilesFromHistory(agentCodeDirs = []) {
   } catch {}
 }
 
+let cachedTrackedFiles = null;
+let cachedTrackedFilesExpiry = 0;
+
+export function getRootDirTrackedFiles() {
+  const now = Date.now();
+  if (cachedTrackedFiles && now < cachedTrackedFilesExpiry) {
+    return cachedTrackedFiles;
+  }
+  const tracked = new Set();
+  try {
+    const out = execFileSync("git", ["ls-files"], { cwd: ROOT_DIR, stdio: "pipe", timeout: 3000 }).toString("utf8");
+    for (const line of out.split("\n")) {
+      const trimmed = line.trim().replace(/\\/g, "/");
+      if (trimmed) tracked.add(trimmed);
+    }
+  } catch {}
+  cachedTrackedFiles = tracked;
+  cachedTrackedFilesExpiry = now + 2000;
+  return tracked;
+}
+
 export function syncWorktreeDeliverablesToMainRoot(wt, { syncSiblings = true } = {}) {
   const promotedToRoot = [];
   try {
@@ -319,9 +340,15 @@ export function syncWorktreeDeliverablesToMainRoot(wt, { syncSiblings = true } =
       }
     }
 
+    const trackedInRoot = getRootDirTrackedFiles();
     const allTargetDirs = [...new Set([ROOT_DIR, ...allSourceDirs])];
     for (const [relPath, info] of newestByRel.entries()) {
+      const normRel = String(relPath || "").replace(/\\/g, "/").replace(/^\/+/, "");
       for (const targetBase of allTargetDirs) {
+        if (targetBase === ROOT_DIR && trackedInRoot.has(normRel)) {
+          // Never overwrite root git-tracked files via deliverable background sync
+          continue;
+        }
         const destAbs = path.resolve(targetBase, relPath);
         if (!isPathInside(destAbs, targetBase)) continue;
         const copied = copyIfNewer(info.absPath, info.mtimeMs, destAbs);

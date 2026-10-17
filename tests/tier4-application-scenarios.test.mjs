@@ -211,6 +211,8 @@ export function registerTier4Tests(runner) {
       // A window that missed the live events catches up from the status list alone.
       assertEqual(turn.turnId, turnId, "status list must identify the turn");
       assertMatch(String(turn.finalContent || ""), /diag-ok/, "status list must carry the finished turn's result");
+      const step = (turn.toolCalls || []).find(c => c.name === "shell_exec");
+      assert(step && step.target === "echo diag-ok" && /diag-ok/.test(step.output), `status list must show each step run: ${JSON.stringify(turn.toolCalls)}`);
       const st = await requestJson("GET", `/api/sessions/status?threadId=${encodeURIComponent(threadId)}`);
       const calls = st.body.turn.toolCalls || [];
       assert(calls.some(c => c.name === "shell_exec" && /diag-ok/.test(c.output)), `shell_exec must have run: ${JSON.stringify(calls)}`);

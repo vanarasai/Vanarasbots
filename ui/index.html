@@ -2589,6 +2589,19 @@ Auto-save: enabled</pre>
     if (!Array.isArray(state.sharedFacts)) state.sharedFacts = [...DEFAULT_STATE.sharedFacts];
     if (typeof state.autoTriggerEnabled !== "boolean") state.autoTriggerEnabled = true;
 
+    // The server runner and API tests store messages as {role, content}; the renderer reads {senderType, text}
+    // and threw on a message without text, leaving the whole thread blank. Normalise once when state loads.
+    function normalizeThreadMessages() {
+      for (const t of state.threads || []) {
+        if (!Array.isArray(t.messages)) { t.messages = []; continue; }
+        t.messages = t.messages.filter(Boolean);
+        for (const m of t.messages) {
+          if (typeof m.text !== "string") m.text = typeof m.content === "string" ? m.content : String(m.text ?? m.content ?? "");
+          if (!m.senderType) m.senderType = m.role === "assistant" ? "bot" : "user";
+        }
+      }
+    }
+
     function hydrateBotAgentFields() {
       (state.bots || []).forEach(b => {
         const def = DEFAULT_STATE.bots.find(d => d.id === b.id);
@@ -2704,6 +2717,7 @@ Auto-save: enabled</pre>
     let activeTurnState = {};
     let allActiveTurnContexts = {};
     hydrateBotAgentFields();
+    normalizeThreadMessages();
 
     let activeThreadId = state.threads?.[0]?.id || "thread_r1";
     let detectedLocalModel = "qwen/qwen3.5-9b";
@@ -2851,6 +2865,8 @@ Auto-save: enabled</pre>
       } catch {}
     }
 
+    var workspaceLoadedFromServer = false; // var: saveState may run before this line during boot
+
     function saveState() {
       saveApiKeysToLocalStore();
       try {
@@ -2870,11 +2886,15 @@ Auto-save: enabled</pre>
           localStorage.setItem("vanaras_v6_app", JSON.stringify(compactCopy));
         } catch {}
       }
-      fetch("/api/workspace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state })
-      }).catch(() => {});
+      // Until this page has read the server's workspace, `state` may be this browser's defaults (a fresh
+      // profile, a new window, the browser pane). Saving that would replace every thread on disk.
+      if (workspaceLoadedFromServer) {
+        fetch("/api/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state })
+        }).catch(() => {});
+      }
       updateHeaderPills();
     }
 
@@ -2988,6 +3008,7 @@ Auto-save: enabled</pre>
         const res = await fetch("/api/workspace");
         if (res.ok) {
           const data = await res.json();
+          workspaceLoadedFromServer = true;
           if (data.defaultMountPath) serverDefaultMountPath = data.defaultMountPath;
           if (data.repoRoot) serverRepoRoot = data.repoRoot;
           // Only restore disk state if it was already onboarded (skip legacy screenshot Project Maaya state)
@@ -2998,6 +3019,7 @@ Auto-save: enabled</pre>
             if (typeof state.autoTriggerEnabled !== "boolean") state.autoTriggerEnabled = true;
             restoreApiKeysFromLocalStore();
             hydrateBotAgentFields();
+            normalizeThreadMessages();
             localStorage.setItem("vanaras_v6_app", JSON.stringify(state));
           } else {
             restoreApiKeysFromLocalStore();
@@ -3928,6 +3950,7 @@ Auto-save: enabled</pre>
                 ${stopPillHtml}
               </div>
               <div class="msg-thought-wrap">${thoughtHtml}</div>
+              ${renderAgentStepsHtml(m, thread.id, idx, isMsgStreaming)}
               <div class="msg-bot-body">${bodyHtml}</div>
               <div class="msg-media-deck">${!isMsgStreaming ? renderInlineMediaDeck(m.text || "", m.botId) : ""}</div>
               ${actionBarHtml}
@@ -5086,6 +5109,7 @@ ${handoffRule}
         if (liveMsg && data.message) {
           liveMsg.text = data.message;
         }
+        if (liveMsg) mergeServerTurnSteps(liveMsg, data);
       }
       renderThreadList();
       if (activeThreadId === data.threadId) {
@@ -5121,6 +5145,7 @@ ${handoffRule}
         if (data.reasoning) {
           liveMsg.reasoning = data.reasoning;
         }
+        mergeServerTurnSteps(liveMsg, data);
         rememberServerTurnFacts(data);
         saveState();
         continueSquadAfterServerTurn(targetThread, data);
@@ -5130,6 +5155,41 @@ ${handoffRule}
         renderActiveThread();
       }
       updateComposerStopButton();
+    }
+
+    // Steps arrive one at a time (tool_result events) or as the whole list (status poll, turn_complete).
+    // The whole list is authoritative; a single step is added once, keyed by its sequence number.
+    function mergeServerTurnSteps(msg, data) {
+      if (Array.isArray(data.toolCalls)) {
+        msg.toolCalls = data.toolCalls;
+      } else if (data.toolResult) {
+        if (!Array.isArray(msg.toolCalls)) msg.toolCalls = [];
+        if (!msg.toolCalls.some(c => c && c.seq === data.toolResult.seq)) msg.toolCalls.push(data.toolResult);
+      }
+    }
+
+    function onStepsDetailsToggle(threadId, msgIdx, isOpen) {
+      const t = state.threads.find(x => x.id === threadId);
+      const m = t?.messages?.[msgIdx];
+      if (m) m.stepsOpen = Boolean(isOpen);
+    }
+
+    function renderAgentStepsHtml(m, threadId, idx, isStreaming) {
+      const steps = Array.isArray(m.toolCalls) ? m.toolCalls.filter(Boolean) : [];
+      if (steps.length === 0) return "";
+      const open = typeof m.stepsOpen === "boolean" ? m.stepsOpen : isStreaming;
+      const items = steps.map(c => {
+        const target = String(c.target ?? c.args?.command ?? c.args?.filePath ?? "");
+        const out = String(c.output ?? "");
+        return `<div style="margin-top:8px;">
+            <div><span style="color:var(--text-muted);">#${escapeHtml(String(c.step ?? ""))}</span> <strong>${escapeHtml(String(c.name || "tool"))}</strong>${target ? ` <code style="color:var(--accent-blue); white-space:pre-wrap; word-break:break-all;">${escapeHtml(target)}</code>` : ""}</div>
+            ${out.trim() ? `<pre style="margin:4px 0 0; white-space:pre-wrap; word-break:break-word; max-height:160px; overflow-y:auto; color:var(--text-secondary);">${escapeHtml(out.trim())}</pre>` : ""}
+          </div>`;
+      }).join("");
+      return `<details ${open ? "open" : ""} ontoggle="onStepsDetailsToggle('${threadId}', ${idx}, this.open)" style="margin-bottom:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:9px; padding:6px 10px; font-size:11px; color:var(--text-secondary);" class="mono">
+          <summary style="cursor:pointer; user-select:none;">Steps (${steps.length})${isStreaming ? " · live" : ""}</summary>
+          <div style="max-height:360px; overflow-y:auto;">${items}</div>
+        </details>`;
     }
 
     function findServerTurnMessage(thread, data) {

@@ -4,7 +4,7 @@ import { compactMessagesList } from "../context.mjs";
 import { broadcastEvent } from "../events.mjs";
 import { readJsonBody, sendJson } from "../http-utils.mjs";
 import { stopTrackedProcess } from "../process.mjs";
-import { executeServerSessionTurn } from "../session-runner.mjs";
+import { executeServerSessionTurn, summarizeToolStep } from "../session-runner.mjs";
 import { activeApprovals, activeServerTurns, serverTurnKey, sessionCheckpoints } from "../state.mjs";
 import { loadWorkspaceDiskState, saveWorkspaceDiskState } from "../workspace-state.mjs";
 import { ensureAgentWorktree } from "../worktree.mjs";
@@ -86,6 +86,8 @@ export async function handleSessionsRoutes(req, res) {
       step: t.step,
       maxSteps: t.maxSteps,
       message: t.message,
+      // Shorter output tails here: this list is polled every few seconds by every open window.
+      toolCalls: (t.toolCalls || []).map((c, i) => summarizeToolStep(c, i, 600)),
       startedAt: t.startedAt,
       updatedAt: t.updatedAt,
       ...(t.status === "running" ? {} : {

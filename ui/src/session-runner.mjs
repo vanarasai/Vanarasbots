@@ -25,7 +25,22 @@ EVIDENCE RULES (always apply):
 // How many times one turn may be pushed to act after announcing work without a tool call.
 const MAX_NUDGES = 2;
 
-const freshOutput =(out) => `[output captured ${new Date().toISOString()}]\n${out}`;
+// One step as the chat shows it: what ran and the tail of its output (the end of a log is where the result
+// and the error usually are). Full output stays on the turn record for the agent itself.
+export function summarizeToolStep(call, seq, maxOutput = 1500) {
+  const a = call.args || {};
+  const target = a.command ?? a.filePath ?? a.path ?? a.pattern ?? a.query ?? a.processId ?? a.prompt ?? a.message;
+  const output = String(call.output ?? "");
+  return {
+    seq,
+    step: call.step,
+    name: call.name,
+    target: String(target !== undefined ? target : (Object.keys(a).length ? JSON.stringify(a) : "")).slice(0, 400),
+    output: output.length > maxOutput ? `…${output.slice(-maxOutput)}` : output
+  };
+}
+
+const freshOutput = (out) => `[output captured ${new Date().toISOString()}]\n${out}`;
 
 // A failed model call used to read as an empty reply, which ended the turn as if the agent had finished.
 // Retry transient failures (rate limits, 5xx, dropped connections) once, then fail the turn with the reason.
@@ -328,7 +343,8 @@ export async function executeServerSessionTurn({
           fnArgs = typeof tc.function?.arguments === "string" ? JSON.parse(tc.function.arguments) : (tc.function?.arguments || {});
         } catch {}
 
-        turnRecord.message = `${botName} executing ${fnName}...`;
+        const preview = summarizeToolStep({ name: fnName, args: fnArgs }, turnRecord.toolCalls.length).target;
+        turnRecord.message = `${botName} running ${fnName}${preview ? `: ${preview.replace(/\s+/g, " ").slice(0, 90)}` : ""}…`;
         broadcastEvent("turn_progress", {
           turnId,
           threadId,
@@ -356,6 +372,16 @@ export async function executeServerSessionTurn({
           output: outputStr
         });
         turnRecord.toolCalls.push({ step: turnRecord.step, name: fnName, args: fnArgs, output: outputStr });
+        broadcastEvent("turn_progress", {
+          turnId,
+          threadId,
+          botId,
+          step: turnRecord.step,
+          maxSteps: turnRecord.maxSteps,
+          status: "tool_result",
+          toolResult: summarizeToolStep(turnRecord.toolCalls[turnRecord.toolCalls.length - 1], turnRecord.toolCalls.length - 1),
+          message: turnRecord.message
+        });
       }
 
       if (nativeToolCalls.length > 0) {
@@ -437,6 +463,7 @@ export async function executeServerSessionTurn({
     finalContent: finalVisibleContent,
     reasoning: accumulatedReasoning,
     toolCallsCount: turnRecord.toolCalls.length,
+    toolCalls: turnRecord.toolCalls.map((c, i) => summarizeToolStep(c, i)),
     remembered: turnRecord.remembered
   });
 

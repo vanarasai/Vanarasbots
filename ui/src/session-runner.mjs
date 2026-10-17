@@ -12,6 +12,18 @@ import { loadWorkspaceDiskState, saveWorkspaceDiskState } from "./workspace-stat
 import { ensureAgentWorktree } from "./worktree.mjs";
 
 // 6B-3. Server-Side Session Turn Execution Loop (P1a, P1b, P2)
+// Appended to every agent's system prompt (including user-defined ones) so claims are backed by evidence.
+const EVIDENCE_RULES = `
+
+EVIDENCE RULES (always apply):
+- Never state a cause, status or result you have not just observed. Run the check first, then quote the relevant output.
+- Tool output is stamped with when it was captured. Treat anything older than your latest step as stale and re-run the check before relying on it (ports, processes, files and servers change).
+- When a command fails, read its error, diagnose that error, and try the next concrete step yourself. Do not stop to ask permission for routine, non-destructive diagnostics.
+- If a fix needs something you cannot do (credentials, a download you are not allowed to run), say exactly what is missing and what you already verified.
+- A successful-looking artifact is not proof. Verify real behaviour (e.g. that audio is speech, not a placeholder tone) before saying it works.`;
+
+const freshOutput = (out) => `[output captured ${new Date().toISOString()}]\n${out}`;
+
 export async function executeServerSessionTurn({
   threadId = "default_thread",
   botId = "bot_r1",
@@ -105,8 +117,9 @@ export async function executeServerSessionTurn({
     message: `Starting autonomous turn for ${botName} (${turnRecord.maxSteps} max steps)...`
   });
 
-  const effectiveSysPrompt = systemPrompt || botDef.systemPrompt || agentCfg.systemPrompt ||
+  const baseSysPrompt = systemPrompt || botDef.systemPrompt || agentCfg.systemPrompt ||
     `You are ${botName}, an expert autonomous software engineer working in your isolated git worktree.\nYour mission is to plan, inspect files, edit code surgically, run tests/verifications, and fix all errors until working end-to-end.\nAlways verify your changes before declaring completion.`;
+    const effectiveSysPrompt = baseSysPrompt + EVIDENCE_RULES;
 
   const conversationMessages = [
     { role: "system", content: effectiveSysPrompt },
@@ -287,7 +300,7 @@ export async function executeServerSessionTurn({
           conversationMessages.push({
             role: "tool",
             tool_call_id: resItem.toolCallId,
-            content: resItem.output
+            content: freshOutput(resItem.output)
           });
         }
       } else {
@@ -298,7 +311,7 @@ export async function executeServerSessionTurn({
         const combinedOutputs = executedToolResults.map(r => `[Tool Output: ${r.name}]\n${r.output}`).join("\n\n");
         conversationMessages.push({
           role: "user",
-          content: `Real execution output from your worktree:\n${combinedOutputs}\nUse the tool output above to continue the task.`
+          content: `Real execution output captured at ${new Date().toISOString()} (earlier outputs may be stale; re-run a check before relying on it):\n${combinedOutputs}\nUse the tool output above to continue the task.`
         });
       }
     }

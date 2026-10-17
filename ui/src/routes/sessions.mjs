@@ -9,6 +9,15 @@ import { activeApprovals, activeServerTurns, sessionCheckpoints } from "../state
 import { loadWorkspaceDiskState, saveWorkspaceDiskState } from "../workspace-state.mjs";
 import { ensureAgentWorktree } from "../worktree.mjs";
 
+// Liveness for the UI: a running turn with no progress for this long is reported as stalled, and a finished
+// turn whose last message asks the user something is reported as waiting for them.
+const STALL_AFTER_MS = 120000;
+function turnLiveness(t) {
+  const idleMs = t.status === "running" ? Math.max(0, Date.now() - Date.parse(t.updatedAt || t.startedAt)) : 0;
+  const awaitingUser = t.status === "completed" && /\?\s*$/.test(String(t.finalContent || "").trim());
+  return { idleMs, stalled: t.status === "running" && idleMs > STALL_AFTER_MS, awaitingUser };
+}
+
 export async function handleSessionsRoutes(req, res) {
   // 6C. Server-Side Autonomous Session Runner (POST /api/sessions/turn, GET /api/sessions/status, POST /api/sessions/stop)
   if (req.method === "POST" && req.url === "/api/sessions/turn") {
@@ -56,7 +65,7 @@ export async function handleSessionsRoutes(req, res) {
       return sendJson(res, 200, {
         ok: true,
         active: turn ? turn.status === "running" : false,
-        turn: turn || null
+        turn: turn ? { ...turn, ...turnLiveness(turn) } : null
       });
     }
     const all = Array.from(activeServerTurns.values()).map(t => ({
@@ -67,7 +76,8 @@ export async function handleSessionsRoutes(req, res) {
       step: t.step,
       maxSteps: t.maxSteps,
       startedAt: t.startedAt,
-      updatedAt: t.updatedAt
+      updatedAt: t.updatedAt,
+      ...turnLiveness(t)
     }));
     return sendJson(res, 200, { ok: true, activeCount: all.filter(t => t.status === "running").length, turns: all });
   }

@@ -330,7 +330,7 @@ function createExpressApp() {
   }
   app.listen = (port, hostOrCb, maybeCb) => {
     const cb = typeof hostOrCb === 'function' ? hostOrCb : maybeCb;
-    const host = typeof hostOrCb === 'string' ? hostOrCb : '0.0.0.0';
+    const host = typeof hostOrCb === 'string' ? hostOrCb : '127.0.0.1';
     const srv = http.createServer(app);
     srv.listen(port, host, cb);
     return srv;
@@ -1381,18 +1381,70 @@ function readJsonBody(req) {
 
 function sendJson(res, status, data) {
   res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization"
+    "Content-Type": "application/json; charset=utf-8"
   });
   res.end(JSON.stringify(data));
 }
 
+// Local-only request boundary. The API can run shell commands, so it must only be driven by this
+// machine's own UI/CLI. Two checks:
+//  - Host must be a loopback name. DNS-rebinding pages reach 127.0.0.1 under an attacker hostname,
+//    so their Host header is not loopback.
+//  - Browser Origin, when present, must be a loopback origin. Ordinary websites calling
+//    http://localhost:3000 send their own Origin. Non-browser clients (CLI, curl) send none.
+// CORS is echoed only for loopback origins; it is never "*".
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function parseLoopbackHostname(hostValue) {
+  if (!hostValue) return null;
+  try {
+    return new URL(`http://${hostValue}`).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isLoopbackOrigin(origin) {
+  if (!origin || origin === "null") return false;
+  try {
+    const u = new URL(origin);
+    return (u.protocol === "http:" || u.protocol === "https:") &&
+      LOOPBACK_HOSTNAMES.has(u.hostname.replace(/^\[|\]$/g, "").toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function enforceLocalRequestBoundary(req, res) {
+  const host = req.headers.host;
+  if (host && !LOOPBACK_HOSTNAMES.has(parseLoopbackHostname(host))) {
+    res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ ok: false, error: "Forbidden host: Vanaras only serves this machine" }));
+    return false;
+  }
+  const origin = req.headers.origin;
+  if (origin !== undefined) {
+    const safeMethod = req.method === "GET" || req.method === "HEAD";
+    // Opaque "null" origins (sandboxed frames, file://) may read nothing and change nothing:
+    // they get no CORS grant, and only side-effect-free methods are let through.
+    const allowed = isLoopbackOrigin(origin) || (origin === "null" && safeMethod);
+    if (!allowed) {
+      res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, error: "Forbidden origin: Vanaras only accepts requests from its own app" }));
+      return false;
+    }
+    if (isLoopbackOrigin(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    }
+  }
+  return true;
+}
+
 const server = http.createServer(async (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (!enforceLocalRequestBoundary(req, res)) return;
 
   if (req.method === "OPTIONS") {
     res.writeHead(204);
@@ -1409,8 +1461,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*"
+      "Connection": "keep-alive"
     });
     res.write(`event: connected\ndata: {"status":"ok"}\n\n`);
     sseClients.add(res);
@@ -1875,10 +1926,10 @@ const server = http.createServer(async (req, res) => {
             if (/http\.server|Flask|FastAPI|uvicorn|socketserver/i.test(src)) {
               serveCmd = `PORT=${port} python3 "${fileName}"`;
             } else {
-              serveCmd = `python3 -m http.server ${port}`;
+              serveCmd = `python3 -m http.server ${port} --bind 127.0.0.1`;
             }
           } else {
-            serveCmd = `python3 -m http.server ${port}`;
+            serveCmd = `python3 -m http.server ${port} --bind 127.0.0.1`;
           }
         }
 
@@ -4080,7 +4131,6 @@ const server = http.createServer(async (req, res) => {
           }
           res.writeHead(upstream.status, {
             "Content-Type": "text/html; charset=utf-8",
-            "Access-Control-Allow-Origin": "*",
             "Cache-Control": "no-cache"
           });
           res.end(html);
@@ -4088,7 +4138,6 @@ const server = http.createServer(async (req, res) => {
         } else {
           res.writeHead(upstream.status, {
             "Content-Type": contentType,
-            "Access-Control-Allow-Origin": "*",
             "Cache-Control": "no-cache"
           });
           if (upstream.body) {
@@ -4133,7 +4182,6 @@ const server = http.createServer(async (req, res) => {
 </html>`;
         res.writeHead(200, {
           "Content-Type": "text/html; charset=utf-8",
-          "Access-Control-Allow-Origin": "*",
           "Cache-Control": "no-cache"
         });
         res.end(loadingHtml);
@@ -4268,7 +4316,23 @@ server.on("error", (err) => {
   console.error("Server error:", err);
 });
 
-server.listen(PORT, () => {
+// Loopback-only binding: the API executes shell commands, so it must never listen on LAN interfaces.
+// 127.0.0.1 is primary (the macOS app health check and Vanaras.command use it). A second listener on
+// ::1 serves clients that resolve "localhost" to IPv6 first; it shares the same request handler.
+const LOOPBACK_V4 = "127.0.0.1";
+const LOOPBACK_V6 = "::1";
+
+function listenOnIpv6Loopback() {
+  const v6 = http.createServer((req, res) => server.emit("request", req, res));
+  v6.on("error", (err) => {
+    // IPv6 may be disabled, or ::1 may already be held by an older instance. IPv4 loopback still works.
+    console.warn(`IPv6 loopback listener unavailable (${err.code || err.message}); serving on ${LOOPBACK_V4} only`);
+  });
+  v6.listen(PORT, LOOPBACK_V6);
+}
+
+server.listen(PORT, LOOPBACK_V4, () => {
+  listenOnIpv6Loopback();
   const promoted = syncAllWorktreesToMainRoot();
   ensureAgentPortServerRunning(3847, "bot_r1").catch(() => {});
   console.log(`Vanaras Desktop Engine listening at http://localhost:${PORT}${promoted.length > 0 ? ` (synced ${promoted.length} deliverables to main root)` : ""}`);

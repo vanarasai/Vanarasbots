@@ -18,6 +18,7 @@ import { handleLlmRoutes } from "./src/routes/llm.mjs";
 import { handleSessionsRoutes } from "./src/routes/sessions.mjs";
 import { handleSubagentsRoutes } from "./src/routes/subagents.mjs";
 import { handlePanelsRoutes } from "./src/routes/panels.mjs";
+import { handleCodeSearchRoutes } from "./src/routes/code-search.mjs";
 import { handleFilesRoutes } from "./src/routes/files.mjs";
 import { handleStaticRoutes } from "./src/routes/static.mjs";
 
@@ -32,6 +33,7 @@ const ROUTE_HANDLERS = [
   handleSessionsRoutes,
   handleSubagentsRoutes,
   handlePanelsRoutes,
+  handleCodeSearchRoutes,
   handleFilesRoutes,
   handleStaticRoutes
 ];

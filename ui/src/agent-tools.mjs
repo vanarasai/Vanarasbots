@@ -6,6 +6,7 @@ import { loadAgentConfig } from "./agent-store.mjs";
 import { REPO_ROOT, ROOT_DIR } from "./config.mjs";
 import { buildAgentExecEnv, ensureSharedVenvSymlinks, resolveSharedVenvDir } from "./env.mjs";
 import { broadcastEvent } from "./events.mjs";
+import { codeSearch } from "./code-index.mjs";
 import { callStdioMcpServer } from "./mcp-client.mjs";
 import { killProcessTree, spawnCommandAsync, spawnShellProcessGroup } from "./process.mjs";
 import { checkCommandPermission, checkToolAllowed } from "./security.mjs";
@@ -452,6 +453,27 @@ export async function executeAgentToolInternal(params = {}) {
   }
 
   // 9. GREP SEARCH
+  if (toolName === "code_search") {
+    const q = String(query ?? args.query ?? pattern ?? args.pattern ?? content ?? args.content ?? "").trim();
+    if (!q) return { status: 400, data: { ok: false, error: "code_search needs a query" } };
+    const scope = String(pathParam || dir || directory || args.path || args.dir || "").trim();
+    if (scope && !isPathInside(path.resolve(wt.worktreePath, scope), wt.worktreePath)) {
+      return { status: 400, data: { ok: false, error: `Path outside the worktree blocked: ${scope}` } };
+    }
+    try {
+      const r = await codeSearch(wt.worktreePath, q, { limit: Number(args.limit) || 8, pathPrefix: scope });
+      const mode = r.semantic.enabled
+        ? `hybrid (keyword + ${r.semantic.model}, ${Math.round(r.semantic.coverage * 100)}% embedded)`
+        : `keyword only${r.semantic.reason ? ` — semantic search off: ${r.semantic.reason}` : ""}`;
+      const output = r.results.length
+        ? `${r.results.length} passages for "${q}" · ${mode} · ${r.files} files indexed\n\n${r.text}`
+        : `No passages matched "${q}" (${mode}, ${r.files} files indexed). Try other words, or grep_search for an exact string.`;
+      return { status: 200, data: { ok: true, output, results: r.results.map(({ text, ...rest }) => rest), semantic: r.semantic } };
+    } catch (err) {
+      return { status: 500, data: { ok: false, error: `code_search failed: ${err.message}` } };
+    }
+  }
+
   if (toolName === "grep_search") {
     const rawPattern = pattern !== undefined ? pattern : (content !== undefined ? content : (args.pattern ?? args.query ?? args.content));
     if (rawPattern === undefined || rawPattern === null || String(rawPattern).length === 0) {

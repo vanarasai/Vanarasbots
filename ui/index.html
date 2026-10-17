@@ -4338,7 +4338,7 @@ Auto-save: enabled</pre>
         ? `\n\nMOUNTED WORKSPACE & LIVE SOURCE FILES:\n${String(folderSummary).slice(0, 36000)}`
         : "";
       const worktreeBlock = `\n\nISOLATED GIT WORKTREE:\n- Branch: ${wtBranch} (${wtPath})${folderContextBlock}`;
-      const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "mcp_call", "handoff"]).join(", ");
+      const enabledTools = [...new Set([...(bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "mcp_call", "handoff"]), "code_search"])].join(", ");
       const mcpLine = bot.mcpCommand
         ? `\n- Connected MCP Server: ${bot.mcpCommand} (Invoke MCP tools via [TOOL: mcp_call | <toolName> | <jsonArgs>])`
         : "";
@@ -4394,7 +4394,7 @@ CRITICAL: You do NOT have asynchronous background processes running for you! NEV
 <replacement lines>
 >>>>>>> REPLACE
 ===END_PATCH===
-4. Only when you explicitly need to run a shell command, search the codebase, or read an extra file in your worktree, include an exact tag such as [TOOL: fs_read | <path>], [TOOL: grep_search | <pattern>], [TOOL: find_files | <query>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
+4. Only when you explicitly need to run a shell command, search the codebase, or read an extra file in your worktree, include an exact tag such as [TOOL: code_search | <what you are looking for>] (ranked passages by meaning and keyword — try this first when locating code), [TOOL: fs_read | <path>], [TOOL: grep_search | <pattern>], [TOOL: find_files | <query>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
 ${handoffRule}
 6. Keep any internal thinking (<think>) brief (under 120 words — high-level bullet plan only). NEVER write full source code files inside <think> or internal reasoning; close </think> immediately and output all code and explanations in your visible answer.
 7. To persist an important architectural decision or project convention into your private disk memory across sessions, include \`[REMEMBER: <concise fact>]\`.`;

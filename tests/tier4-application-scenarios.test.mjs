@@ -333,4 +333,34 @@ export function registerTier4Tests(runner) {
       assertMatch(summary.text, /1 did not answer \(model errors\)[\s\S]*SUMMARY OK/, "the result must report who did not answer");
     });
   });
+
+  // T4.9: code_search finds code an agent just wrote (the index refreshes on edit) and returns passages with
+  // line numbers, ranked, scoped to the agent's worktree. Works with or without the embedding model.
+  runner.register(4, "M2", "F3", "T4.9_code_search_finds_fresh_code_with_lines", async () => {
+    const file = `cs_probe_${Date.now()}.mjs`;
+    const body = [
+      "// Converts a temperature reading so the dashboard can show it.",
+      "export function celsiusToFahrenheitForDashboard(c) {",
+      "  return c * 9 / 5 + 32;",
+      "}",
+      "",
+      "export function unrelatedHelper() {",
+      "  return 'nothing to see';",
+      "}"
+    ].join("\n");
+    await requestJson("POST", "/api/agent/tool", { action: "fs_write", botId: "bot_r1", filePath: file, content: body });
+    try {
+      const r = await requestJson("POST", "/api/agent/tool", { action: "code_search", botId: "bot_r1", args: { query: "convert celsius temperature to fahrenheit" } }, {}, 60000);
+      assertEqual(r.status, 200, `code_search: ${r.raw}`);
+      assert(r.body.ok, `code_search failed: ${r.raw}`);
+      const top = r.body.results[0];
+      assert(top && top.path.endsWith(file) && top.symbol === "celsiusToFahrenheitForDashboard", `top result must be the new function: ${JSON.stringify(r.body.results.slice(0, 3))}`);
+      assertMatch(r.body.output, new RegExp(`${file.replace(".", "\\.")}:1-\\d+ \\(celsiusToFahrenheitForDashboard\\)`), "output must carry path, lines and symbol");
+      assertMatch(r.body.output, /\s2 {2}export function celsiusToFahrenheitForDashboard/, "passages must be line-numbered");
+      const scoped = await requestJson("POST", "/api/agent/tool", { action: "code_search", botId: "bot_r1", args: { query: "x", path: "../../.." } });
+      assertEqual(scoped.status, 400, "a scope outside the worktree must be refused");
+    } finally {
+      await requestJson("POST", "/api/agent/tool", { action: "shell_exec", botId: "bot_r1", command: `rm -f agent_workspace/r1/${file} ${file}` });
+    }
+  });
 }

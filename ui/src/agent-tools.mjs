@@ -1,0 +1,877 @@
+// The agent tool executor: file, edit, shell, search, process, verify, subagent and MCP tools.
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { loadAgentConfig } from "./agent-store.mjs";
+import { REPO_ROOT, ROOT_DIR } from "./config.mjs";
+import { buildAgentExecEnv, ensureSharedVenvSymlinks, resolveSharedVenvDir } from "./env.mjs";
+import { broadcastEvent } from "./events.mjs";
+import { callStdioMcpServer } from "./mcp-client.mjs";
+import { killProcessTree, spawnCommandAsync, spawnShellProcessGroup } from "./process.mjs";
+import { checkCommandPermission } from "./security.mjs";
+import { activeApprovals, activeSubagents, agentBackgroundProcesses } from "./state.mjs";
+import { spawnSubagentAsync } from "./subagents.mjs";
+import { execFileAsync, isPathInside, safeGitCommitAsync } from "./util.mjs";
+import { RESERVED_ROOT_ENTRIES, ensureAgentWorktree, listAgentCodeFiles, syncWorktreeDeliverablesToMainRoot } from "./worktree.mjs";
+
+  // 2D. Per-Agent Tool & MCP Server Executor (Core Tool Execution Function)
+export async function executeAgentToolInternal(params = {}) {
+  const {
+    botId = "bot_r1",
+    botName = "R1",
+    tool,
+    action,
+    args = {},
+    toolName: requestedMcpToolName,
+    toolArgs: requestedMcpToolArgs,
+    filePath,
+    content,
+    mcpCommand,
+    streamId = "",
+    threadId = "",
+    pattern,
+    query,
+    isRegex,
+    path: pathParam,
+    dir,
+    directory,
+    oldString,
+    newString,
+    old_str,
+    new_str,
+    targetContent,
+    replacementContent,
+    command,
+    processId,
+    name,
+    lines,
+    timeout,
+    maxOutput
+  } = params;
+  const toolName = tool || action;
+  const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
+  const savedAgentCfg = loadAgentConfig(botId || "bot_r1") || {};
+  const effectiveMcpCommand = String(mcpCommand || savedAgentCfg.mcpCommand || "").trim();
+
+  // P4 Explore subagent read-only enforcement
+  const isSubExplore = String(botId || "").startsWith("sub_explore");
+  if (isSubExplore && ["fs_write", "exact_edit", "shell_exec", "shell", "start_process", "stop_process", "git_commit"].includes(toolName)) {
+    return {
+      status: 200,
+      data: {
+        ok: false,
+        error: `Access Denied: Explore subagent '${botId}' has read-only permissions and cannot run '${toolName}'. Use fs_read, grep_search, find_files, git_status, or git_diff.`
+      }
+    };
+  }
+
+  const cmdFromArgs = String(args.mcpCommand || params.mcpCommand || mcpCommand || "").trim();
+  const effectiveMcpCmd = cmdFromArgs || effectiveMcpCommand;
+
+  // 1. MCP PROBE
+  if (toolName === "mcp_probe") {
+    if (!effectiveMcpCmd) {
+      return { status: 400, data: { ok: false, error: "Missing MCP command: provide mcpCommand in tool args or configure the agent's MCP Server in Agent Studio" } };
+    }
+    const mcpRes = await callStdioMcpServer({ commandLine: effectiveMcpCmd, cwd: wt.worktreePath, method: "tools/list" });
+    const tools = mcpRes.result?.tools || [];
+    return { status: 200, data: { ...mcpRes, tools } };
+  }
+
+  // 2. MCP CALL
+  if (toolName === "mcp_call") {
+    if (!effectiveMcpCmd) {
+      return { status: 400, data: { ok: false, error: "Missing MCP command: provide mcpCommand in tool args or configure the agent's MCP Server in Agent Studio" } };
+    }
+    const targetMcpTool = requestedMcpToolName || args.name || args.toolName || "";
+    const targetMcpArgs = requestedMcpToolArgs || args.arguments || args.args || {};
+    const mcpRes = await callStdioMcpServer({
+      commandLine: effectiveMcpCmd,
+      cwd: wt.worktreePath,
+      method: "tools/call",
+      params: { name: targetMcpTool, arguments: targetMcpArgs }
+    });
+    const contentItems = Array.isArray(mcpRes.result?.content)
+      ? mcpRes.result.content.map(c => c.text || JSON.stringify(c)).join("\n")
+      : "";
+    const output = contentItems || (mcpRes.result ? JSON.stringify(mcpRes.result, null, 2) : "");
+    return { status: 200, data: { ...mcpRes, output } };
+  }
+
+  // 3. FS READ
+  if (toolName === "fs_read") {
+    const rawInput = String(filePath || pathParam || args.filePath || args.path || ".").trim();
+    if (rawInput.includes("..")) {
+      const probe = path.resolve(wt.codeDir, rawInput);
+      if (!isPathInside(probe, wt.codeDir) && !isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
+        return { status: 200, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
+      }
+    }
+
+    const candidatePaths = [];
+    if (path.isAbsolute(rawInput)) {
+      if (isPathInside(rawInput, wt.codeDir) || isPathInside(rawInput, wt.worktreePath) || isPathInside(rawInput, ROOT_DIR)) {
+        candidatePaths.push(path.resolve(rawInput));
+      } else {
+        return { status: 200, data: { ok: false, error: `Path outside workspace blocked: ${rawInput}` } };
+      }
+    } else {
+      const cleanRel = rawInput.replace(/^\/+/, "");
+      for (const base of [wt.codeDir, wt.worktreePath, ROOT_DIR, REPO_ROOT]) {
+        const p = path.resolve(base, cleanRel);
+        if (isPathInside(p, base)) candidatePaths.push(p);
+      }
+    }
+
+    const existingTarget = candidatePaths.find(p => fs.existsSync(p));
+    if (!existingTarget) {
+      return { status: 200, data: { ok: false, error: `File not found in ${wt.branch} or mounted repository: ${rawInput}` } };
+    }
+
+    const stat = fs.statSync(existingTarget);
+    if (stat.isDirectory()) {
+      const codeFiles = listAgentCodeFiles(wt.codeDir).map(f => f.name);
+      const dirEntries = fs.readdirSync(existingTarget, { withFileTypes: true })
+        .filter(e => !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "target")
+        .slice(0, 50)
+        .map(e => (e.isDirectory() ? `${e.name}/` : e.name));
+      const listing = [
+        `Directory: ${existingTarget} (branch ${wt.branch})`,
+        codeFiles.length > 0 ? `Agent Workspace Files (${wt.codeDir}): ${codeFiles.join(", ")}` : "",
+        `Entries: ${dirEntries.join(", ") || "(empty)"}`
+      ].filter(Boolean).join("\n");
+      return {
+        status: 200,
+        data: {
+          ok: true,
+          isDirectory: true,
+          worktreePath: wt.worktreePath,
+          codeDir: wt.codeDir,
+          branch: wt.branch,
+          output: listing
+        }
+      };
+    }
+
+    const text = fs.readFileSync(existingTarget, "utf8").slice(0, 25000);
+    return { status: 200, data: { ok: true, worktreePath: wt.worktreePath, codeDir: wt.codeDir, branch: wt.branch, output: text } };
+  }
+
+  // 4. FS WRITE
+  if (toolName === "fs_write") {
+    const rawInput = String(filePath || pathParam || args.filePath || args.path || "notes.md").trim();
+    let rel = rawInput;
+    if (path.isAbsolute(rawInput)) {
+      if (isPathInside(rawInput, wt.codeDir)) {
+        rel = path.relative(wt.codeDir, rawInput);
+      } else if (isPathInside(rawInput, wt.worktreePath)) {
+        rel = path.relative(wt.worktreePath, rawInput);
+      } else if (isPathInside(rawInput, ROOT_DIR)) {
+        rel = path.relative(ROOT_DIR, rawInput);
+      } else {
+        return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
+      }
+    }
+    const target = path.resolve(wt.codeDir, rel.replace(/^\/+/, ""));
+    if (rawInput.includes("..") || !isPathInside(target, wt.codeDir)) {
+      return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
+    }
+    const bodyContent = String(content ?? args.content ?? "");
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, bodyContent, "utf8");
+    const cleanRel = path.relative(wt.codeDir, target);
+    const topSegment = cleanRel.split("/")[0];
+    if (topSegment && !RESERVED_ROOT_ENTRIES.has(topSegment)) {
+      const wtDest = path.resolve(wt.worktreePath, cleanRel);
+      if (isPathInside(wtDest, wt.worktreePath)) {
+        try {
+          fs.mkdirSync(path.dirname(wtDest), { recursive: true });
+          fs.writeFileSync(wtDest, bodyContent, "utf8");
+        } catch {}
+      }
+    }
+    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        bytesWritten: bodyContent.length,
+        worktreePath: wt.worktreePath,
+        codeDir: wt.codeDir,
+        branch: wt.branch,
+        promotedToRoot,
+        output: `Wrote ${bodyContent.length} bytes to ${cleanRel} & synced to main root folder`
+      }
+    };
+  }
+
+  // 5. EXACT EDIT (P2)
+  if (toolName === "exact_edit") {
+    const rawInput = String(filePath || pathParam || args.filePath || args.path || args.file || "").trim();
+    if (!rawInput) {
+      return { status: 400, data: { ok: false, error: "Missing filePath for exact_edit" } };
+    }
+    let target = null;
+    if (path.isAbsolute(rawInput)) {
+      if (isPathInside(rawInput, wt.codeDir) || isPathInside(rawInput, wt.worktreePath) || isPathInside(rawInput, ROOT_DIR)) {
+        target = path.resolve(rawInput);
+      } else {
+        return { status: 400, data: { ok: false, error: `Path outside workspace blocked: ${rawInput}` } };
+      }
+    } else {
+      if (rawInput.includes("..")) {
+        const probe = path.resolve(wt.codeDir, rawInput);
+        if (!isPathInside(probe, wt.codeDir) && !isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
+          return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
+        }
+      }
+      const cleanRel = rawInput.replace(/^\/+/, "");
+      for (const base of [wt.codeDir, wt.worktreePath, ROOT_DIR, REPO_ROOT]) {
+        const p = path.resolve(base, cleanRel);
+        if (isPathInside(p, base) && fs.existsSync(p)) {
+          target = p;
+          break;
+        }
+      }
+      if (!target) {
+        target = path.resolve(wt.codeDir, cleanRel);
+      }
+    }
+
+    if (!fs.existsSync(target)) {
+      return { status: 200, data: { ok: false, error: `File not found: ${rawInput}` } };
+    }
+
+    const originalContent = fs.readFileSync(target, "utf8");
+    const targetOld = String(oldString ?? old_str ?? targetContent ?? args.oldString ?? args.old_str ?? args.targetContent ?? "");
+    const targetNew = String(newString ?? new_str ?? replacementContent ?? args.newString ?? args.new_str ?? args.replacementContent ?? "");
+
+    if (!targetOld) {
+      return { status: 400, data: { ok: false, error: "Missing oldString to replace" } };
+    }
+
+    const matchesCount = originalContent.split(targetOld).length - 1;
+    if (matchesCount === 0) {
+      return { status: 200, data: { ok: false, error: `Target substring not found in ${rawInput}` } };
+    }
+    if (matchesCount > 1) {
+      return { status: 200, data: { ok: false, error: `Target substring appears ${matchesCount} times in ${rawInput}; must match uniquely (1 time) to edit safely` } };
+    }
+
+    const updatedContent = originalContent.replace(targetOld, targetNew);
+    fs.writeFileSync(target, updatedContent, "utf8");
+
+    const cleanRel = path.relative(wt.codeDir, target);
+    const topSegment = cleanRel.split("/")[0];
+    if (topSegment && !RESERVED_ROOT_ENTRIES.has(topSegment)) {
+      const wtDest = path.resolve(wt.worktreePath, cleanRel);
+      if (isPathInside(wtDest, wt.worktreePath)) {
+        try {
+          fs.mkdirSync(path.dirname(wtDest), { recursive: true });
+          fs.writeFileSync(wtDest, updatedContent, "utf8");
+        } catch {}
+      }
+    }
+    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "exact_edit",
+        file: rawInput,
+        promotedToRoot,
+        output: `Successfully edited ${rawInput} (1 exact replacement applied)`
+      }
+    };
+  }
+
+  // 6. GIT COMMIT
+  if (toolName === "git_commit") {
+    const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+    const msg = String(content || filePath || args.message || `feat(${slug}): autonomous agent commit`);
+    let out = "";
+    try {
+      await safeGitCommitAsync(wt.worktreePath, msg, 5000);
+      const { stdout } = await execFileAsync("git", ["log", "--oneline", "-n", "3"], {
+        cwd: wt.worktreePath,
+        timeout: 5000
+      });
+      out = stdout.trim();
+    } catch (err) {
+      out = err.message;
+    }
+    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+    return { status: 200, data: { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, promotedToRoot, output: out } };
+  }
+
+  // 7. GIT STATUS & GIT DIFF
+  if (toolName === "git_status" || toolName === "git_diff") {
+    let out = "";
+    try {
+      if (toolName === "git_diff") {
+        const { stdout } = await execFileAsync("git", ["diff", "HEAD"], { cwd: wt.worktreePath, timeout: 5000 });
+        out = stdout.trim();
+      } else {
+        const st = await execFileAsync("git", ["status", "--short"], { cwd: wt.worktreePath, timeout: 5000 });
+        const br = await execFileAsync("git", ["branch", "--show-current"], { cwd: wt.worktreePath, timeout: 5000 });
+        const codeFiles = listAgentCodeFiles(wt.codeDir).map(f => f.name);
+        out = [
+          `Branch: ${br.stdout.trim() || wt.branch} (${wt.codeDir})`,
+          codeFiles.length > 0 ? `Workspace files: ${codeFiles.join(", ")}` : "",
+          st.stdout.trim() || "(Clean worktree)"
+        ].filter(Boolean).join("\n");
+      }
+    } catch (err) {
+      out = err.message;
+    }
+    return { status: 200, data: { ok: true, worktreePath: wt.worktreePath, codeDir: wt.codeDir, branch: wt.branch, output: out || "(Clean worktree)" } };
+  }
+
+  // 8. SHELL EXEC (P2: configurable timeout up to 300s, maxOutput up to 50k)
+  if (toolName === "shell_exec" || toolName === "shell") {
+    const rawCmd = String(content || filePath || command || args.command || "").trim();
+    const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
+    const sharedVenv = resolveSharedVenvDir(execCwd, wt.worktreePath);
+    let cmdStr = rawCmd
+      .replace(/\\\\\(/g, "\\(")
+      .replace(/\\\\\)/g, "\\)");
+    if (sharedVenv) {
+      cmdStr = cmdStr.replace(/\/(?:opt\/homebrew|usr\/local)\/bin\/(python3|python|pip3|pip)\b/g, "$1");
+    }
+    cmdStr = cmdStr.replace(
+      /\blsof\s+(?:-ti|-t\s+-i)\s*:?\s*(?:tcp:)?(\d{2,5})\b(?![^|;&\n]*-sTCP)/gi,
+      "lsof -nP -tiTCP:$1 -sTCP:LISTEN"
+    );
+    if (!cmdStr) {
+      return { status: 400, data: { ok: false, error: "Missing shell command" } };
+    }
+
+    // P3: Permission check (Allow / Ask / Deny)
+    const permCheck = checkCommandPermission(cmdStr, {
+      botId,
+      role: botName,
+      permissionPolicy: savedAgentCfg.permissionPolicy || (args.permissionPolicy || "auto")
+    });
+
+    if (permCheck.policy === "deny") {
+      return {
+        status: 200,
+        data: {
+          ok: false,
+          error: `Permission Denied: ${permCheck.reason}`
+        }
+      };
+    }
+
+    if (permCheck.policy === "ask" && !args.approved && !params.approved) {
+      const approvalId = `appr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const approvalPromise = new Promise((resolve) => {
+        activeApprovals.set(approvalId, {
+          approvalId,
+          threadId: threadId || "",
+          botId: botId || "bot_r1",
+          botName: botName || "R1",
+          command: cmdStr,
+          reason: permCheck.reason,
+          status: "pending",
+          createdAt: Date.now(),
+          resolve
+        });
+      });
+
+      broadcastEvent("approval_requested", {
+        approvalId,
+        threadId: threadId || "",
+        botId: botId || "bot_r1",
+        botName: botName || "R1",
+        command: cmdStr,
+        reason: permCheck.reason
+      });
+
+      // Wait up to 60s for user response
+      const decision = await Promise.race([
+        approvalPromise,
+        new Promise(res => setTimeout(() => res({ decision: "timeout" }), 60000))
+      ]);
+
+      activeApprovals.delete(approvalId);
+
+      if (decision.decision !== "allow") {
+        return {
+          status: 200,
+          data: {
+            ok: false,
+            error: `Command '${cmdStr}' was ${decision.decision === "timeout" ? "timed out waiting for approval" : "denied by user"}.`
+          }
+        };
+      }
+    }
+
+    const effectiveTimeout = Math.min(300000, Math.max(5000, Number(timeout || args.timeout || 120000)));
+    const effectiveMaxOutput = Math.min(50000, Math.max(1000, Number(maxOutput || args.maxOutput || 25000)));
+
+    const execRes = await spawnCommandAsync(cmdStr, {
+      cwd: execCwd,
+      worktreePath: wt.worktreePath,
+      timeout: effectiveTimeout,
+      trackKey: botId || "bot_r1",
+      onProgress: (chunk, tailOutput) => {
+        if (streamId) {
+          broadcastEvent("tool_stream", {
+            streamId,
+            threadId,
+            botId: botId || "bot_r1",
+            botName: botName || "R1",
+            command: cmdStr,
+            cwd: execCwd,
+            branch: wt.branch,
+            chunk,
+            output: tailOutput
+          });
+        }
+      }
+    });
+    ensureSharedVenvSymlinks(wt.worktreePath, wt.codeDir);
+    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+    return {
+      status: 200,
+      data: {
+        ok: execRes.exitCode === 0,
+        exitCode: execRes.exitCode,
+        cwd: execCwd,
+        branch: wt.branch,
+        promotedToRoot,
+        output: (execRes.output || `(exit ${execRes.exitCode})`).slice(-effectiveMaxOutput)
+      }
+    };
+  }
+
+  // 9. GREP SEARCH
+  if (toolName === "grep_search") {
+    const rawPattern = pattern !== undefined ? pattern : (content !== undefined ? content : (args.pattern ?? args.query ?? args.content));
+    if (rawPattern === undefined || rawPattern === null || String(rawPattern).length === 0) {
+      return { status: 400, data: { ok: false, error: "Search pattern cannot be empty" } };
+    }
+    const patternStr = String(rawPattern);
+    const isRegexFlag = Boolean(isRegex || args.isRegex);
+    let regexObj = null;
+    if (isRegexFlag) {
+      try {
+        regexObj = new RegExp(patternStr);
+      } catch (regErr) {
+        return { status: 400, data: { ok: false, error: `Invalid regular expression: ${regErr.message}` } };
+      }
+    }
+
+    const rawSearchPath = String(pathParam || dir || directory || args.path || args.dir || filePath || "").trim();
+    let targetSearchDir = wt.worktreePath;
+    if (rawSearchPath) {
+      if (rawSearchPath.includes("..")) {
+        const probe = path.resolve(wt.worktreePath, rawSearchPath);
+        if (!isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
+          return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawSearchPath}` } };
+        }
+      }
+      const resolvedSub = path.resolve(wt.worktreePath, rawSearchPath);
+      if (!isPathInside(resolvedSub, wt.worktreePath) && !isPathInside(resolvedSub, ROOT_DIR)) {
+        return { status: 400, data: { ok: false, error: `Path outside workspace blocked: ${rawSearchPath}` } };
+      }
+      if (fs.existsSync(resolvedSub)) {
+        targetSearchDir = resolvedSub;
+      }
+    }
+
+    const matches = [];
+    let usedGitGrep = false;
+    try {
+      const gitGrepArgs = ["grep", "-n", "-I", "--untracked"];
+      if (isRegexFlag) gitGrepArgs.push("-E");
+      else gitGrepArgs.push("-F");
+      gitGrepArgs.push(patternStr);
+
+      const gitGrepOut = execFileSync("git", gitGrepArgs, {
+        cwd: targetSearchDir,
+        stdio: "pipe",
+        timeout: 8000
+      }).toString("utf8");
+
+      const lines = gitGrepOut.split(/\r?\n/).filter(Boolean);
+      for (const l of lines) {
+        const firstColon = l.indexOf(":");
+        if (firstColon === -1) continue;
+        const secondColon = l.indexOf(":", firstColon + 1);
+        if (secondColon === -1) continue;
+        const matchFile = l.slice(0, firstColon);
+        const lineNum = parseInt(l.slice(firstColon + 1, secondColon), 10);
+        const lineText = l.slice(secondColon + 1);
+        matches.push({ file: matchFile, line: lineNum, text: lineText });
+      }
+      usedGitGrep = true;
+    } catch (gitErr) {
+      if (gitErr.status === 1) {
+        usedGitGrep = true;
+      }
+    }
+
+    if (!usedGitGrep) {
+      const ignoreNames = new Set(["node_modules", ".git", ".venv", "target", "dist", ".cache"]);
+      function walkDir(d, relPrefix = "") {
+        if (matches.length >= 250) return;
+        let entries = [];
+        try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+        for (const ent of entries) {
+          if (ignoreNames.has(ent.name) || ent.name.startsWith(".")) continue;
+          const fullP = path.join(d, ent.name);
+          const relP = relPrefix ? `${relPrefix}/${ent.name}` : ent.name;
+          if (ent.isDirectory()) {
+            walkDir(fullP, relP);
+          } else if (ent.isFile()) {
+            try {
+              const stat = fs.statSync(fullP);
+              if (stat.size > 1000000) continue;
+              const fileStr = fs.readFileSync(fullP, "utf8");
+              const fileLines = fileStr.split(/\r?\n/);
+              for (let i = 0; i < fileLines.length; i++) {
+                const lineContent = fileLines[i];
+                let hit = false;
+                if (isRegexFlag && regexObj) {
+                  hit = regexObj.test(lineContent);
+                } else {
+                  hit = lineContent.includes(patternStr);
+                }
+                if (hit) {
+                  matches.push({ file: relP, line: i + 1, text: lineContent });
+                  if (matches.length >= 250) break;
+                }
+              }
+            } catch {}
+          }
+        }
+      }
+      walkDir(targetSearchDir);
+    }
+
+    const outputLines = matches.slice(0, 100).map(m => `${m.file}:${m.line}: ${m.text}`);
+    const formattedOut = outputLines.length > 0 ? outputLines.join("\n") : "(no matches found)";
+
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "grep_search",
+        searchRoot: targetSearchDir,
+        matches,
+        output: formattedOut
+      }
+    };
+  }
+
+  // 10. FIND FILES
+  if (toolName === "find_files") {
+    const fileQuery = content !== undefined
+      ? String(content)
+      : String(query ?? args.query ?? args.content ?? args.pattern ?? "");
+    if (fileQuery.includes("..")) {
+      return { status: 400, data: { ok: false, error: "Path traversal outside workspace blocked" } };
+    }
+
+    let allFiles = [];
+    try {
+      const lsOut = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
+        cwd: wt.worktreePath,
+        stdio: "pipe",
+        timeout: 5000
+      }).toString("utf8");
+      allFiles = lsOut.split(/\r?\n/).filter(Boolean);
+    } catch {}
+
+    if (allFiles.length === 0) {
+      const ignoreNames = new Set(["node_modules", ".git", ".venv", "target", "dist", ".cache"]);
+      function walk(d, prefix = "") {
+        let entries = [];
+        try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+        for (const ent of entries) {
+          if (ignoreNames.has(ent.name) || ent.name.startsWith(".")) continue;
+          const fullP = path.join(d, ent.name);
+          const relP = prefix ? `${prefix}/${ent.name}` : ent.name;
+          if (ent.isDirectory()) walk(fullP, relP);
+          else if (ent.isFile()) allFiles.push(relP);
+        }
+      }
+      walk(wt.worktreePath);
+    }
+
+    if (fs.existsSync(wt.codeDir)) {
+      for (const cf of listAgentCodeFiles(wt.codeDir)) {
+        const relInWt = path.relative(wt.worktreePath, path.join(wt.codeDir, cf.name));
+        if (!allFiles.includes(cf.name) && !allFiles.includes(relInWt)) {
+          allFiles.push(cf.name);
+        }
+      }
+    }
+
+    let filtered = [];
+    if (!fileQuery.trim()) {
+      filtered = allFiles;
+    } else {
+      const cleanQ = fileQuery.trim();
+      const hasWildcard = cleanQ.includes("*") || cleanQ.includes("?");
+      if (hasWildcard) {
+        try {
+          const globRx = new RegExp("^" + cleanQ.replace(/([.+^$[\]\\(){}|])/g, "\\$1").replace(/\*/g, ".*").replace(/\?/g, ".") + "$", "i");
+          filtered = allFiles.filter(f => globRx.test(f) || globRx.test(path.basename(f)));
+        } catch {
+          filtered = allFiles.filter(f => f.toLowerCase().includes(cleanQ.toLowerCase()));
+        }
+      } else {
+        const lowerQ = cleanQ.toLowerCase();
+        filtered = allFiles.filter(f => f.toLowerCase().includes(lowerQ));
+      }
+    }
+
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "find_files",
+        searchRoot: wt.worktreePath,
+        files: filtered,
+        output: filtered.length > 0 ? filtered.join("\n") : "(no files found)"
+      }
+    };
+  }
+
+  // 11. START PROCESS (P2)
+  if (toolName === "start_process") {
+    const rawCmd = String(command || content || args.command || "").trim();
+    if (!rawCmd) {
+      return { status: 400, data: { ok: false, error: "Missing process command" } };
+    }
+    const procId = "proc_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+    const procName = String(name || args.name || rawCmd.slice(0, 30));
+    const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
+    const child = spawnShellProcessGroup(rawCmd, {
+      cwd: execCwd,
+      env: buildAgentExecEnv(execCwd, wt.worktreePath)
+    });
+    const logs = [];
+    const MAX_LOG_LINES = 1000;
+    const appendLog = (chunk) => {
+      const text = chunk.toString("utf8");
+      const lines = text.split(/\r?\n/);
+      for (const l of lines) {
+        if (l) logs.push(`[${new Date().toLocaleTimeString()}] ${l}`);
+      }
+      if (logs.length > MAX_LOG_LINES) logs.splice(0, logs.length - MAX_LOG_LINES);
+    };
+    if (child.stdout) child.stdout.on("data", appendLog);
+    if (child.stderr) child.stderr.on("data", appendLog);
+    const procEntry = {
+      id: procId,
+      name: procName,
+      command: rawCmd,
+      child,
+      pid: child.pid,
+      cwd: execCwd,
+      botId: botId || "bot_r1",
+      logs,
+      startedAt: new Date().toISOString(),
+      exitCode: null
+    };
+    child.on("exit", (code, signal) => {
+      procEntry.exitCode = code !== null ? code : signal;
+      logs.push(`[SYSTEM] Process exited with ${code !== null ? `code ${code}` : `signal ${signal}`}`);
+    });
+    agentBackgroundProcesses.set(procId, procEntry);
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "start_process",
+        processId: procId,
+        pid: child.pid,
+        name: procName,
+        command: rawCmd,
+        status: "running",
+        output: `Started background process ${procId} (PID: ${child.pid}): ${rawCmd}`
+      }
+    };
+  }
+
+  // 12. STOP PROCESS (P2)
+  if (toolName === "stop_process") {
+    const targetId = String(processId || args.processId || name || args.name || "").trim();
+    if (!targetId) {
+      return { status: 400, data: { ok: false, error: "Missing processId" } };
+    }
+    let found = agentBackgroundProcesses.get(targetId);
+    if (!found) {
+      for (const p of agentBackgroundProcesses.values()) {
+        if (p.name === targetId || String(p.pid) === targetId) {
+          found = p;
+          break;
+        }
+      }
+    }
+    if (!found) {
+      return { status: 200, data: { ok: false, error: `Background process not found: ${targetId}` } };
+    }
+    killProcessTree(found.child);
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "stop_process",
+        processId: found.id,
+        pid: found.pid,
+        status: "stopped",
+        output: `Stopped background process ${found.id} (PID ${found.pid})`
+      }
+    };
+  }
+
+  // 13. GET PROCESS LOGS (P2)
+  if (toolName === "get_process_logs") {
+    const targetId = String(processId || args.processId || name || args.name || "").trim();
+    let found = agentBackgroundProcesses.get(targetId);
+    if (!found) {
+      for (const p of agentBackgroundProcesses.values()) {
+        if (p.name === targetId || String(p.pid) === targetId) {
+          found = p;
+          break;
+        }
+      }
+    }
+    if (!found) {
+      return { status: 200, data: { ok: false, error: `Background process not found: ${targetId}` } };
+    }
+    const numLines = parseInt(lines || args.lines || 50, 10) || 50;
+    const tail = found.logs.slice(-numLines);
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "get_process_logs",
+        processId: found.id,
+        status: found.exitCode === null ? "running" : `exited (${found.exitCode})`,
+        output: tail.length > 0 ? tail.join("\n") : "(no logs yet)"
+      }
+    };
+  }
+
+  // 14. VERIFY PROJECT (P2)
+  if (toolName === "verify_project") {
+    let verifyCmd = String(command || content || args.command || "").trim();
+    const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
+    if (!verifyCmd) {
+      if (fs.existsSync(path.join(execCwd, "run.sh"))) verifyCmd = "./run.sh";
+      else if (fs.existsSync(path.join(wt.worktreePath, "run.sh"))) verifyCmd = "./run.sh";
+      else if (fs.existsSync(path.join(execCwd, "package.json"))) verifyCmd = "npm test";
+      else if (fs.existsSync(path.join(execCwd, "pytest.ini")) || fs.existsSync(path.join(execCwd, "tests"))) verifyCmd = "pytest";
+      else verifyCmd = "git status";
+    }
+    const execRes = await spawnCommandAsync(verifyCmd, {
+      cwd: execCwd,
+      worktreePath: wt.worktreePath,
+      timeout: 120000,
+      trackKey: botId || "bot_r1",
+      onProgress: (chunk, tailOutput) => {
+        if (streamId) {
+          broadcastEvent("tool_stream", {
+            streamId,
+            threadId,
+            botId: botId || "bot_r1",
+            botName: botName || "R1",
+            command: verifyCmd,
+            cwd: execCwd,
+            branch: wt.branch,
+            chunk,
+            output: tailOutput
+          });
+        }
+      }
+    });
+    return {
+      status: 200,
+      data: {
+        ok: execRes.exitCode === 0,
+        exitCode: execRes.exitCode,
+        command: verifyCmd,
+        output: (execRes.output || `(exit ${execRes.exitCode})`).slice(-15000)
+      }
+    };
+  }
+
+  // 15. SPAWN SUBAGENT (P4)
+  if (toolName === "spawn_subagent") {
+    const subType = String(args.type || content || "general").toLowerCase();
+    const subRole = String(args.role || name || "Subagent");
+    const subPrompt = String(args.prompt || content || "");
+    if (!subPrompt) return { status: 400, data: { ok: false, error: "Missing subagent prompt" } };
+    const sub = await spawnSubagentAsync({
+      type: subType,
+      role: subRole,
+      prompt: subPrompt,
+      leadBotId: botId || "bot_r1",
+      leadBotName: botName || "R1"
+    });
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "spawn_subagent",
+        subagentId: sub.id,
+        type: sub.type,
+        role: sub.role,
+        branch: sub.branch,
+        status: "started",
+        output: `Spawned ${sub.type.toUpperCase()} subagent '${sub.role}' (${sub.id}) in isolated worktree ${sub.branch}.`
+      }
+    };
+  }
+
+  // 16. GET SUBAGENT OUTPUT (P4)
+  if (toolName === "get_subagent_output") {
+    const targetId = String(args.subagentId || processId || content || "").trim();
+    if (!targetId) return { status: 400, data: { ok: false, error: "Missing subagentId" } };
+    const sub = activeSubagents.get(targetId);
+    if (!sub) return { status: 200, data: { ok: false, error: `Subagent not found: ${targetId}` } };
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "get_subagent_output",
+        subagentId: sub.id,
+        status: sub.status,
+        step: sub.currentStep,
+        maxSteps: sub.maxSteps,
+        output: sub.output || `(Subagent status: ${sub.status})`,
+        reasoning: sub.reasoning || ""
+      }
+    };
+  }
+
+  // 17. LIST SUBAGENTS (P4)
+  if (toolName === "list_subagents") {
+    const all = Array.from(activeSubagents.values()).map(s => ({
+      id: s.id,
+      type: s.type,
+      role: s.role,
+      status: s.status,
+      step: s.currentStep,
+      output: (s.output || "").slice(0, 150)
+    }));
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "list_subagents",
+        count: all.length,
+        subagents: all,
+        output: all.length > 0 ? all.map(s => `[${s.type.toUpperCase()}] ${s.role} (${s.id}): ${s.status}`).join("\n") : "(no active subagents)"
+      }
+    };
+  }
+
+  return { status: 400, data: { error: `Unknown agent tool: ${toolName}` } };
+}

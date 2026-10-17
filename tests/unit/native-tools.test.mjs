@@ -100,3 +100,12 @@ test("deliverable blocks: a missing END marker ends at the next FILE block or en
   assert.deepEqual(parseDeliverableBlocksText("===FILE: empty.txt===\n===END_FILE==="), []);
   assert.deepEqual(parseDeliverableBlocksText(""), []);
 });
+
+test("text fallback: brackets inside a command do not end the tag early (regression)", () => {
+  const [a] = parseTextToolCalls('[TOOL: shell_exec | python3 -c "import sys; print(sys.argv[1])" x]');
+  assert.equal(a.args.command, 'python3 -c "import sys; print(sys.argv[1])" x');
+  const [b] = parseTextToolCalls("[TOOL: shell_exec | [ -f a.txt ] && echo yes]");
+  assert.equal(b.args.command, "[ -f a.txt ] && echo yes");
+  const calls = parseTextToolCalls("[TOOL: fs_read | a[0].py] then [TOOL: git_status] and [TOOL: shell_exec | echo broken");
+  assert.deepEqual(calls.map(c => c.tool), ["fs_read", "git_status"], "an unterminated tag is ignored");
+});

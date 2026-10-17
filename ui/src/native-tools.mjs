@@ -257,11 +257,32 @@ export const VANARAS_NATIVE_TOOLS = [
 export function parseTextToolCalls(text) {
   if (!text) return [];
   const calls = [];
-  const toolRx = /\[TOOL:\s*([a-zA-Z0-9_.-]+)(?:\s*\|\s*([\s\S]*?))?\]/gi;
-  let match;
-  while ((match = toolRx.exec(text)) !== null) {
-    const name = match[1].trim();
-    const rawArg = (match[2] || "").trim();
+  // End each "[TOOL: name | argument]" at the *matching* bracket so arguments such as `sys.argv[1]` or
+  // `[ -f x ]` survive. A lazy regex stops at the first "]" and truncates them (the agent then loops).
+  const tags = [];
+  const startRx = /\[TOOL:\s*([a-zA-Z0-9_.-]+)\s*/gi;
+  let sm;
+  while ((sm = startRx.exec(text)) !== null) {
+    let i = startRx.lastIndex;
+    let rawArg = "";
+    if (text[i] === "|") {
+      let depth = 1;
+      const begin = ++i;
+      for (; i < text.length && depth > 0; i++) {
+        if (text[i] === "[") depth++;
+        else if (text[i] === "]") depth--;
+      }
+      if (depth !== 0) continue;
+      rawArg = text.slice(begin, i - 1);
+    } else if (text[i] === "]") {
+      i++;
+    } else {
+      continue;
+    }
+    tags.push({ name: sm[1].trim(), rawArg: rawArg.trim() });
+    startRx.lastIndex = i;
+  }
+  for (const { name, rawArg } of tags) {
     let args = {};
     if (name === "shell_exec" || name === "shell") {
       args = { command: rawArg };

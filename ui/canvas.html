@@ -3019,7 +3019,10 @@ Auto-save: enabled</pre>
         openOnboardingModal();
       }
       checkActiveServerTurnsOnBoot();
+      setInterval(checkActiveServerTurnsOnBoot, 6000);
     }
+
+    const threadLivenessState = {};
 
     async function checkActiveServerTurnsOnBoot() {
       try {
@@ -3028,12 +3031,23 @@ Auto-save: enabled</pre>
           const data = await res.json();
           if (Array.isArray(data.turns)) {
             for (const t of data.turns) {
+              threadLivenessState[t.threadId] = {
+                stalled: Boolean(t.stalled),
+                awaitingUser: Boolean(t.awaitingUser),
+                idleMs: t.idleMs || 0
+              };
               if (t.status === "running") {
-                activeWorkingThreads[t.threadId] = `Running on server (Step ${t.step}/${t.maxSteps})...`;
+                activeWorkingThreads[t.threadId] = t.stalled
+                  ? `[STALLED] No progress for ${Math.round((t.idleMs || 0) / 1000)}s`
+                  : `Running on server (Step ${t.step}/${t.maxSteps})...`;
+              } else if (t.status === "completed" && t.awaitingUser) {
+                delete activeWorkingThreads[t.threadId];
               }
             }
             renderThreadList();
-            renderActiveThread();
+            if (activeThreadId) {
+              renderActiveThread();
+            }
           }
         }
       } catch {}
@@ -3335,11 +3349,19 @@ Auto-save: enabled</pre>
         renderActiveThread();
       };
 
+      const liveness = threadLivenessState[thread.id];
+      let livenessBadge = "";
+      if (liveness?.stalled) {
+        livenessBadge = `<span style="display:inline-block; font-size:9px; font-weight:700; padding:1px 5px; border-radius:6px; background:rgba(239,68,68,0.18); color:#ef4444; border:1px solid rgba(239,68,68,0.4); margin-left:6px; vertical-align:middle;">STALLED</span>`;
+      } else if (liveness?.awaitingUser) {
+        livenessBadge = `<span style="display:inline-block; font-size:9px; font-weight:700; padding:1px 5px; border-radius:6px; background:rgba(234,179,8,0.18); color:#eab308; border:1px solid rgba(234,179,8,0.4); margin-left:6px; vertical-align:middle;">WAITING</span>`;
+      }
+
       btn.innerHTML = `
         ${avatarHtml}
         <div class="thread-meta">
           <div class="thread-title-row">
-            <span class="thread-title">${escapeHtml(title)}</span>
+            <span class="thread-title">${escapeHtml(title)}${livenessBadge}</span>
             ${rightDotHtml}
           </div>
           <div class="thread-preview">${escapeHtml(subtitle)}</div>
@@ -3684,12 +3706,20 @@ Auto-save: enabled</pre>
       const pill = document.getElementById("activeThreadPill");
       const input = document.getElementById("chatComposerInput");
 
+      const liveness = threadLivenessState[thread.id];
+      let headerLivenessBadge = "";
+      if (liveness?.stalled) {
+        headerLivenessBadge = `<span style="display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; background:rgba(239,68,68,0.18); color:#ef4444; border:1px solid rgba(239,68,68,0.4); margin-left:8px; vertical-align:middle;"><span style="width:6px; height:6px; border-radius:50%; background:#ef4444; display:inline-block;"></span>STALLED</span>`;
+      } else if (liveness?.awaitingUser) {
+        headerLivenessBadge = `<span style="display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; background:rgba(234,179,8,0.18); color:#eab308; border:1px solid rgba(234,179,8,0.4); margin-left:8px; vertical-align:middle;"><span style="width:6px; height:6px; border-radius:50%; background:#eab308; display:inline-block;"></span>WAITING FOR YOU</span>`;
+      }
+
       if (thread.type === "dm") {
         const bot = getBot(thread.botId);
         pill.innerHTML = `
           ${renderCleanAgentCircle(bot, 32)}
           <div>
-            <div class="identity-pill-name">${escapeHtml(getAgentShortTitle(bot))}</div>
+            <div class="identity-pill-name">${escapeHtml(getAgentShortTitle(bot))}${headerLivenessBadge}</div>
             <div class="identity-pill-sub">${escapeHtml(bot.role || "")}</div>
           </div>
         `;
@@ -3701,7 +3731,7 @@ Auto-save: enabled</pre>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
           <div>
-            <div class="identity-pill-name">${escapeHtml(thread.name || "Engineering Squad")}</div>
+            <div class="identity-pill-name">${escapeHtml(thread.name || "Engineering Squad")}${headerLivenessBadge}</div>
             <div class="identity-pill-sub">${agentCount} agents · Ready to build</div>
           </div>
         `;
@@ -4748,6 +4778,11 @@ ${handoffRule}
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: targetThread.id, botIds: [...runningBotIds] })
       }).catch(() => {});
+      fetch("/api/sessions/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: targetThread.id })
+      }).catch(() => {});
       saveState();
       renderThreadList();
       if (activeThreadId === targetThread.id) {
@@ -4893,9 +4928,94 @@ ${handoffRule}
       await runBotTurnInThread(thread.id, leadBot, `${goal.trim()}\n\n(Autonomous Mode: execute any helpful [TOOL: ...] in your worktree and include ${handoffTags} when ready for the next specialist.)`, 0);
     }
 
+    async function runServerBotTurnInThread(threadId, targetBot, triggerText, options = {}) {
+      const targetThread = state.threads.find(t => t.id === threadId);
+      if (!targetThread || !targetBot) return;
+
+      const isConcurrent = Boolean(options.allowConcurrent);
+      if (!isConcurrent) {
+        cancelActiveTurnForThread(targetThread, false);
+      }
+
+      const turnController = new AbortController();
+      const turnCtx = {
+        turnId: "turn_srv_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        controller: turnController,
+        abortController: turnController,
+        botId: targetBot.id,
+        botName: targetBot.name,
+        isConcurrent,
+        status: "thinking",
+        aborted: false
+      };
+      activeTurnState[threadId] = turnCtx;
+      activeTurnState[`${threadId}_${targetBot.id}`] = turnCtx;
+      if (!Array.isArray(allActiveTurnContexts[threadId])) {
+        allActiveTurnContexts[threadId] = [];
+      }
+      allActiveTurnContexts[threadId].push(turnCtx);
+
+      activeWorkingThreads[threadId] = `${targetBot.name} executing server-side autonomous turn...`;
+      renderThreadList();
+      updateComposerStopButton();
+      updateMultiAgentStatusStrip(threadId);
+
+      const liveMsg = {
+        id: `msg_bot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        senderType: "bot",
+        botId: targetBot.id,
+        text: "⏳ Initializing server-side autonomous turn...",
+        reasoning: "",
+        thoughtOpen: true,
+        isStreaming: true,
+        hooksTrace: ["ServerRunner"],
+        collabRound: targetBot.worktreeBranch,
+        hasDeliverables: false
+      };
+      targetThread.messages.push(liveMsg);
+      if (activeThreadId === threadId) renderActiveThread();
+
+      try {
+        const res = await fetch("/api/sessions/turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threadId,
+            botId: targetBot.id,
+            botName: targetBot.name,
+            prompt: triggerText,
+            systemPrompt: targetBot.systemPrompt || "",
+            maxSteps: Math.max(1, Math.min(60, Number(targetBot.maxReactSteps) || 30))
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          liveMsg.isStreaming = false;
+          liveMsg.text = `Server runner error: ${data.error || "Failed to start"}`;
+          delete activeWorkingThreads[threadId];
+          delete activeTurnState[threadId];
+          renderThreadList();
+          if (activeThreadId === threadId) renderActiveThread();
+          updateComposerStopButton();
+        }
+      } catch (err) {
+        liveMsg.isStreaming = false;
+        liveMsg.text = `Failed to contact server runner: ${err.message}`;
+        delete activeWorkingThreads[threadId];
+        delete activeTurnState[threadId];
+        renderThreadList();
+        if (activeThreadId === threadId) renderActiveThread();
+        updateComposerStopButton();
+      }
+    }
+
     async function runBotTurnInThread(threadId, targetBot, triggerText, chainDepth = 0, options = {}) {
       const targetThread = state.threads.find(t => t.id === threadId);
       if (!targetThread || !targetBot) return;
+
+      if (state.useServerRunner !== false && (targetBot.id === "bot_r1" || options.useServerRunner || state.useServerRunner)) {
+        return runServerBotTurnInThread(threadId, targetBot, triggerText, options);
+      }
 
       const isConcurrent = Boolean(options.allowConcurrent);
       if (!isConcurrent) {
@@ -8319,10 +8439,18 @@ ${handoffRule}
             const data = JSON.parse(ev.data);
             if (data.threadId) {
               activeWorkingThreads[data.threadId] = data.message || `Step ${data.step}/${data.maxSteps}...`;
+              const targetThread = state.threads.find(t => t.id === data.threadId);
+              if (targetThread && Array.isArray(targetThread.messages)) {
+                const liveMsg = targetThread.messages.find(m => m && m.isStreaming);
+                if (liveMsg && data.message) {
+                  liveMsg.text = data.message;
+                }
+              }
               renderThreadList();
               if (activeThreadId === data.threadId) {
                 renderActiveThread();
               }
+              updateComposerStopButton();
             }
           } catch {}
         });
@@ -8332,10 +8460,31 @@ ${handoffRule}
             const data = JSON.parse(ev.data);
             if (data.threadId) {
               delete activeWorkingThreads[data.threadId];
+              delete activeTurnState[data.threadId];
+              const targetThread = state.threads.find(t => t.id === data.threadId);
+              if (targetThread && Array.isArray(targetThread.messages)) {
+                let liveMsg = targetThread.messages.find(m => m && m.isStreaming);
+                if (!liveMsg) {
+                  liveMsg = {
+                    id: "msg_bot_" + Date.now(),
+                    senderType: "bot",
+                    botId: data.botId,
+                    botName: data.botName
+                  };
+                  targetThread.messages.push(liveMsg);
+                }
+                liveMsg.isStreaming = false;
+                liveMsg.text = data.finalContent || "(Completed)";
+                if (data.reasoning) {
+                  liveMsg.reasoning = data.reasoning;
+                }
+                saveState();
+              }
               renderThreadList();
               if (activeThreadId === data.threadId) {
                 renderActiveThread();
               }
+              updateComposerStopButton();
             }
           } catch {}
         });

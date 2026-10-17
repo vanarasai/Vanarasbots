@@ -74,11 +74,13 @@ export async function executeServerSessionTurn({
   const apiKey = resolveVaultApiKey(provider, botDef.apiKey || agentCfg.apiKey || "", botId);
 
   const lastMsg = thread.messages[thread.messages.length - 1];
-  if (prompt && (!lastMsg || lastMsg.role !== "user" || lastMsg.content !== prompt)) {
+  if (prompt && (!lastMsg || (lastMsg.role !== "user" && lastMsg.senderType !== "user") || (lastMsg.content !== prompt && lastMsg.text !== prompt))) {
     thread.messages.push({
       id: "msg_user_" + Date.now(),
       role: "user",
+      senderType: "user",
       content: prompt,
+      text: prompt,
       timestamp: new Date().toISOString()
     });
   }
@@ -336,9 +338,11 @@ export async function executeServerSessionTurn({
     thread.messages.push({
       id: "msg_ast_" + Date.now(),
       role: "assistant",
+      senderType: "bot",
       botId,
       botName,
       content: finalVisibleContent,
+      text: finalVisibleContent,
       reasoning: accumulatedReasoning,
       toolCalls: turnRecord.toolCalls,
       timestamp: new Date().toISOString()

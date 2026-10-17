@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "ci-demo": {
+      "command": "npx",
+      "args": ["-y", "@example/ci-demo-server", "--token=sk-testtesttesttest"],
+      "env": {
+        "API_KEY": "plain-fixture-value",
+        "ACCESS_TOKEN": "plain-fixture-value",
+        "NOTE": "sk-testtesttesttest",
+        "REGION": "eu-west-1"
+      }
+    }
+  }
+}

@@ -8,11 +8,64 @@ import { buildAgentExecEnv, ensureSharedVenvSymlinks, resolveSharedVenvDir } fro
 import { broadcastEvent } from "./events.mjs";
 import { callStdioMcpServer } from "./mcp-client.mjs";
 import { killProcessTree, spawnCommandAsync, spawnShellProcessGroup } from "./process.mjs";
-import { checkCommandPermission } from "./security.mjs";
+import { checkCommandPermission, checkToolAllowed } from "./security.mjs";
 import { activeApprovals, activeSubagents, agentBackgroundProcesses } from "./state.mjs";
 import { spawnSubagentAsync } from "./subagents.mjs";
 import { execFileAsync, isPathInside, safeGitCommitAsync } from "./util.mjs";
 import { RESERVED_ROOT_ENTRIES, ensureAgentWorktree, listAgentCodeFiles, syncWorktreeDeliverablesToMainRoot } from "./worktree.mjs";
+
+// Every tool that launches a process funnels through here, so the DENY/ASK policy cannot be skipped by
+// choosing a different tool. Nothing the model supplies can pre-approve a command: approval only ever
+// comes from the user, via POST /api/approvals/respond.
+//   returns null  -> proceed
+//   returns {...} -> a ready-to-return tool response (denied / timed out)
+async function gateCommand({ commandText, label = "Command", forceAsk = false, forceAskReason = "", botId, botName, threadId, permissionPolicy }) {
+  const perm = checkCommandPermission(commandText, { permissionPolicy });
+  if (perm.policy === "deny") {
+    return { status: 200, data: { ok: false, error: `Permission Denied: ${perm.reason}` } };
+  }
+  const reason = perm.policy === "ask" ? perm.reason : (forceAsk ? forceAskReason : "");
+  if (!reason) return null;
+
+  const approvalId = `appr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  let timer;
+  const decision = await new Promise((resolve) => {
+    activeApprovals.set(approvalId, {
+      approvalId,
+      threadId: threadId || "",
+      botId: botId || "bot_r1",
+      botName: botName || "R1",
+      command: commandText,
+      reason,
+      status: "pending",
+      createdAt: Date.now(),
+      resolve
+    });
+    broadcastEvent("approval_requested", {
+      approvalId,
+      threadId: threadId || "",
+      botId: botId || "bot_r1",
+      botName: botName || "R1",
+      command: commandText,
+      reason
+    });
+    // Wait up to 60s for the user's response.
+    timer = setTimeout(() => resolve({ decision: "timeout" }), 60000);
+  });
+  clearTimeout(timer);
+  activeApprovals.delete(approvalId);
+
+  if (decision.decision !== "allow") {
+    return {
+      status: 200,
+      data: {
+        ok: false,
+        error: `${label} '${commandText}' was ${decision.decision === "timeout" ? "timed out waiting for approval" : "denied by user"}.`
+      }
+    };
+  }
+  return null;
+}
 
   // 2D. Per-Agent Tool & MCP Server Executor (Core Tool Execution Function)
 export async function executeAgentToolInternal(params = {}) {
@@ -49,30 +102,38 @@ export async function executeAgentToolInternal(params = {}) {
     maxOutput
   } = params;
   const toolName = tool || action;
-  const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
-  const savedAgentCfg = loadAgentConfig(botId || "bot_r1") || {};
-  const effectiveMcpCommand = String(mcpCommand || savedAgentCfg.mcpCommand || "").trim();
 
-  // P4 Explore subagent read-only enforcement
-  const isSubExplore = String(botId || "").startsWith("sub_explore");
-  if (isSubExplore && ["fs_write", "exact_edit", "shell_exec", "shell", "start_process", "stop_process", "git_commit"].includes(toolName)) {
-    return {
-      status: 200,
-      data: {
-        ok: false,
-        error: `Access Denied: Explore subagent '${botId}' has read-only permissions and cannot run '${toolName}'. Use fs_read, grep_search, find_files, git_status, or git_diff.`
-      }
-    };
+  // Subagent capability allowlist: enforced first, so a denied call has no side effects at all.
+  const toolCheck = checkToolAllowed(botId, toolName);
+  if (!toolCheck.allowed) {
+    return { status: 200, data: { ok: false, error: toolCheck.reason } };
   }
 
-  const cmdFromArgs = String(args.mcpCommand || params.mcpCommand || mcpCommand || "").trim();
-  const effectiveMcpCmd = cmdFromArgs || effectiveMcpCommand;
+  const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
+  const savedAgentCfg = loadAgentConfig(botId || "bot_r1") || {};
+  // The approval policy comes only from the saved agent configuration, never from tool arguments.
+  const permissionPolicy = savedAgentCfg.permissionPolicy || "auto";
+  const gateCtx = { botId, botName, threadId, permissionPolicy };
+  const savedMcpCommand = String(savedAgentCfg.mcpCommand || "").trim();
+  const suppliedMcpCommand = String(args.mcpCommand || mcpCommand || "").trim();
+  const effectiveMcpCmd = suppliedMcpCommand || savedMcpCommand;
+  // A server command configured in Agent Studio is trusted; one supplied with the call launches an
+  // arbitrary executable, so it needs the same approval as any other risky command.
+  const mcpGate = () => gateCommand({
+    ...gateCtx,
+    commandText: effectiveMcpCmd,
+    label: "MCP server",
+    forceAsk: Boolean(suppliedMcpCommand) && suppliedMcpCommand !== savedMcpCommand,
+    forceAskReason: "A tool call asked to launch an MCP server command that is not configured for this agent."
+  });
 
   // 1. MCP PROBE
   if (toolName === "mcp_probe") {
     if (!effectiveMcpCmd) {
       return { status: 400, data: { ok: false, error: "Missing MCP command: provide mcpCommand in tool args or configure the agent's MCP Server in Agent Studio" } };
     }
+    const denied = await mcpGate();
+    if (denied) return denied;
     const mcpRes = await callStdioMcpServer({ commandLine: effectiveMcpCmd, cwd: wt.worktreePath, method: "tools/list" });
     const tools = mcpRes.result?.tools || [];
     return { status: 200, data: { ...mcpRes, tools } };
@@ -83,6 +144,8 @@ export async function executeAgentToolInternal(params = {}) {
     if (!effectiveMcpCmd) {
       return { status: 400, data: { ok: false, error: "Missing MCP command: provide mcpCommand in tool args or configure the agent's MCP Server in Agent Studio" } };
     }
+    const denied = await mcpGate();
+    if (denied) return denied;
     const targetMcpTool = requestedMcpToolName || args.name || args.toolName || "";
     const targetMcpArgs = requestedMcpToolArgs || args.arguments || args.args || {};
     const mcpRes = await callStdioMcpServer({
@@ -346,67 +409,9 @@ export async function executeAgentToolInternal(params = {}) {
       return { status: 400, data: { ok: false, error: "Missing shell command" } };
     }
 
-    // P3: Permission check (Allow / Ask / Deny)
-    const permCheck = checkCommandPermission(cmdStr, {
-      botId,
-      role: botName,
-      permissionPolicy: savedAgentCfg.permissionPolicy || (args.permissionPolicy || "auto")
-    });
-
-    if (permCheck.policy === "deny") {
-      return {
-        status: 200,
-        data: {
-          ok: false,
-          error: `Permission Denied: ${permCheck.reason}`
-        }
-      };
-    }
-
-    if (permCheck.policy === "ask" && !args.approved && !params.approved) {
-      const approvalId = `appr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const approvalPromise = new Promise((resolve) => {
-        activeApprovals.set(approvalId, {
-          approvalId,
-          threadId: threadId || "",
-          botId: botId || "bot_r1",
-          botName: botName || "R1",
-          command: cmdStr,
-          reason: permCheck.reason,
-          status: "pending",
-          createdAt: Date.now(),
-          resolve
-        });
-      });
-
-      broadcastEvent("approval_requested", {
-        approvalId,
-        threadId: threadId || "",
-        botId: botId || "bot_r1",
-        botName: botName || "R1",
-        command: cmdStr,
-        reason: permCheck.reason
-      });
-
-      // Wait up to 60s for user response
-      const decision = await Promise.race([
-        approvalPromise,
-        new Promise(res => setTimeout(() => res({ decision: "timeout" }), 60000))
-      ]);
-
-      activeApprovals.delete(approvalId);
-
-      if (decision.decision !== "allow") {
-        return {
-          status: 200,
-          data: {
-            ok: false,
-            error: `Command '${cmdStr}' was ${decision.decision === "timeout" ? "timed out waiting for approval" : "denied by user"}.`
-          }
-        };
-      }
-    }
-
+    // Permission check (Allow / Ask / Deny): shared with every other command-launching tool.
+    const gated = await gateCommand({ ...gateCtx, commandText: cmdStr });
+    if (gated) return gated;
     const effectiveTimeout = Math.min(300000, Math.max(5000, Number(timeout || args.timeout || 120000)));
     const effectiveMaxOutput = Math.min(50000, Math.max(1000, Number(maxOutput || args.maxOutput || 25000)));
 
@@ -647,6 +652,8 @@ export async function executeAgentToolInternal(params = {}) {
     if (!rawCmd) {
       return { status: 400, data: { ok: false, error: "Missing process command" } };
     }
+    const gated = await gateCommand({ ...gateCtx, commandText: rawCmd, label: "Process" });
+    if (gated) return gated;
     const procId = "proc_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
     const procName = String(name || args.name || rawCmd.slice(0, 30));
     const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
@@ -770,6 +777,8 @@ export async function executeAgentToolInternal(params = {}) {
       else if (fs.existsSync(path.join(execCwd, "pytest.ini")) || fs.existsSync(path.join(execCwd, "tests"))) verifyCmd = "pytest";
       else verifyCmd = "git status";
     }
+    const gated = await gateCommand({ ...gateCtx, commandText: verifyCmd, label: "Verification command" });
+    if (gated) return gated;
     const execRes = await spawnCommandAsync(verifyCmd, {
       cwd: execCwd,
       worktreePath: wt.worktreePath,

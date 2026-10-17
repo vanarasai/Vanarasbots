@@ -43,8 +43,19 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Route groups are tried in order; a group returns false when none of its routes matched.
-  for (const handler of ROUTE_HANDLERS) {
-    if ((await handler(req, res)) !== false) return;
+  // One failing request must never take the whole engine (and every running agent turn) down with it.
+  try {
+    for (const handler of ROUTE_HANDLERS) {
+      if ((await handler(req, res)) !== false) return;
+    }
+  } catch (err) {
+    console.error(`Unhandled error serving ${req.method} ${String(req.url).split("?")[0]}:`, err);
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, error: "Internal server error" }));
+    } else if (!res.writableEnded) {
+      res.end();
+    }
   }
 });
 

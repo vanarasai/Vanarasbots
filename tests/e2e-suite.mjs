@@ -10,6 +10,7 @@ import { registerTier1Tests } from "./tier1-feature-coverage.test.mjs";
 import { registerTier2Tests } from "./tier2-boundary-corner.test.mjs";
 import { registerTier3Tests } from "./tier3-combinations.test.mjs";
 import { registerTier4Tests } from "./tier4-application-scenarios.test.mjs";
+import { registerTier5Tests } from "./tier5-platform.test.mjs";
 
 // ANSI escape codes
 const RESET = "\x1b[0m";
@@ -85,6 +86,8 @@ async function main() {
   registerTier2Tests(runner);
   registerTier3Tests(runner);
   registerTier4Tests(runner);
+  // Tier 5 mutates server state; register it only against an isolated server.
+  if (process.env.VANARAS_TEST_ISOLATED === "1") registerTier5Tests(runner);
 
   let spawned = false;
   if (!options.json) {
@@ -116,6 +119,11 @@ async function main() {
   const totalDuration = Date.now() - overallStart;
 
   stopSpawnedServer();
+
+  if (results.length === 0) {
+    console.error("No tests matched the filter");
+    process.exit(1);
+  }
 
   if (options.json) {
     const summary = {

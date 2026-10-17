@@ -39,7 +39,7 @@ export async function ensureServerRunning(maxWaitMs = 12000) {
 
   spawnedServerProcess = spawn(process.execPath, [serverScript], {
     cwd: VANARAS_ROOT,
-    env: { ...process.env, PORT: "3000" },
+    env: { ...process.env, VANARAS_PORT: String(new URL(BASE_URL).port || 3000) },
     stdio: ["ignore", "pipe", "pipe"]
   });
 

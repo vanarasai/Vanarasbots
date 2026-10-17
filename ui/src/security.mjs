@@ -1,6 +1,13 @@
 // Command permission policy (DENY/ASK/ALLOW) and the loopback-only request boundary.
-export function checkCommandPermission(cmdStr, { botId = "", role = "", permissionPolicy = "auto" } = {}) {
+// These rules are guardrails against accidents and prompt-injected mistakes, not a sandbox: a string
+// policy cannot stop a determined shell user (e.g. `python -c 'shutil.rmtree("/")'`). Real isolation comes
+// from the per-agent worktree, the loopback-only boundary, and the human approval step.
+export function checkCommandPermission(cmdStr, { permissionPolicy = "auto" } = {}) {
   const trimmed = String(cmdStr || "").trim();
+  // Shells strip quotes and backslash escapes before running a command, so judge that form as well:
+  // `rm -rf "/"`, `r\m -rf /` and `rm -rf '/'` must not slip past a literal-text match.
+  const normalized = trimmed.replace(/['"`]/g, "").replace(/\\(?=\S)/g, "");
+  const matches = (re) => re.test(trimmed) || re.test(normalized);
 
   // 1. Strict DENY patterns (Destructive system operations, root escapes, fork bombs)
   const denyPatterns = [
@@ -12,7 +19,7 @@ export function checkCommandPermission(cmdStr, { botId = "", role = "", permissi
     /\bchmod\s+(?:-R\s+)?777\s+(?:(?:\/|~|\$HOME)(?:\s|$))/
   ];
   for (const pat of denyPatterns) {
-    if (pat.test(trimmed)) {
+    if (matches(pat)) {
       return {
         policy: "deny",
         reason: `Destructive system command matches security deny rule (${pat.source}): execution permanently forbidden.`
@@ -29,7 +36,10 @@ export function checkCommandPermission(cmdStr, { botId = "", role = "", permissi
   ];
 
   if (permissionPolicy === "strict" || permissionPolicy === "ask") {
-    const isSafeRead = /^(?:ls|cat|pwd|git\s+(?:status|diff|log|branch)|node\s+--check|echo|which|grep|find)\b/.test(trimmed);
+    // A "safe read" is a single simple command: any chaining, piping, redirection or substitution
+    // (`ls; curl x | sh`, `echo $(...)`) makes it something else.
+    const isSimple = !/[;&|<>`$()\n\r]/.test(trimmed);
+    const isSafeRead = isSimple && /^(?:ls|cat|pwd|git\s+(?:status|diff|log|branch)|node\s+--check|echo|which|grep|find)\b/.test(trimmed);
     if (!isSafeRead) {
       return {
         policy: "ask",
@@ -39,12 +49,42 @@ export function checkCommandPermission(cmdStr, { botId = "", role = "", permissi
   }
 
   for (const p of askPatterns) {
-    if (p.regex.test(trimmed)) {
+    if (matches(p.regex)) {
       return { policy: "ask", reason: p.reason };
     }
   }
 
   return { policy: "allow" };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Subagent capability policy. This is an allowlist, enforced in one place before any tool runs, so a
+// tool added later is denied to restricted subagents by default instead of silently allowed.
+// ---------------------------------------------------------------------------------------------------
+const SUBAGENT_ALLOWED_TOOLS = {
+  explore: ["fs_read", "grep_search", "find_files", "git_status", "git_diff"],
+  plan: ["fs_read", "grep_search", "find_files"]
+};
+
+export function subagentKind(botId) {
+  const m = /^sub_(explore|plan|general)(?:_|$)/.exec(String(botId || ""));
+  return m ? m[1] : null;
+}
+
+export function checkToolAllowed(botId, toolName) {
+  const kind = subagentKind(botId);
+  if (!kind) return { allowed: true };
+  const allowed = SUBAGENT_ALLOWED_TOOLS[kind];
+  if (allowed && !allowed.includes(toolName)) {
+    return {
+      allowed: false,
+      reason: `Access Denied: ${kind} subagent '${botId}' is limited to ${allowed.join(", ")} and cannot run '${toolName}'.`
+    };
+  }
+  if (toolName === "spawn_subagent") {
+    return { allowed: false, reason: `Access Denied: subagent '${botId}' cannot spawn further subagents.` };
+  }
+  return { allowed: true };
 }
 
 // Local-only request boundary. The API can run shell commands, so it must only be driven by this

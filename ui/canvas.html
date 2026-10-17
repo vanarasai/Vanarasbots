@@ -3002,6 +3002,8 @@ Auto-save: enabled</pre>
       return { skillMarkdown: bot.skillMarkdown || "", templates: discoveredSkillTemplates };
     }
 
+    var serverTurnSyncStarted = false;
+
     async function loadDiskWorkspaceOnBoot() {
       restoreApiKeysFromLocalStore();
       try {
@@ -3049,6 +3051,9 @@ Auto-save: enabled</pre>
         openOnboardingModal();
       }
       checkActiveServerTurnsOnBoot();
+      // This loader also runs again after a rewind; start the poll and listeners only once.
+      if (serverTurnSyncStarted) return;
+      serverTurnSyncStarted = true;
       setInterval(checkActiveServerTurnsOnBoot, 6000);
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
@@ -4734,8 +4739,10 @@ ${handoffRule}
           if (ctx) {
             ctx.aborted = true;
             try { ctx.controller.abort(); } catch {}
-            // A server-run turn keeps working after the page lets go of it: stop exactly that turn.
+            // A server-run turn keeps working after the page lets go of it: stop exactly that turn, and ignore
+            // any progress it reports before the stop lands.
             if (String(ctx.turnId || "").startsWith("turn_srv_")) {
+              completedServerTurns.add(ctx.turnId);
               fetch("/api/sessions/stop", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -5105,7 +5112,26 @@ ${handoffRule}
       activeWorkingThreads[data.threadId] = data.message || `Step ${data.step}/${data.maxSteps}...`;
       const targetThread = state.threads.find(t => t.id === data.threadId);
       if (targetThread && Array.isArray(targetThread.messages)) {
-        const liveMsg = findServerTurnMessage(targetThread, data);
+        let liveMsg = findServerTurnMessage(targetThread, data);
+        // The server is the source of truth for a running turn. If this page has no message for it (reloaded,
+        // state replaced, turn started from the CLI or another window), show one instead of nothing.
+        // Progress only arrives for running turns; a turn this window cancelled is already in completedServerTurns.
+        if (!liveMsg && data.turnId) {
+          const bot = getBot(data.botId);
+          liveMsg = {
+            id: `msg_bot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            senderType: "bot",
+            botId: data.botId,
+            botName: data.botName || bot?.name,
+            text: data.message || "Working…",
+            reasoning: "",
+            isStreaming: true,
+            serverTurnId: data.turnId,
+            hooksTrace: ["ServerRunner"],
+            collabRound: bot?.worktreeBranch || ""
+          };
+          targetThread.messages.push(liveMsg);
+        }
         if (liveMsg && data.message) {
           liveMsg.text = data.message;
         }
@@ -8770,8 +8796,9 @@ ${handoffRule}
         es.addEventListener("session_compacted", ev => {
           try {
             const data = JSON.parse(ev.data);
+            // The runner compacts only the prompt it sends the model; the thread itself is unchanged. Reloading
+            // the workspace here replaced the page's state with the disk copy and dropped the agent's live message.
             showToast(`Context compacted (${data.compactedTurnsCount} turns)`);
-            loadDiskWorkspaceOnBoot().then(() => renderActiveThread());
           } catch {}
         });
 

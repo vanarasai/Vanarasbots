@@ -2955,6 +2955,7 @@ async function executeAgentToolInternal(params = {}) {
       data: {
         ok: true,
         tool: "grep_search",
+        searchRoot: targetSearchDir,
         matches,
         output: formattedOut
       }
@@ -3027,6 +3028,7 @@ async function executeAgentToolInternal(params = {}) {
       data: {
         ok: true,
         tool: "find_files",
+        searchRoot: wt.worktreePath,
         files: filtered,
         output: filtered.length > 0 ? filtered.join("\n") : "(no files found)"
       }

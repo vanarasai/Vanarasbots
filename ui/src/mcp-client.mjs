@@ -5,9 +5,49 @@ import { ROOT_DIR } from "./config.mjs";
 // ============================================================================
 // REAL MCP STDIO CLIENT (JSON-RPC 2.0 initialize -> tools/list | tools/call)
 // ============================================================================
+
+// Split a command line into argv without invoking a shell. Whitespace separates arguments; single quotes
+// are literal; double quotes group (with \" and, on POSIX, \\ escapes); outside quotes a backslash escapes
+// the next character on POSIX only, so Windows paths such as C:\Tools\mcp.exe survive unchanged.
+export function splitCommandLine(commandLine) {
+  const posix = process.platform !== "win32";
+  const argv = [];
+  let cur = "";
+  let started = false;
+  let quote = null;
+  const s = String(commandLine || "");
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote === "'") {
+      if (c === "'") quote = null; else cur += c;
+    } else if (quote === '"') {
+      if (c === '"') {
+        quote = null;
+      } else if (c === "\\" && i + 1 < s.length && (s[i + 1] === '"' || (posix && s[i + 1] === "\\"))) {
+        cur += s[++i];
+      } else {
+        cur += c;
+      }
+    } else if (c === "'" || c === '"') {
+      quote = c;
+      started = true;
+    } else if (/\s/.test(c)) {
+      if (started || cur) { argv.push(cur); cur = ""; started = false; }
+    } else if (c === "\\" && posix && i + 1 < s.length) {
+      cur += s[++i];
+      started = true;
+    } else {
+      cur += c;
+      started = true;
+    }
+  }
+  if (started || cur) argv.push(cur);
+  return argv;
+}
+
 export function callStdioMcpServer({ commandLine, cwd, method = "tools/list", params = {} }) {
   return new Promise((resolve) => {
-    const parts = commandLine.trim().split(/\s+/);
+    const parts = splitCommandLine(commandLine);
     const bin = parts[0];
     const args = parts.slice(1);
     if (!bin) return resolve({ ok: false, error: "Empty MCP command" });

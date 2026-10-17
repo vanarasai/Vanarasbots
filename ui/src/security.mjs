@@ -6,7 +6,8 @@ export function checkCommandPermission(cmdStr, { botId = "", role = "", permissi
   const denyPatterns = [
     /\brm\s+-(?:[a-zA-Z]*r[a-zA-Z]*f|[a-zA-Z]*f[a-zA-Z]*r)\s+(?:(?:\/|\/\*|~|\$HOME|\.\.)(?:\s|$)|(?:\/(?:etc|usr|bin|sbin|var|System|Library))\b)/,
     /(?::\(\)\s*\{\s*:\|:&\s*\};:|:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\};:)/,
-    /\b(mkfs|dd\s+if=|\bshutdown\b|\breboot\b|\binit\s+0)\b/,
+    /\b(?:mkfs\b|dd\s+if=|shutdown\b|reboot\b|init\s+0\b)/,
+    /\bdd\b[^|;&\n]*\bof=\/dev\/(?!null\b)/,
     />\s*(?:\/etc\/|\/usr\/|\/System\/|\/Library\/|\/dev\/(?!null\b))/,
     /\bchmod\s+(?:-R\s+)?777\s+(?:(?:\/|~|\$HOME)(?:\s|$))/
   ];

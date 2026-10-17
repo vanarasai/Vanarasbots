@@ -4691,11 +4691,18 @@ ${handoffRule}
       delete pendingBatchQueue[targetThread.id];
       delete pendingMentionQueue[targetThread.id];
       const leadBot = targetThread.type === "dm" ? getBot(targetThread.botId) : getActiveLeadBot();
+      // Capture every bot with an in-flight turn before cancellation clears the contexts,
+      // so parallel (@R1 @R2) and non-lead turns have their shell processes stopped too.
+      const runningBotIds = new Set(
+        (allActiveTurnContexts[targetThread.id] || []).map(ctx => ctx && ctx.botId).filter(Boolean)
+      );
+      if (activeTurnState[targetThread.id]?.botId) runningBotIds.add(activeTurnState[targetThread.id].botId);
+      if (leadBot?.id) runningBotIds.add(leadBot.id);
       cancelActiveTurnForThread(targetThread, true);
       fetch("/api/workspace/kill", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: targetThread.id, botId: leadBot?.id })
+        body: JSON.stringify({ threadId: targetThread.id, botIds: [...runningBotIds] })
       }).catch(() => {});
       saveState();
       renderThreadList();
@@ -4990,6 +4997,7 @@ ${handoffRule}
         const maxSteps = Math.max(1, Math.min(8, Number(targetBot.maxReactSteps) || 6));
         let savedFilesInReactLoop = [];
         let savedPatchesInReactLoop = [];
+        let autoNudgeCount = 0;
 
         for (let reactStep = 0; reactStep < maxSteps; reactStep++) {
           if (!isStillActive()) return;
@@ -5033,11 +5041,12 @@ ${handoffRule}
             // (e.g. "Hang tight, running diagnostics now... results incoming in ~5s... I'll patch next")
             // without actually calling tools or writing code. If detected, do NOT terminate the turn!
             // Automatically prompt the model to execute immediately in the next ReAct iteration.
-            const hasDeferredPromise = (reactStep < maxSteps - 1) &&
+            const hasDeferredPromise = (reactStep < maxSteps - 1) && autoNudgeCount < 1 &&
               (stepFiles.length === 0 && stepPatches.length === 0) &&
               /(?:running (?:full )?diagnostics|live checks in progress|hang tight|results incoming|i'll patch|i will patch|let me check|in ~\d+s|will do and|checking now|fixing both|diagnostics now|checking everything|inspecting now)/i.test(stepCleaned);
 
             if (hasDeferredPromise) {
+              autoNudgeCount += 1;
               hooksTrace.push("AutoNudge(UnfulfilledPromise)");
               activeWorkingThreads[threadId] = `${targetBot.name} executing promised diagnostics & fixes...`;
               renderThreadList();

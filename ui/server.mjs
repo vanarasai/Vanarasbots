@@ -443,10 +443,67 @@ function buildAgentExecEnv(cwd = "", worktreePath = "") {
   };
 }
 
+// Process-group supervision: commands run as `sh -c <cmd>`. Signalling only the `sh` pid leaves
+// grandchildren (python3, node, sleep, servers) orphaned and holding stdout pipes/ports open.
+// Spawn POSIX commands as their own process-group leader and signal the whole group instead.
+const USE_PROCESS_GROUPS = process.platform !== "win32";
+
+function signalProcessTree(proc, signal = "SIGTERM") {
+  if (!proc || !proc.pid) return false;
+  if (USE_PROCESS_GROUPS && proc.__vanarasGroupLeader) {
+    try {
+      process.kill(-proc.pid, signal);
+      return true;
+    } catch {
+      // Group already gone (ESRCH) — fall through to the direct child signal.
+    }
+  }
+  try { return proc.kill(signal); } catch { return false; }
+}
+
+function killProcessTree(proc, graceMs = 1500) {
+  if (!proc || !proc.pid || proc.__vanarasKillRequested) return;
+  proc.__vanarasKillRequested = true;
+  signalProcessTree(proc, "SIGTERM");
+  // Escalate only while we still own the group: the escalation runs once, within a short grace
+  // window of our own SIGTERM, so a recycled pgid is not a realistic target.
+  const escalate = setTimeout(() => {
+    if (USE_PROCESS_GROUPS && proc.__vanarasGroupLeader) {
+      try {
+        process.kill(-proc.pid, 0);
+        process.kill(-proc.pid, "SIGKILL");
+      } catch {}
+    } else if (proc.exitCode === null && proc.signalCode === null) {
+      try { proc.kill("SIGKILL"); } catch {}
+    }
+  }, graceMs);
+  escalate.unref?.();
+}
+
+function spawnShellProcessGroup(command, options = {}) {
+  const proc = spawn("sh", ["-c", command], {
+    ...options,
+    ...(USE_PROCESS_GROUPS ? { detached: true } : {})
+  });
+  proc.__vanarasGroupLeader = USE_PROCESS_GROUPS;
+  return proc;
+}
+
+// Stop a tracked run: prefer the promise-aware stop hook so awaiting HTTP handlers resolve now
+// instead of waiting for orphaned descendants to close inherited pipes.
+function stopTrackedProcess(proc, reason = "Stopped by user") {
+  if (!proc) return;
+  if (typeof proc.__vanarasStop === "function") {
+    proc.__vanarasStop(reason);
+  } else {
+    killProcessTree(proc);
+  }
+}
+
 function spawnCommandAsync(command, { cwd, worktreePath = "", timeout = 15000, trackKey = null, onProgress = null } = {}) {
   return new Promise((resolve) => {
     const execEnv = buildAgentExecEnv(cwd, worktreePath);
-    const proc = spawn("sh", ["-c", command], {
+    const proc = spawnShellProcessGroup(command, {
       cwd,
       env: execEnv,
       stdio: ["ignore", "pipe", "pipe"]
@@ -458,6 +515,9 @@ function spawnCommandAsync(command, { cwd, worktreePath = "", timeout = 15000, t
     let stderr = "";
     let finished = false;
     let lastEmitTs = 0;
+    const untrack = () => {
+      if (trackKey && activeRunProcs.get(trackKey) === proc) activeRunProcs.delete(trackKey);
+    };
     const emitProgressIfNeeded = (force = false) => {
       if (typeof onProgress !== "function") return;
       const now = Date.now();
@@ -466,13 +526,17 @@ function spawnCommandAsync(command, { cwd, worktreePath = "", timeout = 15000, t
       const combined = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
       try { onProgress(combined); } catch {}
     };
+    const finishByKill = (exitCode, note, extra = {}) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      killProcessTree(proc);
+      untrack();
+      resolve({ exitCode, output: `${stdout}\n${stderr}\n${note}`.trim(), ...extra });
+    };
+    proc.__vanarasStop = (reason = "Stopped by user") => finishByKill(130, `[${reason}]`, { stopped: true });
     const timer = setTimeout(() => {
-      if (!finished) {
-        finished = true;
-        try { proc.kill("SIGTERM"); } catch {}
-        if (trackKey) activeRunProcs.delete(trackKey);
-        resolve({ exitCode: 124, output: `${stdout}\n${stderr}\n[Timed out after ${timeout}ms]`.trim(), timedOut: true });
-      }
+      finishByKill(124, `[Timed out after ${timeout}ms]`, { timedOut: true });
     }, timeout);
     proc.stdout.on("data", chunk => {
       if (stdout.length < 96000) stdout += chunk.toString("utf8");
@@ -486,14 +550,14 @@ function spawnCommandAsync(command, { cwd, worktreePath = "", timeout = 15000, t
       if (finished) return;
       finished = true;
       clearTimeout(timer);
-      if (trackKey) activeRunProcs.delete(trackKey);
+      untrack();
       resolve({ exitCode: 1, output: err.message });
     });
     proc.on("close", (code, signal) => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
-      if (trackKey) activeRunProcs.delete(trackKey);
+      untrack();
       emitProgressIfNeeded(true);
       const out = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n").slice(0, 6000);
       const exitCode = signal === "SIGTERM" || signal === "SIGKILL" ? 130 : (code ?? 0);
@@ -1799,7 +1863,7 @@ const server = http.createServer(async (req, res) => {
       if (action === "start_server") {
         const existing = agentDevServers.get(botId);
         if (existing && existing.proc && !existing.proc.killed) {
-          try { existing.proc.kill("SIGTERM"); } catch {}
+          killProcessTree(existing.proc);
         }
         const port = getAgentAssignedPort(botId);
         let serveCmd = command;
@@ -1818,7 +1882,7 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        const proc = spawn("sh", ["-c", serveCmd], {
+        const proc = spawnShellProcessGroup(serveCmd, {
           cwd: wt.codeDir,
           env: { ...process.env, PORT: String(port) },
           stdio: ["ignore", "pipe", "pipe"]
@@ -1885,7 +1949,7 @@ const server = http.createServer(async (req, res) => {
       if (action === "stop_server") {
         const existing = agentDevServers.get(botId);
         if (existing && existing.proc && !existing.proc.killed) {
-          try { existing.proc.kill("SIGTERM"); } catch {}
+          killProcessTree(existing.proc);
         }
         agentDevServers.delete(botId);
         return sendJson(res, 200, { ok: true, running: false, botId });
@@ -2361,6 +2425,13 @@ const server = http.createServer(async (req, res) => {
         if (sharedVenv) {
           cmdStr = cmdStr.replace(/\/(?:opt\/homebrew|usr\/local)\/bin\/(python3|python|pip3|pip)\b/g, "$1");
         }
+        // `lsof -ti:PORT` matches every process with ANY socket on PORT, including clients such as
+        // this Vanaras server (preview proxy), the desktop app window, and browser tabs. Agents pipe it
+        // into `xargs kill -9` to free a port, so scope port lookups to the listening server only.
+        cmdStr = cmdStr.replace(
+          /\blsof\s+(?:-ti|-t\s+-i)\s*:?\s*(?:tcp:)?(\d{2,5})\b(?![^|;&\n]*-sTCP)/gi,
+          "lsof -nP -tiTCP:$1 -sTCP:LISTEN"
+        );
         if (!cmdStr) {
           return sendJson(res, 400, { ok: false, error: "Missing shell command" });
         }
@@ -3067,7 +3138,7 @@ const server = http.createServer(async (req, res) => {
       if (action === "HibernateSandBox") {
         const srv = agentDevServers.get(botId);
         if (srv && srv.proc && !srv.proc.killed) {
-          try { srv.proc.kill("SIGTERM"); } catch {}
+          killProcessTree(srv.proc);
         }
         agentDevServers.delete(botId);
         if (agentWatchers.has(botId)) {
@@ -3089,7 +3160,7 @@ const server = http.createServer(async (req, res) => {
       if (action === "RecreateSandBox") {
         const srv = agentDevServers.get(botId);
         if (srv && srv.proc && !srv.proc.killed) {
-          try { srv.proc.kill("SIGTERM"); } catch {}
+          killProcessTree(srv.proc);
         }
         agentDevServers.delete(botId);
         fs.rmSync(wt.codeDir, { recursive: true, force: true });
@@ -3159,19 +3230,29 @@ const server = http.createServer(async (req, res) => {
   // 4. Asynchronous Background Command / Tool Runner (POST /api/workspace/exec & /api/workspace/kill)
   if (req.method === "POST" && req.url === "/api/workspace/kill") {
     try {
-      const { threadId, botId } = await readJsonBody(req);
+      const { threadId, botId, botIds } = await readJsonBody(req);
+      const targetBotIds = new Set([
+        ...(Array.isArray(botIds) ? botIds : []),
+        ...(botId ? [botId] : [])
+      ].map(String).filter(Boolean));
       const killedJobs = [];
       for (const [jobId, job] of backgroundJobs.entries()) {
-        if (job.status === "running" && job.proc && (!threadId || job.threadId === threadId || !botId || job.botId === botId)) {
-          try { job.proc.kill("SIGTERM"); } catch {}
+        if (job.status !== "running") continue;
+        const matchesThread = threadId && job.threadId === threadId;
+        const matchesBot = job.botId && targetBotIds.has(String(job.botId));
+        const killAll = !threadId && targetBotIds.size === 0;
+        if (killAll || matchesThread || matchesBot) {
+          stopTrackedProcess(activeRunProcs.get(jobId) || job.proc, "Command stopped by user");
           job.status = "killed";
           killedJobs.push(jobId);
         }
       }
-      if (botId && activeRunProcs.has(botId)) {
-        try { activeRunProcs.get(botId).kill("SIGTERM"); } catch {}
-        activeRunProcs.delete(botId);
-        killedJobs.push(`run_${botId}`);
+      for (const id of targetBotIds) {
+        if (activeRunProcs.has(id)) {
+          stopTrackedProcess(activeRunProcs.get(id), "Stopped by user");
+          activeRunProcs.delete(id);
+          killedJobs.push(`run_${id}`);
+        }
       }
       return sendJson(res, 200, { ok: true, killedCount: killedJobs.length, killedJobs });
     } catch (e) {
@@ -3192,35 +3273,35 @@ const server = http.createServer(async (req, res) => {
         branch = wt.branch;
       }
 
-      const jobId = "job_" + Date.now();
+      const jobId = "job_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
 
       broadcastEvent("job_started", { jobId, command, threadId, botId, botName, cwd: targetCwd, branch });
+      backgroundJobs.set(jobId, { id: jobId, command, threadId, botId, botName, status: "running", startedAt: Date.now() });
 
-      const execOptions = {
-        cwd: targetCwd,
-        timeout: 25000,
-        maxBuffer: 1024 * 512,
-        ...(process.platform === "win32" ? { shell: "powershell.exe" } : {})
-      };
-
-      const proc = exec(command, execOptions, (error, stdout, stderr) => {
-        const output = ((stdout || "") + (stderr ? `\n${stderr}` : "")).trim().slice(0, 4000);
-        const exitCode = error ? (error.killed ? 130 : (error.code || 1)) : 0;
-        backgroundJobs.set(jobId, { id: jobId, command, threadId, botId, botName, status: "done", exitCode, output });
-        broadcastEvent("job_finished", {
-          jobId,
-          command,
-          cwd: targetCwd,
-          branch,
-          exitCode,
-          output: output || (exitCode === 130 ? "(Command stopped by user)" : "(Command completed with no output)"),
-          threadId,
-          botId,
-          botName
+      spawnCommandAsync(command, { cwd: targetCwd, worktreePath: targetCwd, timeout: 25000, trackKey: jobId })
+        .then(execRes => {
+          const output = String(execRes.output || "").trim().slice(0, 4000);
+          const exitCode = execRes.exitCode;
+          backgroundJobs.set(jobId, { id: jobId, command, threadId, botId, botName, status: "done", exitCode, output });
+          broadcastEvent("job_finished", {
+            jobId,
+            command,
+            cwd: targetCwd,
+            branch,
+            exitCode,
+            output: output || (exitCode === 130 ? "(Command stopped by user)" : "(Command completed with no output)"),
+            threadId,
+            botId,
+            botName
+          });
+          // Bound retained job history so long sessions do not grow the map without limit.
+          if (backgroundJobs.size > 200) {
+            for (const [id, job] of backgroundJobs) {
+              if (job.status !== "running") backgroundJobs.delete(id);
+              if (backgroundJobs.size <= 150) break;
+            }
+          }
         });
-      });
-
-      backgroundJobs.set(jobId, { id: jobId, command, threadId, botId, botName, status: "running", startedAt: Date.now(), proc });
 
       return sendJson(res, 200, { jobId, status: "started", cwd: targetCwd, branch });
     } catch (e) {
@@ -4162,6 +4243,21 @@ async function ensureAgentPortServerRunning(port, preferredBotId = "bot_r1") {
     if (await isLocalPortListening(port)) return true;
   }
   return false;
+}
+
+// Owned command trees run in their own process groups, so they no longer receive the terminal's
+// Ctrl+C. Terminate the trees this server tracks when it shuts down. Agent preview servers started
+// by ensureAgentPortServerRunning are intentionally long-lived and are not tracked here.
+function terminateOwnedProcessTrees() {
+  for (const proc of activeRunProcs.values()) signalProcessTree(proc, "SIGTERM");
+  for (const srv of agentDevServers.values()) if (srv && srv.proc) signalProcessTree(srv.proc, "SIGTERM");
+}
+process.on("exit", terminateOwnedProcessTrees);
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.once(sig, () => {
+    terminateOwnedProcessTrees();
+    process.exit(sig === "SIGINT" ? 130 : 143);
+  });
 }
 
 server.on("error", (err) => {

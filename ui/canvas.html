@@ -1352,6 +1352,16 @@
               </div>
             </button>
 
+            <button onclick="openPanelModal(null); hidePlusMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:var(--accent-blue);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="8" r="2.5"/><circle cx="12" cy="6" r="2.5"/><circle cx="19" cy="8" r="2.5"/><path d="M1.5 19c.5-3 2-5 3.5-5s3 2 3.5 5M8.5 18c.5-3.5 2-6 3.5-6s3 2.5 3.5 6M15.5 19c.5-3 2-5 3.5-5s3 2 3.5 5"/></svg>
+              </div>
+              <div>
+                <div class="popover-title">New Panel / Audience</div>
+                <div class="popover-sub">Any number of agents debate, vote A/B or review</div>
+              </div>
+            </button>
+
             <div class="popover-divider"></div>
 
             <button onclick="openConnectAppsModal(); hidePlusMenu();" class="popover-item">
@@ -2090,6 +2100,109 @@ Auto-save: enabled</pre>
         <div style="display:flex; gap:8px; margin-left:auto;">
           <button onclick="closeGroupModal()" class="btn-secondary">Cancel</button>
           <button onclick="saveGroupFromModal()" class="btn-primary">Save Squad</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="panelModal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width:760px; width:min(760px, 94vw);">
+      <div class="modal-header">
+        <div>
+          <div id="panelModalTitle" style="font-size:15px; font-weight:600;">New Panel / Audience</div>
+          <div style="font-size:11.5px; color:var(--text-muted);">Seat any number of agents to debate a topic, vote between options, or review a UI, file or page</div>
+        </div>
+        <button onclick="closePanelModal()" class="side-icon-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" style="max-height:72vh; overflow-y:auto;">
+        <input type="hidden" id="panelEditId">
+        <div style="display:grid; grid-template-columns:2fr 1fr; gap:10px;">
+          <div>
+            <label class="field-label">Panel Name</label>
+            <input id="panelNameInput" type="text" placeholder="e.g. Podcast intro test" class="field-input">
+          </div>
+          <div>
+            <label class="field-label">Mode</label>
+            <select id="panelModeInput" class="field-input" onchange="onPanelModeChange()">
+              <option value="debate">Debate → final answer</option>
+              <option value="vote">A/B vote</option>
+              <option value="review">Review (UI, code, page)</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="field-label" id="panelTopicLabel">Topic or question</label>
+          <textarea id="panelTopicInput" rows="2" class="field-input" placeholder="e.g. Should our podcast episodes be 10 or 25 minutes long?"></textarea>
+        </div>
+        <div id="panelOptionsBlock" class="hidden">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="field-label" style="margin-bottom:0;">Options to vote on</label>
+            <button onclick="addPanelOptionRow()" style="font-size:11px; color:var(--accent-blue); font-weight:600;">+ Add option</button>
+          </div>
+          <div id="panelOptionsList" style="display:flex; flex-direction:column; gap:8px;"></div>
+        </div>
+        <div>
+          <label class="field-label">Material to share with the panel (optional, one per line)</label>
+          <textarea id="panelMaterialsInput" rows="2" class="field-input mono" placeholder="output/index.html&#10;http://localhost:3847/&#10;.worktrees/bot_r1/podcast_engine.py"></textarea>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Project or worktree file paths, or pages served on this machine. Every panelist sees the same copy.</div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;">
+          <div>
+            <label class="field-label">Rounds</label>
+            <select id="panelRoundsInput" class="field-input" onchange="updatePanelCostNote()">
+              <option value="1">1 — independent answers</option>
+              <option value="2">2 — one rebuttal round</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label">Model (from agent)</label>
+            <select id="panelModelInput" class="field-input" onchange="updatePanelCostNote()"></select>
+          </div>
+          <div>
+            <label class="field-label">Answer in parallel</label>
+            <select id="panelConcurrencyInput" class="field-input">
+              <option value="1">1 at a time</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="5">5</option>
+              <option value="8">8</option>
+            </select>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--border-subtle); padding-top:10px;">
+          <label class="field-label">Generate panelists from an audience brief</label>
+          <div style="display:flex; gap:8px;">
+            <input id="panelBriefInput" type="text" class="field-input" placeholder="e.g. first-time podcast listeners, 25-40, commuting" style="flex:1;">
+            <input id="panelCountInput" type="number" min="1" max="100" value="8" class="field-input" style="width:72px;" title="How many">
+            <button id="panelGenerateBtn" onclick="generatePanelistsFromBrief()" class="btn-secondary" style="white-space:nowrap;">Generate</button>
+          </div>
+        </div>
+        <div>
+          <label class="field-label">Seat existing agents</label>
+          <div id="panelBotsChecklist" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+        </div>
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="field-label" style="margin-bottom:0;">Panelists <span id="panelCountBadge" style="color:var(--text-muted); font-weight:500;"></span></label>
+            <div style="display:flex; gap:12px;">
+              <button onclick="clearPanelists()" style="font-size:11px; color:var(--text-muted); font-weight:600;">Clear</button>
+              <button onclick="addPanelistRow()" style="font-size:11px; color:var(--accent-blue); font-weight:600;">+ Add panelist</button>
+            </div>
+          </div>
+          <div id="panelPanelistsList" style="display:flex; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto;"></div>
+          <div id="panelCostNote" style="font-size:11.5px; color:var(--text-muted); margin-top:8px;"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="deletePanelBtn" onclick="deletePanelFromModal()" style="color:var(--accent-red); font-size:12px; font-weight:600;" class="hidden">Delete Panel</button>
+        <div style="display:flex; gap:8px; margin-left:auto;">
+          <button onclick="closePanelModal()" class="btn-secondary">Cancel</button>
+          <button onclick="savePanelFromModal(false)" class="btn-secondary">Save</button>
+          <button onclick="savePanelFromModal(true)" class="btn-primary">Save &amp; Run</button>
         </div>
       </div>
     </div>
@@ -3103,6 +3216,7 @@ Auto-save: enabled</pre>
         }
       } catch {}
       await syncPendingApprovals();
+      await syncPanelRuns();
     }
 
     // An approval request shown only by its live event is lost if the window missed it, and the agent's
@@ -3857,13 +3971,15 @@ Auto-save: enabled</pre>
           `;
           msgInner.appendChild(row);
         } else {
-          const bot = getBot(m.botId);
+          const bot = m.panelist ? panelistPseudoBot(m) : getBot(m.botId);
           const row = document.createElement("div");
           row.className = "msg-bot-row";
           row.setAttribute("data-msg-id", m.id);
 
           const isWelcomeSquadMsg = idx === 0 && (m.text.includes("Welcome to") || m.text.includes("Your squad is ready"));
-          const roleShort = bot?.role || "Agent";
+          const roleShort = m.panelist
+            ? (m.panelist.id === "moderator" ? "Moderator" : `Panelist${m.round ? ` · round ${m.round}` : ""}`)
+            : (bot?.role || "Agent");
           const isMsgStreaming = Boolean(m.isStreaming || m.streaming);
 
           let bodyHtml = "";
@@ -3951,6 +4067,8 @@ Auto-save: enabled</pre>
             </button>
           `;
           actionBarHtml += `</div>`;
+          // Panelists are personas, not agents with worktrees: hand-off and file actions do not apply.
+          if (m.panelist) actionBarHtml = "";
 
           const stopPillHtml = isMsgStreaming
             ? `<button onclick="stopActiveThreadGeneration('${thread.id}')" style="margin-left:auto; display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:600; background:rgba(239,68,68,0.12); color:#ef4444; border:1px solid rgba(239,68,68,0.35); cursor:pointer;">
@@ -4760,6 +4878,15 @@ ${handoffRule}
         clearTimeout(activeAutonomousTimers[thread.id]);
         delete activeAutonomousTimers[thread.id];
       }
+      // Stop the panel run this room started, by id: a new question starts a new run right after this, and a
+      // room-wide stop could land after it and kill the new run instead.
+      if (thread.panel && thread.panel.activeRunId) {
+        fetch("/api/panels/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId: thread.panel.activeRunId })
+        }).catch(() => {});
+      }
       const prevTurn = activeTurnState[thread.id];
       if (prevTurn) {
         prevTurn.aborted = true;
@@ -4993,6 +5120,12 @@ ${handoffRule}
         if (fileContents.length > 0) {
           groundedPrompt = `${firstTask}\n\n${fileContents.join("\n")}`;
         }
+      }
+
+      // A message in a panel room is the panel's next question, not a squad turn.
+      if (thread.panel) {
+        await runPanelInThread(thread, firstTask);
+        return;
       }
 
       // Parallel Multi-Agent Dispatch (R5)
@@ -6092,6 +6225,371 @@ ${handoffRule}
     // =========================================================================
     // 8. MULTI-AGENT COLLABORATION
     // =========================================================================
+    // =========================================================================
+    // PANELS: any number of persona agents debate, vote A/B, or review shared material (server-run)
+    // =========================================================================
+    let panelDraft = { panelists: [], options: [] };
+
+    function panelistPseudoBot(m) {
+      const p = m.panelist || {};
+      if (p.botId) {
+        const real = state.bots.find(b => b.id === p.botId);
+        if (real) return real;
+      }
+      return { id: `panel_${p.id || p.name}`, name: p.name || "Panelist", role: m.isPanelSummary ? "Moderator" : "Panelist" };
+    }
+
+    function syncPanelDraftFromInputs() {
+      document.querySelectorAll("#panelPanelistsList [data-panelist-idx]").forEach(row => {
+        const i = Number(row.getAttribute("data-panelist-idx"));
+        if (!panelDraft.panelists[i]) return;
+        panelDraft.panelists[i].name = row.querySelector(".panelist-name").value.trim();
+        panelDraft.panelists[i].persona = row.querySelector(".panelist-persona").value.trim();
+      });
+      document.querySelectorAll("#panelOptionsList [data-option-idx]").forEach(row => {
+        const i = Number(row.getAttribute("data-option-idx"));
+        if (!panelDraft.options[i]) return;
+        panelDraft.options[i].label = row.querySelector(".option-label").value.trim();
+        panelDraft.options[i].text = row.querySelector(".option-text").value;
+      });
+    }
+
+    function renderPanelistRows() {
+      const list = document.getElementById("panelPanelistsList");
+      list.innerHTML = panelDraft.panelists.map((p, i) => `
+        <div data-panelist-idx="${i}" style="display:flex; gap:8px; align-items:flex-start; padding:8px; border:1px solid var(--border-subtle); border-radius:9px; background:var(--bg-surface-subtle);">
+          ${renderCleanAgentCircle({ id: p.botId || `panel_${p.id}`, name: p.name || "?" }, 28)}
+          <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+            <input class="field-input panelist-name" value="${escapeHtml(p.name || "")}" placeholder="Name" ${p.botId ? "readonly" : ""} style="padding:5px 8px;">
+            <textarea class="field-input panelist-persona" rows="2" placeholder="Who they are and what they care about" ${p.botId ? "readonly" : ""} style="padding:5px 8px;">${escapeHtml(p.persona || "")}</textarea>
+          </div>
+          <button onclick="removePanelistRow(${i})" class="side-icon-btn" title="Remove">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>`).join("") || `<div style="font-size:12px; color:var(--text-muted); padding:8px;">No panelists yet. Generate them from a brief, seat existing agents, or add them by hand.</div>`;
+      document.getElementById("panelCountBadge").textContent = panelDraft.panelists.length ? `(${panelDraft.panelists.length})` : "";
+      updatePanelCostNote();
+      document.querySelectorAll(".panel-bot-cb").forEach(cb => {
+        cb.checked = panelDraft.panelists.some(p => p.botId === cb.value);
+      });
+    }
+
+    // Every panelist answers every round, plus one moderator call. On a paid provider that is real money, so
+    // say how many calls a run makes, and on which model, before it starts.
+    function updatePanelCostNote() {
+      const el = document.getElementById("panelCostNote");
+      if (!el) return;
+      const n = panelDraft.panelists.length;
+      const rounds = Number(document.getElementById("panelRoundsInput").value) || 1;
+      const bot = getBot(document.getElementById("panelModelInput").value);
+      const seatedOwn = panelDraft.panelists.filter(p => p.botId).length;
+      const where = bot ? `${bot.model || "model"} via ${bot.provider || "provider"}` : "the selected model";
+      el.textContent = n === 0 ? "" : `Each run makes ${n * rounds + 1} model calls (${n} panelist${n === 1 ? "" : "s"} × ${rounds} round${rounds === 1 ? "" : "s"} + 1 summary) on ${where}${seatedOwn ? `; seated agents use their own models` : ""}.`;
+    }
+
+    function shortError(message) {
+      const text = String(message || "unknown error");
+      const reason = /"message"\s*:\s*"([^"]+)"/.exec(text);
+      const core = reason ? `${text.split(":")[0]}: ${reason[1]}` : text;
+      return core.length > 180 ? `${core.slice(0, 180)}…` : core;
+    }
+
+    function renderPanelOptionRows() {
+      document.getElementById("panelOptionsList").innerHTML = panelDraft.options.map((o, i) => `
+        <div data-option-idx="${i}" style="display:flex; gap:8px; align-items:flex-start;">
+          <span class="mono" style="font-weight:700; padding-top:7px; width:16px;">${String.fromCharCode(65 + i)}</span>
+          <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+            <input class="field-input option-label" value="${escapeHtml(o.label || "")}" placeholder="Short label (optional)" style="padding:5px 8px;">
+            <textarea class="field-input option-text" rows="3" placeholder="The full text of this option" style="padding:5px 8px;">${escapeHtml(o.text || "")}</textarea>
+          </div>
+          ${panelDraft.options.length > 2 ? `<button onclick="removePanelOptionRow(${i})" class="side-icon-btn" title="Remove"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` : ""}
+        </div>`).join("");
+    }
+
+    function addPanelistRow() {
+      syncPanelDraftFromInputs();
+      if (panelDraft.panelists.length >= 100) return showToast("A panel can seat at most 100 panelists");
+      panelDraft.panelists.push({ id: `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, name: "", persona: "" });
+      renderPanelistRows();
+    }
+
+    function removePanelistRow(i) {
+      syncPanelDraftFromInputs();
+      panelDraft.panelists.splice(i, 1);
+      renderPanelistRows();
+    }
+
+    function clearPanelists() {
+      panelDraft.panelists = [];
+      renderPanelistRows();
+    }
+
+    function addPanelOptionRow() {
+      syncPanelDraftFromInputs();
+      if (panelDraft.options.length >= 10) return;
+      panelDraft.options.push({ label: "", text: "" });
+      renderPanelOptionRows();
+    }
+
+    function removePanelOptionRow(i) {
+      syncPanelDraftFromInputs();
+      panelDraft.options.splice(i, 1);
+      renderPanelOptionRows();
+    }
+
+    function onPanelModeChange() {
+      const mode = document.getElementById("panelModeInput").value;
+      document.getElementById("panelOptionsBlock").classList.toggle("hidden", mode !== "vote");
+      document.getElementById("panelTopicLabel").textContent = mode === "vote" ? "Question" : mode === "review" ? "What should they review, and for what?" : "Topic or question";
+      if (mode === "vote" && panelDraft.options.length < 2) {
+        syncPanelDraftFromInputs();
+        while (panelDraft.options.length < 2) panelDraft.options.push({ label: "", text: "" });
+        renderPanelOptionRows();
+      }
+    }
+
+    function togglePanelBotSeat(botId, seated) {
+      syncPanelDraftFromInputs();
+      const bot = getBot(botId);
+      if (seated && bot && !panelDraft.panelists.some(p => p.botId === botId)) {
+        panelDraft.panelists.push({ id: botId, botId, name: bot.name, persona: `${bot.role || "Agent"}. ${String(bot.instructions || "").slice(0, 400)}`.trim() });
+      } else if (!seated) {
+        panelDraft.panelists = panelDraft.panelists.filter(p => p.botId !== botId);
+      }
+      renderPanelistRows();
+    }
+
+    async function generatePanelistsFromBrief() {
+      syncPanelDraftFromInputs();
+      const brief = document.getElementById("panelBriefInput").value.trim();
+      const count = Math.max(1, Math.min(100, Number(document.getElementById("panelCountInput").value) || 8));
+      if (!brief) return showToast("Describe the audience first, e.g. \"indie music fans, 18-30\"");
+      const btn = document.getElementById("panelGenerateBtn");
+      btn.disabled = true;
+      btn.textContent = "Generating…";
+      try {
+        const res = await fetch("/api/panels/personas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brief, count, modelBotId: document.getElementById("panelModelInput").value })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Generation failed");
+        const room = 100 - panelDraft.panelists.length;
+        data.personas.slice(0, room).forEach((p, i) => {
+          panelDraft.panelists.push({ id: `p${Date.now().toString(36)}${i}`, name: p.name, persona: p.persona });
+        });
+        renderPanelistRows();
+        showToast(`Added ${Math.min(room, data.personas.length)} panelists`);
+      } catch (err) {
+        showToast(`Could not generate panelists: ${shortError(err.message)}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Generate";
+      }
+    }
+
+    function openPanelModal(threadId) {
+      const thread = threadId ? state.threads.find(t => t.id === threadId) : null;
+      const cfg = thread?.panel || {};
+      panelDraft = {
+        panelists: (cfg.panelists || []).map(p => ({ ...p })),
+        options: (cfg.options || []).map(o => ({ ...o }))
+      };
+      document.getElementById("panelEditId").value = thread ? thread.id : "";
+      document.getElementById("panelModalTitle").textContent = thread ? `Edit Panel — ${thread.name}` : "New Panel / Audience";
+      document.getElementById("panelNameInput").value = thread?.name || "";
+      document.getElementById("panelModeInput").value = cfg.mode || "debate";
+      document.getElementById("panelTopicInput").value = cfg.topic || "";
+      document.getElementById("panelMaterialsInput").value = (cfg.materialLines || []).join("\n");
+      document.getElementById("panelRoundsInput").value = String(cfg.rounds || 1);
+      document.getElementById("panelConcurrencyInput").value = String(cfg.concurrency || 3);
+      document.getElementById("panelBriefInput").value = cfg.brief || "";
+      const modelSel = document.getElementById("panelModelInput");
+      modelSel.innerHTML = state.bots.map(b => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name)} · ${escapeHtml(b.model || b.provider || "model")}</option>`).join("");
+      modelSel.value = cfg.modelBotId || state.bots[0]?.id || "";
+      document.getElementById("panelBotsChecklist").innerHTML = state.bots.map(b => `
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px; padding:6px 8px; border:1px solid var(--border-subtle); border-radius:8px; cursor:pointer;">
+          <input type="checkbox" class="panel-bot-cb" value="${escapeHtml(b.id)}" onchange="togglePanelBotSeat(this.value, this.checked)">
+          ${renderCleanAgentCircle(b, 20)} <span>${escapeHtml(b.name)} <span style="color:var(--text-muted);">· ${escapeHtml(b.role || "")}</span></span>
+        </label>`).join("");
+      document.getElementById("deletePanelBtn").classList.toggle("hidden", !thread);
+      onPanelModeChange();
+      renderPanelOptionRows();
+      renderPanelistRows();
+      document.getElementById("panelModal").classList.remove("hidden");
+    }
+
+    function closePanelModal() {
+      document.getElementById("panelModal").classList.add("hidden");
+    }
+
+    function deletePanelFromModal() {
+      const editId = document.getElementById("panelEditId").value;
+      if (!editId) return;
+      fetch("/api/panels/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threadId: editId }) }).catch(() => {});
+      state.threads = state.threads.filter(t => t.id !== editId);
+      activeThreadId = state.threads[0]?.id;
+      saveState();
+      closePanelModal();
+      renderThreadList();
+      renderActiveThread();
+    }
+
+    function savePanelFromModal(runNow) {
+      syncPanelDraftFromInputs();
+      const panelists = panelDraft.panelists.filter(p => p.name && (p.persona || p.botId));
+      const mode = document.getElementById("panelModeInput").value;
+      const topic = document.getElementById("panelTopicInput").value.trim();
+      const options = panelDraft.options.filter(o => String(o.text || "").trim());
+      if (panelists.length === 0) return showToast("Add at least one panelist (each needs a name and a persona)");
+      if (runNow && !topic) return showToast("Write the topic or question first");
+      if (mode === "vote" && options.length < 2) return showToast("A/B voting needs at least two options");
+      const cfg = {
+        mode,
+        topic,
+        options,
+        panelists,
+        materialLines: document.getElementById("panelMaterialsInput").value.split("\n").map(l => l.trim()).filter(Boolean),
+        rounds: Number(document.getElementById("panelRoundsInput").value) || 1,
+        concurrency: Number(document.getElementById("panelConcurrencyInput").value) || 3,
+        modelBotId: document.getElementById("panelModelInput").value,
+        brief: document.getElementById("panelBriefInput").value.trim()
+      };
+      const name = document.getElementById("panelNameInput").value.trim() || topic.slice(0, 40) || "Panel";
+      const editId = document.getElementById("panelEditId").value;
+      let thread = editId ? state.threads.find(t => t.id === editId) : null;
+      if (thread) {
+        Object.assign(thread, { name, panel: cfg, botIds: [cfg.modelBotId] });
+      } else {
+        thread = {
+          id: "thread_panel_" + Date.now(),
+          type: "group",
+          name,
+          mountPath: serverDefaultMountPath,
+          botIds: [cfg.modelBotId],
+          humanIds: [],
+          panel: cfg,
+          messages: [{
+            id: `msg_panel_intro_${Date.now()}`,
+            senderType: "bot",
+            panelist: { id: "moderator", name: "Moderator" },
+            text: `Panel **"${name}"** is ready with ${panelists.length} panelist${panelists.length === 1 ? "" : "s"} (${mode === "vote" ? "A/B vote" : mode}). Send a message to put a new question to the panel.`
+          }]
+        };
+        state.threads.unshift(thread);
+      }
+      activeThreadId = thread.id;
+      saveState();
+      closePanelModal();
+      renderThreadList();
+      renderActiveThread();
+      if (runNow) runPanelInThread(thread, topic);
+    }
+
+    function panelMaterialsFromLines(lines = []) {
+      return lines.map(l => (/^https?:\/\//i.test(l) ? { type: "url", url: l } : { type: "file", path: l }));
+    }
+
+    async function runPanelInThread(thread, question) {
+      const cfg = thread?.panel;
+      if (!cfg) return;
+      const topic = String(question || cfg.topic || "").trim();
+      if (!topic) return showToast("Ask the panel a question first");
+      const last = thread.messages[thread.messages.length - 1];
+      if (!last || last.senderType !== "user" || last.text !== topic) {
+        thread.messages.push({ id: "msg_u_" + Date.now(), senderType: "user", text: topic });
+      }
+      activeWorkingThreads[thread.id] = `Panel starting (${cfg.panelists.length} panelists)…`;
+      saveState();
+      renderThreadList();
+      if (activeThreadId === thread.id) renderActiveThread();
+      updateComposerStopButton();
+      try {
+        const res = await fetch("/api/panels/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threadId: thread.id,
+            topic,
+            mode: cfg.mode,
+            rounds: cfg.rounds,
+            concurrency: cfg.concurrency,
+            modelBotId: cfg.modelBotId,
+            panelists: cfg.panelists,
+            options: cfg.options,
+            materials: panelMaterialsFromLines(cfg.materialLines)
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Could not start the panel");
+        cfg.activeRunId = data.runId;
+        saveState();
+      } catch (err) {
+        delete activeWorkingThreads[thread.id];
+        thread.messages.push({ id: "msg_panel_err_" + Date.now(), senderType: "bot", panelist: { id: "moderator", name: "Moderator" }, text: `Panel could not start: ${err.message}` });
+        saveState();
+        renderThreadList();
+        if (activeThreadId === thread.id) renderActiveThread();
+        updateComposerStopButton();
+      }
+    }
+
+    function applyPanelMessage(data) {
+      const thread = state.threads.find(t => t.id === data?.threadId);
+      if (!thread || !data.message || thread.messages.some(m => m.id === data.message.id)) return false;
+      thread.messages.push(data.message);
+      return true;
+    }
+
+    function applyPanelStatus(data, { quiet = false } = {}) {
+      const thread = state.threads.find(t => t.id === data?.threadId);
+      if (!thread) return;
+      if (data.status === "running") {
+        activeWorkingThreads[thread.id] = `Panel round ${data.round}/${data.rounds} · ${data.answered}/${data.total} answered`;
+      } else if (data.status === "summarizing") {
+        activeWorkingThreads[thread.id] = "Moderator summarising…";
+      } else {
+        delete activeWorkingThreads[thread.id];
+        if (data.status === "error" && !quiet) showToast(`Panel failed: ${shortError(data.error)}`);
+      }
+      renderThreadList();
+      if (activeThreadId === thread.id) renderActiveThread();
+      updateComposerStopButton();
+    }
+
+    // Catch-up for a window that missed live events: merge each run's messages and status from the server.
+    async function syncPanelRuns() {
+      const panelThreads = state.threads.filter(t => t.panel);
+      if (panelThreads.length === 0) return;
+      try {
+        const res = await fetch("/api/panels/status");
+        if (!res.ok) return;
+        const runs = (await res.json()).runs || [];
+        const seen = new Set(runs.map(r => r.runId));
+        for (const t of panelThreads) {
+          const id = t.panel.activeRunId;
+          if (id && !seen.has(id) && !t.messages.some(m => m.panelRunId === id && m.isPanelSummary)) {
+            const r = await fetch(`/api/panels/status?runId=${encodeURIComponent(id)}`);
+            if (r.ok) runs.push(...((await r.json()).runs || []));
+          }
+        }
+        let changed = false;
+        for (const run of runs) {
+          for (const message of run.messages || []) changed = applyPanelMessage({ threadId: run.threadId, message }) || changed;
+          const live = run.status === "running" || run.status === "summarizing";
+          if (live || activeWorkingThreads[run.threadId]) {
+            applyPanelStatus({ threadId: run.threadId, status: run.status, round: run.round, rounds: run.rounds, answered: run.answeredThisRound, total: (run.panelists || []).length, error: run.error }, { quiet: true });
+          }
+        }
+        if (changed) {
+          saveState();
+          renderThreadList();
+          if (panelThreads.some(t => t.id === activeThreadId)) renderActiveThread();
+        }
+      } catch {}
+    }
+
     async function triggerGroupCollabRun() {
       const thread = getActiveThread();
       const input = document.getElementById("chatComposerInput");
@@ -6371,6 +6869,8 @@ ${handoffRule}
       if (!thread) return;
       if (thread.type === "dm") {
         openBotModal(thread.botId);
+      } else if (thread.panel) {
+        openPanelModal(thread.id);
       } else {
         openGroupModal(thread.id);
       }
@@ -8781,6 +9281,23 @@ ${handoffRule}
               loadAgentCodeWorkspaceFromServer(data.botId);
             }
           }
+        });
+
+        es.addEventListener("panel_message", ev => {
+          try {
+            const data = JSON.parse(ev.data);
+            if (applyPanelMessage(data)) {
+              saveState();
+              renderThreadList();
+              if (activeThreadId === data.threadId) renderActiveThread();
+            }
+          } catch {}
+        });
+
+        es.addEventListener("panel_status", ev => {
+          try {
+            applyPanelStatus(JSON.parse(ev.data));
+          } catch {}
         });
 
         es.addEventListener("turn_progress", ev => {

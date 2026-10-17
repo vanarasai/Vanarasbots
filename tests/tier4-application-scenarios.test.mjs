@@ -156,7 +156,9 @@ export function registerTier4Tests(runner) {
         const payload = JSON.parse(body || "{}");
         (seen[payload.model] ||= []).push(payload.messages);
         const script = scripts[payload.model];
-        const step = script.replies[Math.min(seen[payload.model].length - 1, script.replies.length - 1)];
+        const step = typeof script.reply === "function"
+          ? script.reply(payload)
+          : script.replies[Math.min(seen[payload.model].length - 1, script.replies.length - 1)];
         if (script.delayMs) await new Promise(r => setTimeout(r, script.delayMs));
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: step.content || "", tool_calls: step.tool_calls } }] }));
@@ -236,6 +238,58 @@ export function registerTier4Tests(runner) {
       starts.forEach((r, i) => assertEqual(r.status, 200, `${bots[i]} start: ${r.raw}`));
       const turns = await waitForTurns(threadId, bots);
       assert(turns.every(t => t.status === "completed"), `both turns must complete: ${JSON.stringify(turns.map(t => [t.botId, t.status]))}`);
+    });
+  });
+
+  // T4.7: An A/B panel runs every persona through every round on the server, tallies votes exactly, and has
+  // the moderator summarise; persona generation turns a brief into panelists.
+  runner.register(4, "M6", "F12", "T4.7_panel_ab_vote_runs_rounds_tallies_and_summarises", async () => {
+    // Each persona votes by name, so the expected tally is known regardless of answer order.
+    const votes = { "Maya R.": "A", "Dev P.": "B", "Ana L.": "B" };
+    await withFakeModel({
+      panelfake: {
+        reply: (payload) => {
+          const sys = String(payload.messages?.[0]?.content || "");
+          const user = String(payload.messages?.[1]?.content || "");
+          if (/research panels/.test(sys)) {
+            return { content: 'Here:\n[{"name":"Maya R.","persona":"28, commuter"},{"name":"Dev P.","persona":"41, audio engineer"},{"name":"Ana L.","persona":"19, student"}]' };
+          }
+          if (/moderator/.test(sys)) return { content: `MODERATOR SUMMARY. Saw tally: ${/\| B — Upbeat \| 2 \| 67% \|/.test(user) ? "yes" : "no"}` };
+          const who = /^You are ([^.]+\.)/.exec(sys)?.[1] || "?";
+          const round = /round 2 of 2/.test(user) ? 2 : 1;
+          return { content: `${who} round ${round}. ${round === 2 && /other panelists said/.test(user) ? "Saw others." : ""}\nVOTE: ${votes[who] || "C"}` };
+        }
+      }
+    }, async (baseUrl) => {
+      const modelBotId = "bot_e2e_panel_model";
+      await configureFakeAgent(modelBotId, baseUrl, "panelfake");
+
+      const gen = await requestJson("POST", "/api/panels/personas", { brief: "podcast listeners", count: 3, modelBotId }, {}, 15000);
+      assertEqual(gen.status, 200, `persona generation: ${gen.raw}`);
+      const panelists = gen.body.personas.map((p, i) => ({ id: `p${i}`, ...p }));
+      assertEqual(panelists.map(p => p.name).join(","), "Maya R.,Dev P.,Ana L.", "personas come from the model's JSON");
+
+      const threadId = `thread_e2e_panel_${Date.now()}`;
+      const start = await requestJson("POST", "/api/panels/run", {
+        threadId, topic: "Which intro?", mode: "vote", rounds: 2, concurrency: 2, modelBotId, panelists,
+        options: [{ label: "Calm", text: "Soft piano intro" }, { label: "Upbeat", text: "Drum hit intro" }],
+        materials: [{ type: "text", label: "Brief", text: "Episode about sleep" }]
+      });
+      assertEqual(start.status, 200, `panel start: ${start.raw}`);
+
+      let run = null;
+      for (let i = 0; i < 80 && !(run && ["completed", "error", "stopped"].includes(run.status)); i++) {
+        await new Promise(r => setTimeout(r, 250));
+        const st = await requestJson("GET", `/api/panels/status?runId=${encodeURIComponent(start.body.runId)}`);
+        run = st.body.runs?.[0] || null;
+      }
+      assertEqual(run?.status, "completed", `panel must complete: ${JSON.stringify(run && { status: run.status, error: run.error })}`);
+      assertEqual(run.messages.length, 3 * 2 + 1, "one answer per panelist per round, plus the summary");
+      assert(run.messages.filter(m => m.round === 2).every(m => /Saw others\./.test(m.text)), "round 2 must show each panelist the others' answers");
+      assertEqual(JSON.stringify(run.tally.counts), "[1,2]", "tally must be exact");
+      const summary = run.messages.find(m => m.isPanelSummary);
+      assert(summary && /\| B — Upbeat \| 2 \| 67% \|/.test(summary.text), `summary must carry the computed tally: ${summary?.text}`);
+      assertMatch(summary.text, /MODERATOR SUMMARY\. Saw tally: yes/, "moderator must be given the computed tally");
     });
   });
 }

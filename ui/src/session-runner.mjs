@@ -42,9 +42,21 @@ export function summarizeToolStep(call, seq, maxOutput = 1500) {
 
 const freshOutput = (out) => `[output captured ${new Date().toISOString()}]\n${out}`;
 
+// The model an agent talks to: its definition in the workspace (what the UI edits) first, then its saved
+// agent config, then the provider default. Shared by session turns and panels.
+export function resolveAgentModel(botId, state = loadWorkspaceDiskState() || {}) {
+  const agentCfg = loadAgentConfig(botId) || {};
+  const botDef = (state.bots || []).find(b => b.id === botId) || {};
+  const provider = botDef.provider || agentCfg.provider || "local";
+  const baseUrl = botDef.baseUrl || agentCfg.baseUrl || (provider === "local" ? "http://127.0.0.1:1234/v1" : "https://openrouter.ai/api/v1");
+  const model = botDef.model || agentCfg.model || "";
+  const apiKey = resolveVaultApiKey(provider, botDef.apiKey || agentCfg.apiKey || "", botId);
+  return { agentCfg, botDef, provider, baseUrl, model, apiKey };
+}
+
 // A failed model call used to read as an empty reply, which ended the turn as if the agent had finished.
 // Retry transient failures (rate limits, 5xx, dropped connections) once, then fail the turn with the reason.
-async function queryModelWithRetry(params) {
+export async function queryModelWithRetry(params) {
   for (let attempt = 1; ; attempt++) {
     let res;
     try {
@@ -111,12 +123,7 @@ export async function executeServerSessionTurn({
     state.threads.unshift(thread);
   }
 
-  const agentCfg = loadAgentConfig(botId) || {};
-  const botDef = (state.bots || []).find(b => b.id === botId) || {};
-  const provider = botDef.provider || agentCfg.provider || "local";
-  const baseUrl = botDef.baseUrl || agentCfg.baseUrl || (provider === "local" ? "http://127.0.0.1:1234/v1" : "https://openrouter.ai/api/v1");
-  const model = botDef.model || agentCfg.model || "";
-  const apiKey = resolveVaultApiKey(provider, botDef.apiKey || agentCfg.apiKey || "", botId);
+  const { agentCfg, botDef, provider, baseUrl, model, apiKey } = resolveAgentModel(botId, state);
 
   const lastMsg = thread.messages[thread.messages.length - 1];
   if (prompt && (!lastMsg || (lastMsg.role !== "user" && lastMsg.senderType !== "user") || (lastMsg.content !== prompt && lastMsg.text !== prompt))) {

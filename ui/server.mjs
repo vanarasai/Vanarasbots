@@ -174,14 +174,230 @@ function resolveSharedVenvDir(cwd = "", worktreePath = "") {
   return "";
 }
 
+const RUNTIME_NODE_MODULES = path.join(ROOT_DIR, ".vanaras-runtime", "node_modules");
+
+function ensureBuiltinExpressShim() {
+  const expressDir = path.join(RUNTIME_NODE_MODULES, "express");
+  const indexMjs = path.join(expressDir, "index.mjs");
+  if (fs.existsSync(indexMjs)) return RUNTIME_NODE_MODULES;
+  try {
+    fs.mkdirSync(expressDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(expressDir, "package.json"),
+      JSON.stringify({ name: "express", version: "4.18.2", type: "module", main: "index.mjs", exports: "./index.mjs" }, null, 2),
+      "utf8"
+    );
+    const shimSource = `import http from 'http';
+import fs from 'fs';
+import path from 'path';
+
+function matchRoute(pattern, pathname) {
+  if (pattern === pathname) return {};
+  const patParts = pattern.split('/').filter(Boolean);
+  const pathParts = pathname.split('/').filter(Boolean);
+  if (patParts.length !== pathParts.length) return null;
+  const params = {};
+  for (let i = 0; i < patParts.length; i++) {
+    if (patParts[i].startsWith(':')) {
+      params[patParts[i].slice(1)] = decodeURIComponent(pathParts[i]);
+    } else if (patParts[i] !== pathParts[i]) {
+      return null;
+    }
+  }
+  return params;
+}
+
+function createExpressApp() {
+  const routes = [];
+  const middlewares = [];
+  const errorHandlers = [];
+
+  const app = (req, res) => {
+    const parsedUrl = new URL(req.url || '/', 'http://' + (req.headers.host || 'localhost'));
+    req.path = parsedUrl.pathname;
+    req.query = Object.fromEntries(parsedUrl.searchParams.entries());
+    req.params = {};
+
+    res.status = (code) => {
+      res.statusCode = code;
+      return res;
+    };
+    res.json = (obj) => {
+      if (!res.headersSent) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+      }
+      res.end(JSON.stringify(obj));
+      return res;
+    };
+    res.send = (body) => {
+      if (typeof body === 'object' && body !== null && !Buffer.isBuffer(body)) {
+        return res.json(body);
+      }
+      if (!res.headersSent) {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+      }
+      res.end(body);
+      return res;
+    };
+
+    const runErrorHandlers = (err) => {
+      let eIdx = 0;
+      const nextErr = (e) => {
+        if (res.writableEnded) return;
+        const eh = errorHandlers[eIdx++];
+        if (!eh) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: e?.message || 'Internal Server Error' }));
+          return;
+        }
+        try {
+          eh(e, req, res, nextErr);
+        } catch (err2) {
+          nextErr(err2);
+        }
+      };
+      nextErr(err);
+    };
+
+    let mwIdx = 0;
+    const runNextMiddleware = (err) => {
+      if (err) return runErrorHandlers(err);
+      if (res.writableEnded) return;
+      const mw = middlewares[mwIdx++];
+      if (mw) {
+        if (mw.prefix && !req.path.startsWith(mw.prefix)) {
+          return runNextMiddleware();
+        }
+        try {
+          const origPath = req.path;
+          if (mw.prefix && mw.prefix !== '/') {
+            req.path = origPath.slice(mw.prefix.length) || '/';
+          }
+          const maybePromise = mw.fn(req, res, (e) => {
+            req.path = origPath;
+            runNextMiddleware(e);
+          });
+          if (maybePromise && typeof maybePromise.catch === 'function') {
+            maybePromise.catch(runErrorHandlers);
+          }
+        } catch (e) {
+          runErrorHandlers(e);
+        }
+        return;
+      }
+
+      for (const r of routes) {
+        if (r.method !== req.method && !(r.method === 'GET' && req.method === 'HEAD')) continue;
+        const params = matchRoute(r.pattern, req.path);
+        if (params) {
+          req.params = params;
+          try {
+            const out = r.handler(req, res, runErrorHandlers);
+            if (out && typeof out.catch === 'function') {
+              out.catch(runErrorHandlers);
+            }
+          } catch (e) {
+            runErrorHandlers(e);
+          }
+          return;
+        }
+      }
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: 'Not found', path: req.path }));
+    };
+
+    runNextMiddleware();
+  };
+
+  app.use = (arg1, arg2) => {
+    const prefix = typeof arg1 === 'string' ? arg1 : '';
+    const fn = typeof arg1 === 'function' ? arg1 : arg2;
+    if (typeof fn === 'function') {
+      if (fn.length === 4) {
+        errorHandlers.push(fn);
+      } else {
+        middlewares.push({ prefix, fn });
+      }
+    }
+    return app;
+  };
+  for (const m of ['get', 'post', 'put', 'delete', 'patch']) {
+    app[m] = (pattern, handler) => {
+      routes.push({ method: m.toUpperCase(), pattern, handler });
+      return app;
+    };
+  }
+  app.listen = (port, hostOrCb, maybeCb) => {
+    const cb = typeof hostOrCb === 'function' ? hostOrCb : maybeCb;
+    const host = typeof hostOrCb === 'string' ? hostOrCb : '0.0.0.0';
+    const srv = http.createServer(app);
+    srv.listen(port, host, cb);
+    return srv;
+  };
+  return app;
+}
+
+createExpressApp.json = () => (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  let raw = '';
+  req.on('data', c => { raw += c.toString('utf8'); });
+  req.on('end', () => {
+    if (!raw.trim()) {
+      req.body = {};
+      return next();
+    }
+    try {
+      req.body = JSON.parse(raw);
+      next();
+    } catch (e) {
+      e.type = 'entity.parse.failed';
+      next(e);
+    }
+  });
+};
+
+createExpressApp.static = (rootDir) => (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const rel = (req.path === '/' ? '/index.html' : req.path).replace(/^\\/+/, '');
+  if (!rel || rel.includes('..')) return next();
+  const full = path.resolve(rootDir, rel);
+  if (!full.startsWith(path.resolve(rootDir)) || !fs.existsSync(full) || !fs.statSync(full).isFile()) {
+    return next();
+  }
+  const ext = path.extname(full).toLowerCase();
+  const mime = {
+    '.html': 'text/html; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.js': 'application/javascript; charset=utf-8',
+    '.mjs': 'application/javascript; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.wav': 'audio/wav',
+    '.mp3': 'audio/mpeg',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml'
+  }[ext] || 'application/octet-stream';
+  res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-cache' });
+  fs.createReadStream(full).pipe(res);
+};
+
+export default createExpressApp;
+`;
+    fs.writeFileSync(indexMjs, shimSource, "utf8");
+  } catch {}
+  return RUNTIME_NODE_MODULES;
+}
+
 function ensureSharedVenvSymlinks(worktreePath = "", codeDir = "") {
   const sharedVenv = resolveSharedVenvDir(codeDir, worktreePath);
+  const runtimeNm = ensureBuiltinExpressShim();
   const sharedNodeModules = fs.existsSync(path.join(ROOT_DIR, "node_modules"))
     ? path.join(ROOT_DIR, "node_modules")
-    : "";
-  const targetDirs = [ROOT_DIR, worktreePath, codeDir].filter(d => d && fs.existsSync(d));
+    : runtimeNm;
+  const uiSubDir = codeDir && fs.existsSync(path.join(codeDir, "ui")) ? path.join(codeDir, "ui") : "";
+  const targetDirs = [ROOT_DIR, worktreePath, codeDir, uiSubDir].filter(d => d && fs.existsSync(d));
   for (const dir of targetDirs) {
-    if (sharedVenv) {
+    if (sharedVenv && dir !== uiSubDir) {
       const linkPath = path.join(dir, ".venv");
       try {
         if (!fs.existsSync(linkPath)) {
@@ -214,6 +430,7 @@ function buildAgentExecEnv(cwd = "", worktreePath = "") {
     ...currentPath.split(path.delimiter)
   ].filter(Boolean);
   const pyPaths = [cwd, worktreePath, ROOT_DIR, process.env.PYTHONPATH || ""].filter(Boolean);
+  const nodePaths = [RUNTIME_NODE_MODULES, path.join(ROOT_DIR, "node_modules"), process.env.NODE_PATH || ""].filter(Boolean);
 
   return {
     ...process.env,
@@ -221,7 +438,8 @@ function buildAgentExecEnv(cwd = "", worktreePath = "") {
     ...(sharedVenv ? { VIRTUAL_ENV: sharedVenv } : {}),
     PIP_BREAK_SYSTEM_PACKAGES: "1",
     PYTHONUNBUFFERED: "1",
-    PYTHONPATH: [...new Set(pyPaths)].join(path.delimiter)
+    PYTHONPATH: [...new Set(pyPaths)].join(path.delimiter),
+    NODE_PATH: [...new Set(nodePaths)].join(path.delimiter)
   };
 }
 
@@ -545,7 +763,18 @@ function listAgentCodeFiles(codeDir) {
     if (!fs.existsSync(dir)) return;
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "target" || entry.name === "__pycache__" || entry.name === "output_test" || entry.name === "test_output" || LEGACY_TEMPLATE_FILES.has(entry.name)) continue;
+      if (
+        entry.name.startsWith(".") ||
+        entry.name === "node_modules" ||
+        entry.name === "target" ||
+        entry.name === "__pycache__" ||
+        entry.name === "output" ||
+        entry.name.startsWith("output_test") ||
+        entry.name.startsWith("test_output") ||
+        entry.name === "Vanaras.command" ||
+        entry.name.startsWith("victory_audit_file") ||
+        LEGACY_TEMPLATE_FILES.has(entry.name)
+      ) continue;
       const fullPath = path.join(dir, entry.name);
       const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
@@ -579,29 +808,31 @@ const RESERVED_ROOT_ENTRIES = new Set([
 
 const STARTER_BOILERPLATE_FILES = new Set([
   "gguf_dump.py", "quant_architecture.md", "embedding_lookup.py", "lookup_table.rs",
-  "calibrate_q3.py", "phone_rss_probe.py", "main.py", "vanara_task.py", "notes.md", "health_check.py", "calc.js", "solution.py"
+  "calibrate_q3.py", "phone_rss_probe.py", "main.py", "vanara_task.py", "notes.md", "health_check.py", "calc.js", "solution.py", "Vanaras.command"
 ]);
 
-function isDeliverableRelPathAllowed(relPath) {
+function isDeliverableRelPathAllowed(relPath, { allowAgentSubdirs = false } = {}) {
   const norm = String(relPath || "").replace(/\\/g, "/").replace(/^\/+/, "");
   if (!norm || norm.includes("..")) return false;
   const parts = norm.split("/");
   const top = parts[0];
-  if (!top || top.startsWith(".") || RESERVED_ROOT_ENTRIES.has(top)) return false;
-  if (top === "output_test" || top === "test_output" || top === "tmp" || top === "temp") return false;
+  if (!top || top.startsWith(".")) return false;
+  if (!allowAgentSubdirs && RESERVED_ROOT_ENTRIES.has(top)) return false;
+  if (allowAgentSubdirs && RESERVED_ROOT_ENTRIES.has(top) && top !== "ui") return false;
+  if (top.startsWith("output_test") || top.startsWith("test_output") || top === "tmp" || top === "temp") return false;
   if (STARTER_BOILERPLATE_FILES.has(norm) || STARTER_BOILERPLATE_FILES.has(parts[parts.length - 1])) return false;
   for (const seg of parts) {
-    if (!seg || seg.startsWith(".") || seg === "__pycache__" || seg === "node_modules" || seg === "target" || seg === "agent_workspace" || seg === "output_test" || seg === "test_output") {
+    if (!seg || seg.startsWith(".") || seg === "__pycache__" || seg === "node_modules" || seg === "target" || seg === "agent_workspace" || seg.startsWith("output_test") || seg.startsWith("test_output")) {
       return false;
     }
   }
   const baseName = parts[parts.length - 1];
   if (/\.(pyc|pyo|log|tmp)$/i.test(baseName)) return false;
-  if (/^(?:evil\.|test_llm101\.wav$)/i.test(baseName)) return false;
+  if (/^(?:evil\.|test_llm101\.wav$|victory_audit_file)/i.test(baseName)) return false;
   return true;
 }
 
-function collectDeliverablesInDir(baseDir) {
+function collectDeliverablesInDir(baseDir, { allowAgentSubdirs = false } = {}) {
   const found = new Map();
   function walk(currDir, relPrefix = "") {
     if (!fs.existsSync(currDir)) return;
@@ -615,13 +846,13 @@ function collectDeliverablesInDir(baseDir) {
       if (entry.name.startsWith(".")) continue;
       const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
       const top = relPath.split("/")[0];
-      if (RESERVED_ROOT_ENTRIES.has(top) || entry.name === "__pycache__" || entry.name === "node_modules" || entry.name === "target" || entry.name === "agent_workspace") {
+      if ((!allowAgentSubdirs && RESERVED_ROOT_ENTRIES.has(top)) || (allowAgentSubdirs && RESERVED_ROOT_ENTRIES.has(top) && top !== "ui") || entry.name === "__pycache__" || entry.name === "node_modules" || entry.name === "target" || entry.name === "agent_workspace") {
         continue;
       }
       const absPath = path.join(currDir, entry.name);
       if (entry.isDirectory()) {
         walk(absPath, relPath);
-      } else if (entry.isFile() && isDeliverableRelPathAllowed(relPath)) {
+      } else if (entry.isFile() && isDeliverableRelPathAllowed(relPath, { allowAgentSubdirs })) {
         try {
           const st = fs.statSync(absPath);
           if (st.size <= 50 * 1024 * 1024) {
@@ -655,11 +886,56 @@ function copyIfNewer(srcAbs, srcMtimeMs, destAbs) {
   }
 }
 
+function recoverTruncatedWorkspaceFilesFromHistory(agentCodeDirs = []) {
+  try {
+    if (!fs.existsSync(WORKSPACE_FILE) || agentCodeDirs.length === 0) return;
+    const raw = fs.readFileSync(WORKSPACE_FILE, "utf8");
+    const state = JSON.parse(raw);
+    const completeBlocks = new Map();
+    const blockRx = /===FILE:\s*([^\n=]+)===\s*\n([\s\S]*?)===END_FILE===/gi;
+    for (const t of state.threads || []) {
+      for (const m of t.messages || []) {
+        for (const field of ["text", "reasoning"]) {
+          const str = String(m?.[field] || "");
+          if (!str.includes("===FILE:")) continue;
+          let match;
+          while ((match = blockRx.exec(str)) !== null) {
+            const rel = String(match[1] || "").trim().replace(/^['"`*]+|['"`*:]+$/g, "").replace(/^\/+/, "");
+            const body = String(match[2] || "").replace(/^```[a-zA-Z0-9_.-]*\r?\n/, "").replace(/\r?\n```\s*$/, "").trim();
+            if (rel && !rel.includes("..") && body.length > 60) {
+              const prev = completeBlocks.get(rel);
+              if (!prev || body.length >= prev.length) {
+                completeBlocks.set(rel, body);
+              }
+            }
+          }
+        }
+      }
+    }
+    for (const [rel, completeContent] of completeBlocks.entries()) {
+      for (const codeDir of agentCodeDirs) {
+        const dest = path.resolve(codeDir, rel);
+        if (!isPathInside(dest, codeDir)) continue;
+        if (fs.existsSync(dest)) {
+          const cur = fs.readFileSync(dest, "utf8");
+          if (cur.startsWith("```") || (cur.length < completeContent.length * 0.7 && rel.endsWith(".html") && !cur.includes("</html>"))) {
+            fs.writeFileSync(dest, completeContent, "utf8");
+          }
+        }
+      }
+    }
+  } catch {}
+}
+
 function syncWorktreeDeliverablesToMainRoot(wt, { syncSiblings = true } = {}) {
   const promotedToRoot = [];
   try {
     const candidateDirs = [];
-    if (wt && wt.codeDir && fs.existsSync(wt.codeDir)) candidateDirs.push(wt.codeDir);
+    const agentCodeDirs = [];
+    if (wt && wt.codeDir && fs.existsSync(wt.codeDir)) {
+      candidateDirs.push(wt.codeDir);
+      agentCodeDirs.push(wt.codeDir);
+    }
     if (wt && wt.worktreePath && fs.existsSync(wt.worktreePath)) candidateDirs.push(wt.worktreePath);
 
     const siblingDirs = [];
@@ -673,7 +949,9 @@ function syncWorktreeDeliverablesToMainRoot(wt, { syncSiblings = true } = {}) {
           if (fs.existsSync(awDir)) {
             for (const sub of fs.readdirSync(awDir, { withFileTypes: true })) {
               if (sub.isDirectory() && !sub.name.startsWith(".")) {
-                siblingDirs.push(path.join(awDir, sub.name));
+                const subCode = path.join(awDir, sub.name);
+                siblingDirs.push(subCode);
+                agentCodeDirs.push(subCode);
               }
             }
           }
@@ -681,16 +959,37 @@ function syncWorktreeDeliverablesToMainRoot(wt, { syncSiblings = true } = {}) {
       } catch {}
     }
 
+    const uniqueCodeDirs = [...new Set(agentCodeDirs)];
+    recoverTruncatedWorkspaceFilesFromHistory(uniqueCodeDirs);
+
     const allSourceDirs = [...new Set([...candidateDirs, ...siblingDirs])];
     const newestByRel = new Map();
+    const newestInCodeDirs = new Map();
 
     for (const dir of allSourceDirs) {
-      const map = collectDeliverablesInDir(dir);
+      const isCodeDir = uniqueCodeDirs.includes(dir);
+      const map = collectDeliverablesInDir(dir, { allowAgentSubdirs: isCodeDir });
       for (const [relPath, info] of map.entries()) {
-        const prev = newestByRel.get(relPath);
-        if (!prev || info.mtimeMs > prev.mtimeMs) {
-          newestByRel.set(relPath, info);
+        if (isCodeDir) {
+          const prevCode = newestInCodeDirs.get(relPath);
+          if (!prevCode || info.mtimeMs > prevCode.mtimeMs) {
+            newestInCodeDirs.set(relPath, info);
+          }
         }
+        if (isDeliverableRelPathAllowed(relPath, { allowAgentSubdirs: false })) {
+          const prev = newestByRel.get(relPath);
+          if (!prev || info.mtimeMs > prev.mtimeMs) {
+            newestByRel.set(relPath, info);
+          }
+        }
+      }
+    }
+
+    for (const [relPath, info] of newestInCodeDirs.entries()) {
+      for (const targetCodeDir of uniqueCodeDirs) {
+        const destAbs = path.resolve(targetCodeDir, relPath);
+        if (!isPathInside(destAbs, targetCodeDir)) continue;
+        copyIfNewer(info.absPath, info.mtimeMs, destAbs);
       }
     }
 
@@ -964,7 +1263,7 @@ function inspectMountedDirectory(targetPath, codeDir = "") {
       });
     const wsDigest = wsFiles.length > 0
       ? `--- CURRENT WORKSPACE SOURCE FILES (ALREADY LOADED IN CONTEXT — DO NOT STOP TO INSPECT) ---\n` +
-        wsFiles.slice(0, 8).map(f => {
+        wsFiles.slice(0, 16).map(f => {
           const raw = String(f.content || "");
           const body = raw.length > 18000
             ? `${raw.slice(0, 18000)}\n# [Context preview capped at 18000/${f.size}B — full file on disk is intact]`
@@ -973,7 +1272,7 @@ function inspectMountedDirectory(targetPath, codeDir = "") {
         }).join("\n\n")
       : "";
 
-    const symbolMap = extractRepositorySymbolMap(resolved);
+    const symbolMap = extractRepositorySymbolMap(wsFiles.length > 0 ? wsDir : resolved);
     const symbolDigest = symbolMap.length > 0
       ? `--- SYMBOL & ROUTE MAP ---\n` + symbolMap.map(s => `• ${s.file}: ${s.symbols.join(", ")}`).join("\n")
       : "";
@@ -1360,8 +1659,23 @@ const server = http.createServer(async (req, res) => {
           const cleanRel = String(f.name).replace(/^\/+/, "").replace(/\.\./g, "");
           const dest = path.resolve(wt.codeDir, cleanRel);
           if (isPathInside(dest, wt.codeDir)) {
+            let cleanedContent = String(f.content ?? "")
+              .replace(/^```[a-zA-Z0-9_.-]*\r?\n/, "")
+              .replace(/\r?\n```\s*$/, "");
+            if (fs.existsSync(dest) && fs.statSync(dest).isFile()) {
+              const existingDisk = fs.readFileSync(dest, "utf8");
+              const isHtml = /\.html?$/i.test(cleanRel);
+              const existingCompleteHtml = isHtml && /<\/html>/i.test(existingDisk);
+              const incomingIncompleteHtml = isHtml && !/<\/html>/i.test(cleanedContent);
+              if (
+                (f.complete === false && existingDisk.length > cleanedContent.length) ||
+                (existingCompleteHtml && incomingIncompleteHtml && existingDisk.length > cleanedContent.length)
+              ) {
+                continue;
+              }
+            }
             fs.mkdirSync(path.dirname(dest), { recursive: true });
-            fs.writeFileSync(dest, String(f.content ?? ""), "utf8");
+            fs.writeFileSync(dest, cleanedContent, "utf8");
             savedNames.push(cleanRel);
             const topSegment = cleanRel.split("/")[0];
             if (topSegment && !RESERVED_ROOT_ENTRIES.has(topSegment)) {
@@ -1369,7 +1683,7 @@ const server = http.createServer(async (req, res) => {
               if (isPathInside(wtDest, wt.worktreePath)) {
                 try {
                   fs.mkdirSync(path.dirname(wtDest), { recursive: true });
-                  fs.writeFileSync(wtDest, String(f.content ?? ""), "utf8");
+                  fs.writeFileSync(wtDest, cleanedContent, "utf8");
                 } catch {}
               }
             }
@@ -3015,7 +3329,8 @@ const server = http.createServer(async (req, res) => {
         model = "",
         messages = [],
         temperature = 0.7,
-        max_tokens = 3500
+        max_tokens = 8192,
+        enableReasoning = false
       } = await readJsonBody(req);
       const apiKey = resolveVaultApiKey(provider, rawApiKey, botId);
       if (rawApiKey && String(rawApiKey).trim() && provider !== "local") {
@@ -3043,29 +3358,52 @@ const server = http.createServer(async (req, res) => {
         headers["X-Title"] = "Vanaras Desktop App";
       }
 
+      let activeModel = model;
+      const buildStreamBody = (targetModel, reasoningCfg) => {
+        const b = { model: targetModel, messages, temperature, max_tokens, stream: true };
+        if (reasoningCfg) b.reasoning = reasoningCfg;
+        if (!enableReasoning && provider === "local") {
+          b.chat_template_kwargs = { enable_thinking: false };
+        }
+        return JSON.stringify(b);
+      };
+
+      const defaultReasoningCfg = enableReasoning ? undefined : { enabled: false };
       const reqInit = {
         method: "POST",
         headers,
-        body: JSON.stringify({ model, messages, temperature, max_tokens, stream: true }),
+        body: buildStreamBody(activeModel, defaultReasoningCfg),
         signal: streamAbortCtrl.signal
       };
       let upstream = provider === "local"
         ? await fetchWithLocalFallback(cleanBase, "/chat/completions", reqInit, 90000, streamAbortCtrl.signal)
         : await fetch(chatUrl, reqInit);
 
-      if (!upstream.ok && (provider === "openrouter" || cleanBase.includes("openrouter.ai")) && upstream.status === 400) {
-        const firstErrText = await upstream.text().catch(() => "");
-        if (/not a valid model ID/i.test(firstErrText)) {
-          const fallbackModel = await resolveOpenRouterModelSlug(model, cleanBase, headers);
-          if (fallbackModel && fallbackModel !== model) {
+      if (!upstream.ok && upstream.status === 400) {
+        let firstErrText = await upstream.text().catch(() => "");
+        if ((provider === "openrouter" || cleanBase.includes("openrouter.ai")) && /not a valid model ID/i.test(firstErrText)) {
+          const fallbackModel = await resolveOpenRouterModelSlug(activeModel, cleanBase, headers);
+          if (fallbackModel && fallbackModel !== activeModel) {
+            activeModel = fallbackModel;
             upstream = await fetch(chatUrl, {
               ...reqInit,
-              body: JSON.stringify({ model: fallbackModel, messages, temperature, max_tokens, stream: true })
+              body: buildStreamBody(activeModel, defaultReasoningCfg)
             });
-          } else {
-            return sendJson(res, 400, { error: `Stream HTTP 400: ${firstErrText}` });
+            if (!upstream.ok) firstErrText = await upstream.text().catch(() => "");
           }
-        } else {
+        }
+        if (!upstream.ok && /reasoning/i.test(firstErrText)) {
+          upstream = await fetch(chatUrl, {
+            ...reqInit,
+            body: buildStreamBody(activeModel, { effort: "low" })
+          });
+          if (!upstream.ok) {
+            upstream = await fetch(chatUrl, {
+              ...reqInit,
+              body: buildStreamBody(activeModel, undefined)
+            });
+          }
+        } else if (!upstream.ok) {
           return sendJson(res, 400, { error: `Stream HTTP 400: ${firstErrText}` });
         }
       }
@@ -3083,18 +3421,18 @@ const server = http.createServer(async (req, res) => {
 
       const decoder = new TextDecoder();
       let buffer = "";
+      let totalContent = "";
+      let totalReasoning = "";
       for await (const chunk of upstream.body) {
         buffer += decoder.decode(chunk, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
+        let abortReasoningRunaway = false;
         for (const rawLine of lines) {
           const line = rawLine.trim();
           if (!line.startsWith("data:")) continue;
           const dataStr = line.slice(5).trim();
-          if (dataStr === "[DONE]") {
-            res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-            continue;
-          }
+          if (dataStr === "[DONE]") continue;
           try {
             const parsed = JSON.parse(dataStr);
             if (parsed.error) {
@@ -3105,11 +3443,56 @@ const server = http.createServer(async (req, res) => {
             const token = delta.content || "";
             const reasoning = delta.reasoning_content || delta.reasoning || "";
             if (token || reasoning) {
+              totalContent += token;
+              totalReasoning += reasoning;
               res.write(`data: ${JSON.stringify({ token, reasoning })}\n\n`);
+              if (!enableReasoning && !totalContent.trim() && totalReasoning.length > 1600) {
+                abortReasoningRunaway = true;
+                break;
+              }
             }
           } catch {}
         }
+        if (abortReasoningRunaway) break;
       }
+
+      const visibleOutsideThink = totalContent
+        .replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/gi, "")
+        .replace(/<(?:think|thinking)>[\s\S]*$/gi, "")
+        .trim();
+
+      if (!visibleOutsideThink && (totalReasoning.trim() || totalContent.trim()) && !streamAbortCtrl.signal.aborted) {
+        try {
+          const followUpMessages = [
+            ...messages,
+            {
+              role: "user",
+              content: "You spent your turn in internal reasoning without writing the visible response. Output the direct visible response, [TOOL: ...] actions, or ===FILE: ...=== blocks now with zero <think> tags."
+            }
+          ];
+          const followRes = await fetch(chatUrl, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model: activeModel,
+              messages: followUpMessages,
+              temperature,
+              max_tokens,
+              stream: false,
+              reasoning: { enabled: false }
+            }),
+            signal: streamAbortCtrl.signal
+          });
+          if (followRes.ok) {
+            const followData = await followRes.json();
+            const followText = (followData?.choices?.[0]?.message?.content || "").trim();
+            if (followText) {
+              res.write(`data: ${JSON.stringify({ token: followText, reasoning: "" })}\n\n`);
+            }
+          }
+        } catch {}
+      }
+
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
     } catch (e) {
@@ -3133,7 +3516,8 @@ const server = http.createServer(async (req, res) => {
         model = "",
         messages = [],
         temperature = 0.7,
-        max_tokens = 3000
+        max_tokens = 8192,
+        enableReasoning = false
       } = await readJsonBody(req);
       const apiKey = resolveVaultApiKey(provider, rawApiKey, botId);
       if (rawApiKey && String(rawApiKey).trim() && provider !== "local") {
@@ -3249,6 +3633,12 @@ const server = http.createServer(async (req, res) => {
 
       const payload = { messages, temperature, max_tokens };
       if (model) payload.model = model;
+      if (!enableReasoning) {
+        payload.reasoning = { enabled: false };
+        if (provider === "local") {
+          payload.chat_template_kwargs = { enable_thinking: false };
+        }
+      }
 
       const reqInit = {
         method: "POST",
@@ -3260,12 +3650,24 @@ const server = http.createServer(async (req, res) => {
         : await fetch(chatUrl, reqInit);
 
       let raw = await upstream.text();
-      if (!upstream.ok && (provider === "openrouter" || cleanBase.includes("openrouter.ai")) && upstream.status === 400 && /not a valid model ID/i.test(raw)) {
-        const fallbackModel = await resolveOpenRouterModelSlug(model, cleanBase, headers);
-        if (fallbackModel && fallbackModel !== model) {
+      if (!upstream.ok && upstream.status === 400) {
+        if ((provider === "openrouter" || cleanBase.includes("openrouter.ai")) && /not a valid model ID/i.test(raw)) {
+          const fallbackModel = await resolveOpenRouterModelSlug(model, cleanBase, headers);
+          if (fallbackModel && fallbackModel !== model) {
+            payload.model = fallbackModel;
+            upstream = await fetch(chatUrl, {
+              ...reqInit,
+              body: JSON.stringify(payload)
+            });
+            raw = await upstream.text();
+          }
+        }
+        if (!upstream.ok && /reasoning/i.test(raw)) {
+          const retryPayload = { ...payload };
+          delete retryPayload.reasoning;
           upstream = await fetch(chatUrl, {
             ...reqInit,
-            body: JSON.stringify({ ...payload, model: fallbackModel })
+            body: JSON.stringify(retryPayload)
           });
           raw = await upstream.text();
         }
@@ -3273,6 +3675,41 @@ const server = http.createServer(async (req, res) => {
       if (!upstream.ok) {
         return sendJson(res, upstream.status, { error: `Upstream HTTP ${upstream.status}: ${raw}` });
       }
+      try {
+        const parsedChat = JSON.parse(raw);
+        const msg = parsedChat?.choices?.[0]?.message;
+        const rawContent = String(msg?.content || "");
+        const visibleText = rawContent
+          .replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/gi, "")
+          .replace(/<(?:think|thinking)>[\s\S]*$/gi, "")
+          .trim();
+        const rawReason = String(msg?.reasoning_content || msg?.reasoning || "").trim();
+        if (!visibleText && (rawReason || rawContent) && msg) {
+          const followRes = await fetch(chatUrl, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              ...payload,
+              reasoning: { enabled: false },
+              messages: [
+                ...messages,
+                {
+                  role: "user",
+                  content: "Output your direct visible response, [TOOL: ...] actions, or ===FILE: ...=== blocks now without <think> tags."
+                }
+              ]
+            })
+          });
+          if (followRes.ok) {
+            const followData = await followRes.json();
+            const followContent = String(followData?.choices?.[0]?.message?.content || "").trim();
+            if (followContent) {
+              msg.content = followContent;
+              raw = JSON.stringify(parsedChat);
+            }
+          }
+        }
+      } catch {}
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(raw);
     } catch (e) {
@@ -3520,6 +3957,33 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // 10B. Live Agent Webpage Preview & Auto-Boot Proxy (GET /api/workspace/web-preview?url=...)
+  if (req.method === "GET" && req.url.startsWith("/api/workspace/web-preview")) {
+    try {
+      const parsedUrl = new URL(req.url, `http://localhost:${PORT}`);
+      const rawUrl = decodeURIComponent(parsedUrl.searchParams.get("url") || "").trim();
+      const botId = parsedUrl.searchParams.get("botId") || "bot_r1";
+      let targetUrlObj = null;
+      try {
+        targetUrlObj = new URL(rawUrl);
+      } catch {
+        return sendJson(res, 400, { ok: false, error: "Invalid preview URL" });
+      }
+      const targetPort = Number(targetUrlObj.port || 80);
+      if (targetPort && targetPort !== Number(PORT)) {
+        await ensureAgentPortServerRunning(targetPort, botId);
+      }
+      res.writeHead(302, {
+        "Location": targetUrlObj.toString(),
+        "Cache-Control": "no-cache"
+      });
+      res.end();
+      return;
+    } catch (e) {
+      return sendJson(res, 500, { ok: false, error: e.message });
+    }
+  }
+
   // Static files
   const reqPath = req.url === "/" ? "/index.html" : decodeURIComponent(req.url.split("?")[0]);
   const targetFile = path.resolve(__dirname, "." + reqPath);
@@ -3550,6 +4014,77 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+const managedAgentPortProcesses = new Map();
+
+async function isLocalPortListening(port) {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 700);
+    const r = await fetch(`http://127.0.0.1:${port}/`, { signal: ctrl.signal });
+    clearTimeout(t);
+    return r.status > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureAgentPortServerRunning(port, preferredBotId = "bot_r1") {
+  if (!port || Number(port) === Number(PORT)) return false;
+  if (await isLocalPortListening(port)) return true;
+
+  const candidateScripts = [];
+  const checkDirForServer = (dir) => {
+    if (!dir || !fs.existsSync(dir)) return;
+    for (const rel of ["ui/server.mjs", "ui/server.js", "server.mjs", "server.js"]) {
+      const p = path.join(dir, rel);
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+        try {
+          const src = fs.readFileSync(p, "utf8");
+          if (src.includes(String(port)) || rel.startsWith("ui/")) {
+            candidateScripts.push({ scriptPath: p, cwd: path.dirname(p) });
+          }
+        } catch {}
+      }
+    }
+  };
+
+  if (preferredBotId) {
+    try {
+      const wt = ensureAgentWorktree(preferredBotId, preferredBotId.replace(/^bot_/, "").toUpperCase());
+      checkDirForServer(wt.codeDir);
+      checkDirForServer(wt.worktreePath);
+    } catch {}
+  }
+  for (const bId of ["bot_r1", "bot_r2", "bot_r3"]) {
+    try {
+      const wt = ensureAgentWorktree(bId, bId.replace(/^bot_/, "").toUpperCase());
+      checkDirForServer(wt.codeDir);
+      checkDirForServer(wt.worktreePath);
+    } catch {}
+  }
+
+  if (candidateScripts.length === 0) return false;
+  const chosen = candidateScripts[0];
+  try {
+    const child = spawn(process.execPath, [chosen.scriptPath], {
+      cwd: chosen.cwd,
+      env: buildAgentExecEnv(chosen.cwd, chosen.cwd, { PORT: String(port) }),
+      stdio: "ignore",
+      detached: true
+    });
+    child.unref();
+    managedAgentPortProcesses.set(Number(port), child);
+  } catch {
+    return false;
+  }
+
+  for (let i = 0; i < 12; i++) {
+    await new Promise(r => setTimeout(r, 150));
+    if (await isLocalPortListening(port)) return true;
+  }
+  return false;
+}
+
 server.on("error", (err) => {
   if (err && err.code === "EADDRINUSE") {
     console.log(`Vanaras Desktop Engine is already running on http://localhost:${PORT}`);
@@ -3560,5 +4095,6 @@ server.on("error", (err) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   const promoted = syncAllWorktreesToMainRoot();
+  ensureAgentPortServerRunning(3847, "bot_r1").catch(() => {});
   console.log(`Vanaras Desktop Engine listening at http://localhost:${PORT}${promoted.length > 0 ? ` (synced ${promoted.length} deliverables to main root)` : ""}`);
 });

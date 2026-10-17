@@ -2771,6 +2771,9 @@ Auto-save: enabled</pre>
 
     let pendingBatchQueue = {};
     let pendingMentionQueue = {};
+    // Server-run turns started by this window, keyed `${threadId}_${botId}`: their relay depth, so the squad
+    // chain can continue when the server reports turn_complete.
+    let serverTurnChains = {};
 
     function saveApiKeysToLocalStore() {
       try {
@@ -4989,7 +4992,9 @@ ${handoffRule}
           })
         });
         const data = await res.json();
-        if (!data.ok) {
+        if (data.ok) {
+          serverTurnChains[`${threadId}_${targetBot.id}`] = { chainDepth: Number(options.chainDepth) || 0 };
+        } else {
           liveMsg.isStreaming = false;
           liveMsg.text = `Server runner error: ${data.error || "Failed to start"}`;
           delete activeWorkingThreads[threadId];
@@ -5009,12 +5014,61 @@ ${handoffRule}
       }
     }
 
+    // A server-run turn returns before the agent finishes, so the squad relay that runBotTurnInThread applies
+    // after a browser-run turn never happened for it: the next teammate was never triggered. Apply the same
+    // hand-off rules here once the server reports the turn complete.
+    function continueSquadAfterServerTurn(thread, data) {
+      const key = `${thread.id}_${data.botId}`;
+      const chain = serverTurnChains[key];
+      delete serverTurnChains[key];
+      if (!chain || data.status === "stopped" || data.status === "error") return;
+      if (thread.type !== "group" || state.autoTriggerEnabled === false) return;
+      const finishedBot = getBot(data.botId);
+      if (!finishedBot || !(finishedBot.tools || []).includes("handoff")) return;
+
+      const relayBots = buildDynamicSquadRelay(thread);
+      const maxRelayDepth = Math.max(16, relayBots.length * 4);
+      if (chain.chainDepth >= maxRelayDepth) return;
+
+      const finalText = String(data.finalContent || "");
+      let nextBot = findExplicitHandoffBots(finalText, data.botId, data.reasoning || "", relayBots, chain.chainDepth === 0)[0] || null;
+      let nextPrompt = "";
+      if (Array.isArray(pendingMentionQueue[thread.id]) && pendingMentionQueue[thread.id].length > 0) {
+        if (nextBot) {
+          pendingMentionQueue[thread.id] = pendingMentionQueue[thread.id].filter(item => item.botId !== nextBot.id);
+        } else {
+          const item = pendingMentionQueue[thread.id].shift();
+          nextBot = item ? getBot(item.botId) : null;
+          nextPrompt = item ? item.prompt : "";
+        }
+        if (pendingMentionQueue[thread.id].length === 0) delete pendingMentionQueue[thread.id];
+      }
+      if (!nextBot) return;
+      if (!nextPrompt) {
+        nextPrompt = `@${nextBot.name} (${nextBot.role}), @${data.botName} just finished their turn and handed off to you:\n"${stripAllToolDirectives(finalText).slice(0, 600)}"\n\nContinue as ${nextBot.role}: take the next concrete step in your worktree (${nextBot.worktreeBranch}), verify it, and hand off to the next specialist when done.`;
+      }
+
+      activeWorkingThreads[thread.id] = `Auto-triggering @${nextBot.name}...`;
+      renderThreadList();
+      updateComposerStopButton();
+      activeAutonomousTimers[thread.id] = setTimeout(() => {
+        delete activeAutonomousTimers[thread.id];
+        if (state.autoTriggerEnabled !== false) {
+          runBotTurnInThread(thread.id, nextBot, nextPrompt, chain.chainDepth + 1);
+        } else {
+          delete activeWorkingThreads[thread.id];
+          renderThreadList();
+          updateComposerStopButton();
+        }
+      }, 1100);
+    }
+
     async function runBotTurnInThread(threadId, targetBot, triggerText, chainDepth = 0, options = {}) {
       const targetThread = state.threads.find(t => t.id === threadId);
       if (!targetThread || !targetBot) return;
 
       if (state.useServerRunner !== false && (targetBot.id === "bot_r1" || options.useServerRunner || state.useServerRunner)) {
-        return runServerBotTurnInThread(threadId, targetBot, triggerText, options);
+        return runServerBotTurnInThread(threadId, targetBot, triggerText, { ...options, chainDepth });
       }
 
       const isConcurrent = Boolean(options.allowConcurrent);
@@ -8441,7 +8495,7 @@ ${handoffRule}
               activeWorkingThreads[data.threadId] = data.message || `Step ${data.step}/${data.maxSteps}...`;
               const targetThread = state.threads.find(t => t.id === data.threadId);
               if (targetThread && Array.isArray(targetThread.messages)) {
-                const liveMsg = targetThread.messages.find(m => m && m.isStreaming);
+                const liveMsg = targetThread.messages.find(m => m && m.isStreaming && (!data.botId || m.botId === data.botId));
                 if (liveMsg && data.message) {
                   liveMsg.text = data.message;
                 }
@@ -8463,7 +8517,8 @@ ${handoffRule}
               delete activeTurnState[data.threadId];
               const targetThread = state.threads.find(t => t.id === data.threadId);
               if (targetThread && Array.isArray(targetThread.messages)) {
-                let liveMsg = targetThread.messages.find(m => m && m.isStreaming);
+                // Several agents can stream in one group thread: finish this bot's message, not the first one.
+                let liveMsg = targetThread.messages.find(m => m && m.isStreaming && m.botId === data.botId);
                 if (!liveMsg) {
                   liveMsg = {
                     id: "msg_bot_" + Date.now(),
@@ -8479,6 +8534,7 @@ ${handoffRule}
                   liveMsg.reasoning = data.reasoning;
                 }
                 saveState();
+                continueSquadAfterServerTurn(targetThread, data);
               }
               renderThreadList();
               if (activeThreadId === data.threadId) {

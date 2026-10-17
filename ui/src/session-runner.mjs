@@ -2,7 +2,7 @@
 import { execSync } from "node:child_process";
 import { loadAgentConfig } from "./agent-store.mjs";
 import { executeAgentToolInternal } from "./agent-tools.mjs";
-import { compactMessagesList } from "./context.mjs";
+import { compactMessagesList, detectUnfulfilledAction, threadMessagesToChat } from "./context.mjs";
 import { broadcastEvent } from "./events.mjs";
 import { queryLLMInternal } from "./llm.mjs";
 import { VANARAS_NATIVE_TOOLS, parseDeliverableBlocksText, parseTextToolCalls } from "./native-tools.mjs";
@@ -22,7 +22,10 @@ EVIDENCE RULES (always apply):
 - If a fix needs something you cannot do (credentials, a download you are not allowed to run), say exactly what is missing and what you already verified.
 - A successful-looking artifact is not proof. Verify real behaviour (e.g. that audio is speech, not a placeholder tone) before saying it works.`;
 
-const freshOutput = (out) => `[output captured ${new Date().toISOString()}]\n${out}`;
+// How many times one turn may be pushed to act after announcing work without a tool call.
+const MAX_NUDGES = 2;
+
+const freshOutput =(out) => `[output captured ${new Date().toISOString()}]\n${out}`;
 
 export async function executeServerSessionTurn({
   threadId = "default_thread",
@@ -125,10 +128,11 @@ export async function executeServerSessionTurn({
 
   const conversationMessages = [
     { role: "system", content: effectiveSysPrompt },
-    ...thread.messages.slice(-20).map(m => ({
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: m.content || ""
-    }))
+    ...threadMessagesToChat(
+      thread.messages.slice(-20),
+      botId,
+      Object.fromEntries((state.bots || []).map(b => [b.id, b.name]))
+    )
   ];
 
   // P3: Auto-compaction if conversation messages exceed threshold
@@ -149,6 +153,7 @@ export async function executeServerSessionTurn({
   let accumulatedReasoning = "";
   let finalVisibleContent = "";
   let verifyRunCount = 0;
+  let nudgeCount = 0;
 
   try {
     for (let step = 0; step < turnRecord.maxSteps; step++) {
@@ -218,6 +223,24 @@ export async function executeServerSessionTurn({
       }
 
       if (allToolCalls.length === 0) {
+        const unfulfilled = detectUnfulfilledAction(replyContent);
+        if (unfulfilled && nudgeCount < MAX_NUDGES && step < turnRecord.maxSteps - 1) {
+          nudgeCount++;
+          conversationMessages.push({ role: "assistant", content: replyContent });
+          conversationMessages.push({
+            role: "user",
+            content: `[RUNNER] ${unfulfilled} Call the tool now (prefer a native tool call; for a text tag, keep every [ and ] balanced), or, if the task is finished or blocked, say so plainly with the evidence.`
+          });
+          broadcastEvent("turn_progress", {
+            threadId,
+            botId,
+            step: turnRecord.step,
+            maxSteps: turnRecord.maxSteps,
+            status: "thinking",
+            message: `${botName} announced work without running it; asking it to continue...`
+          });
+          continue;
+        }
         if (verifyCommand && verifyRunCount === 0) {
           verifyRunCount++;
           turnRecord.message = `${botName} running project verification (${verifyCommand})...`;
@@ -318,7 +341,13 @@ export async function executeServerSessionTurn({
       }
     }
 
-    if (turnRecord.status !== "stopped") {
+    if (turnRecord.status !== "stopped" && !finalVisibleContent) {
+      // The loop ran out of steps while the agent was still working: say so instead of a silent "(Completed)".
+      const lastTool = turnRecord.toolCalls[turnRecord.toolCalls.length - 1];
+      turnRecord.status = "incomplete";
+      turnRecord.message = `Reached the ${turnRecord.maxSteps}-step limit`;
+      finalVisibleContent = `Paused after reaching the ${turnRecord.maxSteps}-step limit before finishing${lastTool ? ` (last action: ${lastTool.name})` : ""}. Reply "continue" to resume.`;
+    } else if (turnRecord.status !== "stopped") {
       turnRecord.status = "completed";
       turnRecord.message = "Turn completed successfully";
     }

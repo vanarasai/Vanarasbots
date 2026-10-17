@@ -99,3 +99,45 @@ export function splitReasoningAndVisibleOutput(rawOutput = "", priorReasoning = 
     cleanedOutput: finalCleaned
   };
 }
+
+// Thread messages are written by two producers: the UI stores { senderType, text } and the server runner
+// stores { role, content }. Map both shapes into chat messages for the agent that is about to speak, so it
+// sees its own earlier replies as "assistant" turns and teammates' replies / terminal output as context.
+export function threadMessagesToChat(messages = [], botId = "", botNameById = {}) {
+  const out = [];
+  for (const m of messages) {
+    if (!m) continue;
+    const body = String(m.content || m.text || "").trim();
+    if (!body) continue;
+    const isBot = m.role === "assistant" || m.senderType === "bot";
+    if (isBot && (!m.botId || m.botId === botId)) {
+      out.push({ role: "assistant", content: body });
+    } else if (isBot) {
+      const name = m.botName || botNameById[m.botId] || m.botId;
+      out.push({ role: "user", content: `[@${name} said]\n${body}` });
+    } else if (m.senderType === "terminal") {
+      const header = m.command ? `[Terminal: \`${m.command}\` exited ${m.exitCode ?? "?"}]` : "[Terminal output]";
+      out.push({ role: "user", content: `${header}\n${body}` });
+    } else {
+      out.push({ role: "user", content: body });
+    }
+  }
+  return out;
+}
+
+// A reply with no executable tool call ends the turn. Detect the two cases where that is a mistake rather
+// than a final answer: a [TOOL: ...] tag that could not be parsed, or a closing line announcing work
+// ("Running diagnostics now:", "Let me fix it") that was never actually requested.
+export function detectUnfulfilledAction(reply = "") {
+  const text = String(reply || "").trim();
+  if (!text) return null;
+  if (/\[TOOL:/i.test(text)) {
+    return "Your reply contains a [TOOL: ...] tag that could not be parsed (unbalanced [ ] brackets or a missing closing ]), so nothing ran.";
+  }
+  const lastLine = text.split("\n").map(l => l.trim()).filter(Boolean).pop() || "";
+  if (/\?\s*$/.test(lastLine)) return null;
+  if (/:\s*$/.test(lastLine) || /^(?:now\s+)?(?:let me|i'll|i will|i'm going to|running|checking|fixing|retrying|next,? i)\b/i.test(lastLine)) {
+    return `You said "${lastLine.slice(0, 120)}" but did not call any tool, so nothing ran.`;
+  }
+  return null;
+}

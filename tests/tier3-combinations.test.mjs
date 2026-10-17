@@ -118,4 +118,54 @@ export function registerTier3Tests(runner) {
     const { stdout: cliSearchOut } = await execFileAsync(process.execPath, [cliPath, "search", "PORT"]);
     assert(cliSearchOut.includes("PORT") || cliSearchOut.includes("server"), "CLI search must return matches");
   });
+
+  // T3.4: Deliverable sync must never overwrite a newer edit in the main checkout with a stale replica.
+  // Regression: copyFileSync stamped replicas with "now", so the 2nd sync pass promoted a stale replica
+  // over the user's real edit.
+  runner.register(3, "M7", "F14", "T3.4_sync_preserves_newer_main_edit", async () => {
+    const fileName = `vx_citest_sync_canary_${process.pid}.txt`;
+    const rootFile = path.join(VANARAS_ROOT, fileName);
+    const replicaDirs = [];
+    const worktreesDir = path.join(VANARAS_ROOT, ".worktrees");
+    if (fs.existsSync(worktreesDir)) {
+      for (const wt of fs.readdirSync(worktreesDir, { withFileTypes: true })) {
+        if (!wt.isDirectory() || wt.name.startsWith(".")) continue;
+        replicaDirs.push(path.join(worktreesDir, wt.name));
+        const aw = path.join(worktreesDir, wt.name, "agent_workspace");
+        if (fs.existsSync(aw)) {
+          for (const sub of fs.readdirSync(aw, { withFileTypes: true })) {
+            if (sub.isDirectory() && !sub.name.startsWith(".")) replicaDirs.push(path.join(aw, sub.name));
+          }
+        }
+      }
+    }
+
+    try {
+      // 1. An agent produces the file; the server replicates it to the main root and sibling workspaces.
+      const created = await requestJson("POST", "/api/agent/tool", {
+        tool: "fs_write", botId: "bot_r1", filePath: fileName, content: "v1 agent version\n"
+      });
+      assertEqual(created.status, 200, `fs_write failed: ${JSON.stringify(created.body)}`);
+      assert(fs.existsSync(rootFile), "agent deliverable must be promoted to the main root");
+
+      // 2. The user edits the main copy afterwards.
+      await new Promise(r => setTimeout(r, 1200));
+      fs.appendFileSync(rootFile, "v2 USER EDIT\n", "utf8");
+
+      // 3. Several unrelated tool calls trigger repeated sync passes.
+      for (let i = 0; i < 4; i++) {
+        await new Promise(r => setTimeout(r, 1100));
+        const res = await requestJson("POST", "/api/agent/tool", {
+          tool: "shell_exec", botId: "bot_r1", command: "echo sync-pass"
+        });
+        assertEqual(res.status, 200, `shell_exec #${i} failed`);
+        const current = fs.readFileSync(rootFile, "utf8");
+        assertIncludes(current, "v2 USER EDIT", `user edit was overwritten after tool call #${i + 1}`);
+      }
+    } finally {
+      for (const dir of [VANARAS_ROOT, ...replicaDirs]) {
+        fs.rmSync(path.join(dir, fileName), { force: true });
+      }
+    }
+  });
 }

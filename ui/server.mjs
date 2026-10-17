@@ -448,6 +448,10 @@ function buildAgentExecEnv(cwd = "", worktreePath = "") {
 // Spawn POSIX commands as their own process-group leader and signal the whole group instead.
 const USE_PROCESS_GROUPS = process.platform !== "win32";
 
+// P1a & P2: Process supervision for agent background tasks and server-side session turns
+const agentBackgroundProcesses = new Map();
+const activeServerTurns = new Map();
+
 function signalProcessTree(proc, signal = "SIGTERM") {
   if (!proc || !proc.pid) return false;
   if (USE_PROCESS_GROUPS && proc.__vanarasGroupLeader) {
@@ -2278,431 +2282,714 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 2D. Per-Agent Tool & MCP Server Executor (/api/agent/tool)
-  if (req.method === "POST" && req.url === "/api/agent/tool") {
-    try {
-      const {
-        botId,
-        botName,
-        tool,
-        action,
-        args = {},
-        toolName: requestedMcpToolName,
-        toolArgs: requestedMcpToolArgs,
-        filePath,
-        content,
-        mcpCommand,
-        streamId = "",
-        threadId = "",
-        isRegex,
-        path: pathParam,
-        dir,
-        directory
-      } = await readJsonBody(req);
-      const toolName = tool || action;
-      const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
-      const savedAgentCfg = loadAgentConfig(botId || "bot_r1") || {};
-      const effectiveMcpCommand = String(mcpCommand || savedAgentCfg.mcpCommand || "").trim();
+  // 2D. Per-Agent Tool & MCP Server Executor (Core Tool Execution Function)
+async function executeAgentToolInternal(params = {}) {
+  const {
+    botId = "bot_r1",
+    botName = "R1",
+    tool,
+    action,
+    args = {},
+    toolName: requestedMcpToolName,
+    toolArgs: requestedMcpToolArgs,
+    filePath,
+    content,
+    mcpCommand,
+    streamId = "",
+    threadId = "",
+    isRegex,
+    path: pathParam,
+    dir,
+    directory,
+    oldString,
+    newString,
+    old_str,
+    new_str,
+    targetContent,
+    replacementContent,
+    command,
+    processId,
+    name,
+    lines,
+    timeout,
+    maxOutput
+  } = params;
+  const toolName = tool || action;
+  const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
+  const savedAgentCfg = loadAgentConfig(botId || "bot_r1") || {};
+  const effectiveMcpCommand = String(mcpCommand || savedAgentCfg.mcpCommand || "").trim();
 
-      if (toolName === "mcp_probe" && effectiveMcpCommand) {
-        const mcpRes = await callStdioMcpServer({ commandLine: effectiveMcpCommand, cwd: wt.worktreePath, method: "tools/list" });
-        const tools = mcpRes.result?.tools || [];
-        return sendJson(res, 200, { ...mcpRes, tools });
+  // 1. MCP PROBE
+  if (toolName === "mcp_probe" && effectiveMcpCommand) {
+    const mcpRes = await callStdioMcpServer({ commandLine: effectiveMcpCommand, cwd: wt.worktreePath, method: "tools/list" });
+    const tools = mcpRes.result?.tools || [];
+    return { status: 200, data: { ...mcpRes, tools } };
+  }
+
+  // 2. MCP CALL
+  if (toolName === "mcp_call" && effectiveMcpCommand) {
+    const targetMcpTool = requestedMcpToolName || args.name || "";
+    const targetMcpArgs = requestedMcpToolArgs || args.arguments || {};
+    const mcpRes = await callStdioMcpServer({
+      commandLine: effectiveMcpCommand,
+      cwd: wt.worktreePath,
+      method: "tools/call",
+      params: { name: targetMcpTool, arguments: targetMcpArgs }
+    });
+    const contentItems = Array.isArray(mcpRes.result?.content)
+      ? mcpRes.result.content.map(c => c.text || JSON.stringify(c)).join("\n")
+      : "";
+    const output = contentItems || (mcpRes.result ? JSON.stringify(mcpRes.result, null, 2) : "");
+    return { status: 200, data: { ...mcpRes, output } };
+  }
+
+  // 3. FS READ
+  if (toolName === "fs_read") {
+    const rawInput = String(filePath || pathParam || args.filePath || args.path || ".").trim();
+    if (rawInput.includes("..")) {
+      const probe = path.resolve(wt.codeDir, rawInput);
+      if (!isPathInside(probe, wt.codeDir) && !isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
+        return { status: 200, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
       }
+    }
 
-      if (toolName === "mcp_call" && effectiveMcpCommand) {
-        const targetMcpTool = requestedMcpToolName || args.name || "";
-        const targetMcpArgs = requestedMcpToolArgs || args.arguments || {};
-        const mcpRes = await callStdioMcpServer({
-          commandLine: effectiveMcpCommand,
-          cwd: wt.worktreePath,
-          method: "tools/call",
-          params: { name: targetMcpTool, arguments: targetMcpArgs }
-        });
-        const contentItems = Array.isArray(mcpRes.result?.content)
-          ? mcpRes.result.content.map(c => c.text || JSON.stringify(c)).join("\n")
-          : "";
-        const output = contentItems || (mcpRes.result ? JSON.stringify(mcpRes.result, null, 2) : "");
-        return sendJson(res, 200, { ...mcpRes, output });
+    const candidatePaths = [];
+    if (path.isAbsolute(rawInput)) {
+      if (isPathInside(rawInput, wt.codeDir) || isPathInside(rawInput, wt.worktreePath) || isPathInside(rawInput, ROOT_DIR)) {
+        candidatePaths.push(path.resolve(rawInput));
+      } else {
+        return { status: 200, data: { ok: false, error: `Path outside workspace blocked: ${rawInput}` } };
       }
-
-      if (toolName === "fs_read") {
-        const rawInput = String(filePath || args.path || ".").trim();
-        if (rawInput.includes("..")) {
-          const probe = path.resolve(wt.codeDir, rawInput);
-          if (!isPathInside(probe, wt.codeDir) && !isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
-            return sendJson(res, 200, { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` });
-          }
-        }
-
-        const candidatePaths = [];
-        if (path.isAbsolute(rawInput)) {
-          if (isPathInside(rawInput, wt.codeDir) || isPathInside(rawInput, wt.worktreePath) || isPathInside(rawInput, ROOT_DIR)) {
-            candidatePaths.push(path.resolve(rawInput));
-          } else {
-            return sendJson(res, 200, { ok: false, error: `Path outside workspace blocked: ${rawInput}` });
-          }
-        } else {
-          const cleanRel = rawInput.replace(/^\/+/, "");
-          for (const base of [wt.codeDir, wt.worktreePath, ROOT_DIR, REPO_ROOT]) {
-            const p = path.resolve(base, cleanRel);
-            if (isPathInside(p, base)) candidatePaths.push(p);
-          }
-        }
-
-        const existingTarget = candidatePaths.find(p => fs.existsSync(p));
-        if (!existingTarget) {
-          return sendJson(res, 200, { ok: false, error: `File not found in ${wt.branch} or mounted repository: ${rawInput}` });
-        }
-
-        const stat = fs.statSync(existingTarget);
-        if (stat.isDirectory()) {
-          const codeFiles = listAgentCodeFiles(wt.codeDir).map(f => f.name);
-          const dirEntries = fs.readdirSync(existingTarget, { withFileTypes: true })
-            .filter(e => !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "target")
-            .slice(0, 50)
-            .map(e => (e.isDirectory() ? `${e.name}/` : e.name));
-          const listing = [
-            `Directory: ${existingTarget} (branch ${wt.branch})`,
-            codeFiles.length > 0 ? `Agent Workspace Files (${wt.codeDir}): ${codeFiles.join(", ")}` : "",
-            `Entries: ${dirEntries.join(", ") || "(empty)"}`
-          ].filter(Boolean).join("\n");
-          return sendJson(res, 200, {
-            ok: true,
-            isDirectory: true,
-            worktreePath: wt.worktreePath,
-            codeDir: wt.codeDir,
-            branch: wt.branch,
-            output: listing
-          });
-        }
-
-        const text = fs.readFileSync(existingTarget, "utf8").slice(0, 12000);
-        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, codeDir: wt.codeDir, branch: wt.branch, output: text });
+    } else {
+      const cleanRel = rawInput.replace(/^\/+/, "");
+      for (const base of [wt.codeDir, wt.worktreePath, ROOT_DIR, REPO_ROOT]) {
+        const p = path.resolve(base, cleanRel);
+        if (isPathInside(p, base)) candidatePaths.push(p);
       }
+    }
 
-      if (toolName === "fs_write") {
-        const rawInput = String(filePath || args.path || "notes.md").trim();
-        let rel = rawInput;
-        if (path.isAbsolute(rawInput)) {
-          if (isPathInside(rawInput, wt.codeDir)) {
-            rel = path.relative(wt.codeDir, rawInput);
-          } else if (isPathInside(rawInput, wt.worktreePath)) {
-            rel = path.relative(wt.worktreePath, rawInput);
-          } else if (isPathInside(rawInput, ROOT_DIR)) {
-            rel = path.relative(ROOT_DIR, rawInput);
-          } else {
-            return sendJson(res, 400, { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` });
-          }
-        }
-        const target = path.resolve(wt.codeDir, rel.replace(/^\/+/, ""));
-        if (rawInput.includes("..") || !isPathInside(target, wt.codeDir)) {
-          return sendJson(res, 400, { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` });
-        }
-        const bodyContent = String(content ?? args.content ?? "");
-        fs.mkdirSync(path.dirname(target), { recursive: true });
-        fs.writeFileSync(target, bodyContent, "utf8");
-        const cleanRel = path.relative(wt.codeDir, target);
-        const topSegment = cleanRel.split("/")[0];
-        if (topSegment && !RESERVED_ROOT_ENTRIES.has(topSegment)) {
-          const wtDest = path.resolve(wt.worktreePath, cleanRel);
-          if (isPathInside(wtDest, wt.worktreePath)) {
-            try {
-              fs.mkdirSync(path.dirname(wtDest), { recursive: true });
-              fs.writeFileSync(wtDest, bodyContent, "utf8");
-            } catch {}
-          }
-        }
-        const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
-        return sendJson(res, 200, {
+    const existingTarget = candidatePaths.find(p => fs.existsSync(p));
+    if (!existingTarget) {
+      return { status: 200, data: { ok: false, error: `File not found in ${wt.branch} or mounted repository: ${rawInput}` } };
+    }
+
+    const stat = fs.statSync(existingTarget);
+    if (stat.isDirectory()) {
+      const codeFiles = listAgentCodeFiles(wt.codeDir).map(f => f.name);
+      const dirEntries = fs.readdirSync(existingTarget, { withFileTypes: true })
+        .filter(e => !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "target")
+        .slice(0, 50)
+        .map(e => (e.isDirectory() ? `${e.name}/` : e.name));
+      const listing = [
+        `Directory: ${existingTarget} (branch ${wt.branch})`,
+        codeFiles.length > 0 ? `Agent Workspace Files (${wt.codeDir}): ${codeFiles.join(", ")}` : "",
+        `Entries: ${dirEntries.join(", ") || "(empty)"}`
+      ].filter(Boolean).join("\n");
+      return {
+        status: 200,
+        data: {
           ok: true,
-          bytesWritten: bodyContent.length,
+          isDirectory: true,
           worktreePath: wt.worktreePath,
           codeDir: wt.codeDir,
           branch: wt.branch,
-          promotedToRoot,
-          output: `Wrote ${bodyContent.length} bytes to ${cleanRel} & synced to main root folder`
-        });
-      }
+          output: listing
+        }
+      };
+    }
 
-      if (toolName === "git_commit") {
-        const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-        const msg = String(content || filePath || args.message || `feat(${slug}): autonomous agent commit`);
-        let out = "";
+    const text = fs.readFileSync(existingTarget, "utf8").slice(0, 25000);
+    return { status: 200, data: { ok: true, worktreePath: wt.worktreePath, codeDir: wt.codeDir, branch: wt.branch, output: text } };
+  }
+
+  // 4. FS WRITE
+  if (toolName === "fs_write") {
+    const rawInput = String(filePath || pathParam || args.filePath || args.path || "notes.md").trim();
+    let rel = rawInput;
+    if (path.isAbsolute(rawInput)) {
+      if (isPathInside(rawInput, wt.codeDir)) {
+        rel = path.relative(wt.codeDir, rawInput);
+      } else if (isPathInside(rawInput, wt.worktreePath)) {
+        rel = path.relative(wt.worktreePath, rawInput);
+      } else if (isPathInside(rawInput, ROOT_DIR)) {
+        rel = path.relative(ROOT_DIR, rawInput);
+      } else {
+        return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
+      }
+    }
+    const target = path.resolve(wt.codeDir, rel.replace(/^\/+/, ""));
+    if (rawInput.includes("..") || !isPathInside(target, wt.codeDir)) {
+      return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
+    }
+    const bodyContent = String(content ?? args.content ?? "");
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, bodyContent, "utf8");
+    const cleanRel = path.relative(wt.codeDir, target);
+    const topSegment = cleanRel.split("/")[0];
+    if (topSegment && !RESERVED_ROOT_ENTRIES.has(topSegment)) {
+      const wtDest = path.resolve(wt.worktreePath, cleanRel);
+      if (isPathInside(wtDest, wt.worktreePath)) {
         try {
-          await safeGitCommitAsync(wt.worktreePath, msg, 5000);
-          const { stdout } = await execFileAsync("git", ["log", "--oneline", "-n", "3"], {
-            cwd: wt.worktreePath,
-            timeout: 5000
-          });
-          out = stdout.trim();
-        } catch (err) {
-          out = err.message;
-        }
-        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
-        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, promotedToRoot, output: out });
-      }
-
-      if (toolName === "git_status" || toolName === "git_diff") {
-        let out = "";
-        try {
-          if (toolName === "git_diff") {
-            const { stdout } = await execFileAsync("git", ["diff", "HEAD"], { cwd: wt.worktreePath, timeout: 5000 });
-            out = stdout.trim();
-          } else {
-            const st = await execFileAsync("git", ["status", "--short"], { cwd: wt.worktreePath, timeout: 5000 });
-            const br = await execFileAsync("git", ["branch", "--show-current"], { cwd: wt.worktreePath, timeout: 5000 });
-            const codeFiles = listAgentCodeFiles(wt.codeDir).map(f => f.name);
-            out = [
-              `Branch: ${br.stdout.trim() || wt.branch} (${wt.codeDir})`,
-              codeFiles.length > 0 ? `Workspace files: ${codeFiles.join(", ")}` : "",
-              st.stdout.trim() || "(Clean worktree)"
-            ].filter(Boolean).join("\n");
-          }
-        } catch (err) {
-          out = err.message;
-        }
-        return sendJson(res, 200, { ok: true, worktreePath: wt.worktreePath, codeDir: wt.codeDir, branch: wt.branch, output: out || "(Clean worktree)" });
-      }
-
-      if (toolName === "shell_exec" || toolName === "shell") {
-        const rawCmd = String(content || filePath || args.command || "").trim();
-        const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
-        const sharedVenv = resolveSharedVenvDir(execCwd, wt.worktreePath);
-        let cmdStr = rawCmd
-          .replace(/\\\\\(/g, "\\(")
-          .replace(/\\\\\)/g, "\\)");
-        if (sharedVenv) {
-          cmdStr = cmdStr.replace(/\/(?:opt\/homebrew|usr\/local)\/bin\/(python3|python|pip3|pip)\b/g, "$1");
-        }
-        // `lsof -ti:PORT` matches every process with ANY socket on PORT, including clients such as
-        // this Vanaras server (preview proxy), the desktop app window, and browser tabs. Agents pipe it
-        // into `xargs kill -9` to free a port, so scope port lookups to the listening server only.
-        cmdStr = cmdStr.replace(
-          /\blsof\s+(?:-ti|-t\s+-i)\s*:?\s*(?:tcp:)?(\d{2,5})\b(?![^|;&\n]*-sTCP)/gi,
-          "lsof -nP -tiTCP:$1 -sTCP:LISTEN"
-        );
-        if (!cmdStr) {
-          return sendJson(res, 400, { ok: false, error: "Missing shell command" });
-        }
-        const execRes = await spawnCommandAsync(cmdStr, {
-          cwd: execCwd,
-          worktreePath: wt.worktreePath,
-          timeout: 90000,
-          trackKey: botId || "bot_r1",
-          onProgress: (chunk, tailOutput) => {
-            if (streamId) {
-              broadcastEvent("tool_stream", {
-                streamId,
-                threadId,
-                botId: botId || "bot_r1",
-                botName: botName || "R1",
-                command: cmdStr,
-                cwd: execCwd,
-                branch: wt.branch,
-                chunk,
-                output: tailOutput
-              });
-            }
-          }
-        });
-        ensureSharedVenvSymlinks(wt.worktreePath, wt.codeDir);
-        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
-        return sendJson(res, 200, {
-          ok: execRes.exitCode === 0,
-          exitCode: execRes.exitCode,
-          cwd: execCwd,
-          branch: wt.branch,
-          promotedToRoot,
-          output: (execRes.output || `(exit ${execRes.exitCode})`).slice(-6000)
-        });
-      }
-
-      if (toolName === "grep_search") {
-        const pattern = content !== undefined ? content : (args.pattern ?? args.query ?? args.content);
-        if (pattern === undefined || pattern === null || String(pattern).length === 0) {
-          return sendJson(res, 400, { ok: false, error: "Search pattern cannot be empty" });
-        }
-        const patternStr = String(pattern);
-        const isRegexFlag = Boolean(isRegex || args.isRegex);
-        let regexObj = null;
-        if (isRegexFlag) {
-          try {
-            regexObj = new RegExp(patternStr);
-          } catch (regErr) {
-            return sendJson(res, 400, { ok: false, error: `Invalid regular expression: ${regErr.message}` });
-          }
-        }
-
-        const rawSearchPath = String(pathParam || dir || directory || args.path || args.dir || filePath || "").trim();
-        let targetSearchDir = wt.worktreePath;
-        if (rawSearchPath) {
-          if (rawSearchPath.includes("..")) {
-            const probe = path.resolve(wt.worktreePath, rawSearchPath);
-            if (!isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
-              return sendJson(res, 400, { ok: false, error: `Path traversal outside workspace blocked: ${rawSearchPath}` });
-            }
-          }
-          const resolvedSub = path.resolve(wt.worktreePath, rawSearchPath);
-          if (!isPathInside(resolvedSub, wt.worktreePath) && !isPathInside(resolvedSub, ROOT_DIR)) {
-            return sendJson(res, 400, { ok: false, error: `Path outside workspace blocked: ${rawSearchPath}` });
-          }
-          if (fs.existsSync(resolvedSub)) {
-            targetSearchDir = resolvedSub;
-          }
-        }
-
-        const matches = [];
-        let usedGitGrep = false;
-        try {
-          const gitGrepArgs = ["grep", "-n", "-I", "--untracked"];
-          if (isRegexFlag) gitGrepArgs.push("-E");
-          else gitGrepArgs.push("-F");
-          gitGrepArgs.push(patternStr);
-
-          const gitGrepOut = execFileSync("git", gitGrepArgs, {
-            cwd: targetSearchDir,
-            stdio: "pipe",
-            timeout: 8000
-          }).toString("utf8");
-
-          const lines = gitGrepOut.split(/\r?\n/).filter(Boolean);
-          for (const l of lines) {
-            const firstColon = l.indexOf(":");
-            if (firstColon === -1) continue;
-            const secondColon = l.indexOf(":", firstColon + 1);
-            if (secondColon === -1) continue;
-            const matchFile = l.slice(0, firstColon);
-            const lineNum = parseInt(l.slice(firstColon + 1, secondColon), 10);
-            const lineText = l.slice(secondColon + 1);
-            matches.push({ file: matchFile, line: lineNum, text: lineText });
-          }
-          usedGitGrep = true;
-        } catch (gitErr) {
-          if (gitErr.status === 1) {
-            usedGitGrep = true; // Git exit 1 means no matches
-          }
-        }
-
-        if (!usedGitGrep) {
-          const ignoreNames = new Set(["node_modules", ".git", ".venv", "target", "dist", ".cache"]);
-          function walkDir(d, relPrefix = "") {
-            if (matches.length >= 250) return;
-            let entries = [];
-            try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-            for (const ent of entries) {
-              if (ignoreNames.has(ent.name) || ent.name.startsWith(".")) continue;
-              const fullP = path.join(d, ent.name);
-              const relP = relPrefix ? `${relPrefix}/${ent.name}` : ent.name;
-              if (ent.isDirectory()) {
-                walkDir(fullP, relP);
-              } else if (ent.isFile()) {
-                try {
-                  const stat = fs.statSync(fullP);
-                  if (stat.size > 1000000) continue;
-                  const fileStr = fs.readFileSync(fullP, "utf8");
-                  const fileLines = fileStr.split(/\r?\n/);
-                  for (let i = 0; i < fileLines.length; i++) {
-                    const lineContent = fileLines[i];
-                    let hit = false;
-                    if (isRegexFlag && regexObj) {
-                      hit = regexObj.test(lineContent);
-                    } else {
-                      hit = lineContent.includes(patternStr);
-                    }
-                    if (hit) {
-                      matches.push({ file: relP, line: i + 1, text: lineContent });
-                      if (matches.length >= 250) break;
-                    }
-                  }
-                } catch {}
-              }
-            }
-          }
-          walkDir(targetSearchDir);
-        }
-
-        const outputLines = matches.slice(0, 100).map(m => `${m.file}:${m.line}: ${m.text}`);
-        const formattedOut = outputLines.length > 0 ? outputLines.join("\n") : "(no matches found)";
-
-        return sendJson(res, 200, {
-          ok: true,
-          tool: "grep_search",
-          matches,
-          output: formattedOut
-        });
-      }
-
-      if (toolName === "find_files") {
-        const query = content !== undefined ? String(content) : (args.query || args.content || args.pattern || "");
-        if (query.includes("..")) {
-          return sendJson(res, 400, { ok: false, error: "Path traversal outside workspace blocked" });
-        }
-
-        let allFiles = [];
-        try {
-          const lsOut = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
-            cwd: wt.worktreePath,
-            stdio: "pipe",
-            timeout: 5000
-          }).toString("utf8");
-          allFiles = lsOut.split(/\r?\n/).filter(Boolean);
+          fs.mkdirSync(path.dirname(wtDest), { recursive: true });
+          fs.writeFileSync(wtDest, bodyContent, "utf8");
         } catch {}
-
-        if (allFiles.length === 0) {
-          const ignoreNames = new Set(["node_modules", ".git", ".venv", "target", "dist", ".cache"]);
-          function walk(d, prefix = "") {
-            let entries = [];
-            try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-            for (const ent of entries) {
-              if (ignoreNames.has(ent.name) || ent.name.startsWith(".")) continue;
-              const fullP = path.join(d, ent.name);
-              const relP = prefix ? `${prefix}/${ent.name}` : ent.name;
-              if (ent.isDirectory()) walk(fullP, relP);
-              else if (ent.isFile()) allFiles.push(relP);
-            }
-          }
-          walk(wt.worktreePath);
-        }
-
-        if (fs.existsSync(wt.codeDir)) {
-          for (const cf of listAgentCodeFiles(wt.codeDir)) {
-            const relInWt = path.relative(wt.worktreePath, path.join(wt.codeDir, cf.name));
-            if (!allFiles.includes(cf.name) && !allFiles.includes(relInWt)) {
-              allFiles.push(cf.name);
-            }
-          }
-        }
-
-        let filtered = [];
-        if (!query.trim()) {
-          filtered = allFiles;
-        } else {
-          const cleanQ = query.trim();
-          const hasWildcard = cleanQ.includes("*") || cleanQ.includes("?");
-          if (hasWildcard) {
-            try {
-              const globRx = new RegExp("^" + cleanQ.replace(/([.+^$[\]\\(){}|])/g, "\\$1").replace(/\*/g, ".*").replace(/\?/g, ".") + "$", "i");
-              filtered = allFiles.filter(f => globRx.test(f) || globRx.test(path.basename(f)));
-            } catch {
-              filtered = allFiles.filter(f => f.toLowerCase().includes(cleanQ.toLowerCase()));
-            }
-          } else {
-            const lowerQ = cleanQ.toLowerCase();
-            filtered = allFiles.filter(f => f.toLowerCase().includes(lowerQ));
-          }
-        }
-
-        return sendJson(res, 200, {
-          ok: true,
-          tool: "find_files",
-          files: filtered,
-          output: filtered.length > 0 ? filtered.join("\n") : "(no files found)"
-        });
       }
+    }
+    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        bytesWritten: bodyContent.length,
+        worktreePath: wt.worktreePath,
+        codeDir: wt.codeDir,
+        branch: wt.branch,
+        promotedToRoot,
+        output: `Wrote ${bodyContent.length} bytes to ${cleanRel} & synced to main root folder`
+      }
+    };
+  }
 
-      return sendJson(res, 400, { error: `Unknown agent tool: ${toolName}` });
+  // 5. EXACT EDIT (P2)
+  if (toolName === "exact_edit") {
+    const rawInput = String(filePath || pathParam || args.filePath || args.path || args.file || "").trim();
+    if (!rawInput) {
+      return { status: 400, data: { ok: false, error: "Missing filePath for exact_edit" } };
+    }
+    let target = null;
+    if (path.isAbsolute(rawInput)) {
+      if (isPathInside(rawInput, wt.codeDir) || isPathInside(rawInput, wt.worktreePath) || isPathInside(rawInput, ROOT_DIR)) {
+        target = path.resolve(rawInput);
+      } else {
+        return { status: 400, data: { ok: false, error: `Path outside workspace blocked: ${rawInput}` } };
+      }
+    } else {
+      if (rawInput.includes("..")) {
+        const probe = path.resolve(wt.codeDir, rawInput);
+        if (!isPathInside(probe, wt.codeDir) && !isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
+          return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
+        }
+      }
+      const cleanRel = rawInput.replace(/^\/+/, "");
+      for (const base of [wt.codeDir, wt.worktreePath, ROOT_DIR, REPO_ROOT]) {
+        const p = path.resolve(base, cleanRel);
+        if (isPathInside(p, base) && fs.existsSync(p)) {
+          target = p;
+          break;
+        }
+      }
+      if (!target) {
+        target = path.resolve(wt.codeDir, cleanRel);
+      }
+    }
+
+    if (!fs.existsSync(target)) {
+      return { status: 200, data: { ok: false, error: `File not found: ${rawInput}` } };
+    }
+
+    const originalContent = fs.readFileSync(target, "utf8");
+    const targetOld = String(oldString ?? old_str ?? targetContent ?? args.oldString ?? args.old_str ?? args.targetContent ?? "");
+    const targetNew = String(newString ?? new_str ?? replacementContent ?? args.newString ?? args.new_str ?? args.replacementContent ?? "");
+
+    if (!targetOld) {
+      return { status: 400, data: { ok: false, error: "Missing oldString to replace" } };
+    }
+
+    const matchesCount = originalContent.split(targetOld).length - 1;
+    if (matchesCount === 0) {
+      return { status: 200, data: { ok: false, error: `Target substring not found in ${rawInput}` } };
+    }
+    if (matchesCount > 1) {
+      return { status: 200, data: { ok: false, error: `Target substring appears ${matchesCount} times in ${rawInput}; must match uniquely (1 time) to edit safely` } };
+    }
+
+    const updatedContent = originalContent.replace(targetOld, targetNew);
+    fs.writeFileSync(target, updatedContent, "utf8");
+
+    const cleanRel = path.relative(wt.codeDir, target);
+    const topSegment = cleanRel.split("/")[0];
+    if (topSegment && !RESERVED_ROOT_ENTRIES.has(topSegment)) {
+      const wtDest = path.resolve(wt.worktreePath, cleanRel);
+      if (isPathInside(wtDest, wt.worktreePath)) {
+        try {
+          fs.mkdirSync(path.dirname(wtDest), { recursive: true });
+          fs.writeFileSync(wtDest, updatedContent, "utf8");
+        } catch {}
+      }
+    }
+    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "exact_edit",
+        file: rawInput,
+        promotedToRoot,
+        output: `Successfully edited ${rawInput} (1 exact replacement applied)`
+      }
+    };
+  }
+
+  // 6. GIT COMMIT
+  if (toolName === "git_commit") {
+    const slug = (botName || botId).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+    const msg = String(content || filePath || args.message || `feat(${slug}): autonomous agent commit`);
+    let out = "";
+    try {
+      await safeGitCommitAsync(wt.worktreePath, msg, 5000);
+      const { stdout } = await execFileAsync("git", ["log", "--oneline", "-n", "3"], {
+        cwd: wt.worktreePath,
+        timeout: 5000
+      });
+      out = stdout.trim();
+    } catch (err) {
+      out = err.message;
+    }
+    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+    return { status: 200, data: { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, promotedToRoot, output: out } };
+  }
+
+  // 7. GIT STATUS & GIT DIFF
+  if (toolName === "git_status" || toolName === "git_diff") {
+    let out = "";
+    try {
+      if (toolName === "git_diff") {
+        const { stdout } = await execFileAsync("git", ["diff", "HEAD"], { cwd: wt.worktreePath, timeout: 5000 });
+        out = stdout.trim();
+      } else {
+        const st = await execFileAsync("git", ["status", "--short"], { cwd: wt.worktreePath, timeout: 5000 });
+        const br = await execFileAsync("git", ["branch", "--show-current"], { cwd: wt.worktreePath, timeout: 5000 });
+        const codeFiles = listAgentCodeFiles(wt.codeDir).map(f => f.name);
+        out = [
+          `Branch: ${br.stdout.trim() || wt.branch} (${wt.codeDir})`,
+          codeFiles.length > 0 ? `Workspace files: ${codeFiles.join(", ")}` : "",
+          st.stdout.trim() || "(Clean worktree)"
+        ].filter(Boolean).join("\n");
+      }
+    } catch (err) {
+      out = err.message;
+    }
+    return { status: 200, data: { ok: true, worktreePath: wt.worktreePath, codeDir: wt.codeDir, branch: wt.branch, output: out || "(Clean worktree)" } };
+  }
+
+  // 8. SHELL EXEC (P2: configurable timeout up to 300s, maxOutput up to 50k)
+  if (toolName === "shell_exec" || toolName === "shell") {
+    const rawCmd = String(content || filePath || command || args.command || "").trim();
+    const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
+    const sharedVenv = resolveSharedVenvDir(execCwd, wt.worktreePath);
+    let cmdStr = rawCmd
+      .replace(/\\\\\(/g, "\\(")
+      .replace(/\\\\\)/g, "\\)");
+    if (sharedVenv) {
+      cmdStr = cmdStr.replace(/\/(?:opt\/homebrew|usr\/local)\/bin\/(python3|python|pip3|pip)\b/g, "$1");
+    }
+    cmdStr = cmdStr.replace(
+      /\blsof\s+(?:-ti|-t\s+-i)\s*:?\s*(?:tcp:)?(\d{2,5})\b(?![^|;&\n]*-sTCP)/gi,
+      "lsof -nP -tiTCP:$1 -sTCP:LISTEN"
+    );
+    if (!cmdStr) {
+      return { status: 400, data: { ok: false, error: "Missing shell command" } };
+    }
+    const effectiveTimeout = Math.min(300000, Math.max(5000, Number(timeout || args.timeout || 120000)));
+    const effectiveMaxOutput = Math.min(50000, Math.max(1000, Number(maxOutput || args.maxOutput || 25000)));
+
+    const execRes = await spawnCommandAsync(cmdStr, {
+      cwd: execCwd,
+      worktreePath: wt.worktreePath,
+      timeout: effectiveTimeout,
+      trackKey: botId || "bot_r1",
+      onProgress: (chunk, tailOutput) => {
+        if (streamId) {
+          broadcastEvent("tool_stream", {
+            streamId,
+            threadId,
+            botId: botId || "bot_r1",
+            botName: botName || "R1",
+            command: cmdStr,
+            cwd: execCwd,
+            branch: wt.branch,
+            chunk,
+            output: tailOutput
+          });
+        }
+      }
+    });
+    ensureSharedVenvSymlinks(wt.worktreePath, wt.codeDir);
+    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+    return {
+      status: 200,
+      data: {
+        ok: execRes.exitCode === 0,
+        exitCode: execRes.exitCode,
+        cwd: execCwd,
+        branch: wt.branch,
+        promotedToRoot,
+        output: (execRes.output || `(exit ${execRes.exitCode})`).slice(-effectiveMaxOutput)
+      }
+    };
+  }
+
+  // 9. GREP SEARCH
+  if (toolName === "grep_search") {
+    const pattern = content !== undefined ? content : (args.pattern ?? args.query ?? args.content);
+    if (pattern === undefined || pattern === null || String(pattern).length === 0) {
+      return { status: 400, data: { ok: false, error: "Search pattern cannot be empty" } };
+    }
+    const patternStr = String(pattern);
+    const isRegexFlag = Boolean(isRegex || args.isRegex);
+    let regexObj = null;
+    if (isRegexFlag) {
+      try {
+        regexObj = new RegExp(patternStr);
+      } catch (regErr) {
+        return { status: 400, data: { ok: false, error: `Invalid regular expression: ${regErr.message}` } };
+      }
+    }
+
+    const rawSearchPath = String(pathParam || dir || directory || args.path || args.dir || filePath || "").trim();
+    let targetSearchDir = wt.worktreePath;
+    if (rawSearchPath) {
+      if (rawSearchPath.includes("..")) {
+        const probe = path.resolve(wt.worktreePath, rawSearchPath);
+        if (!isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
+          return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawSearchPath}` } };
+        }
+      }
+      const resolvedSub = path.resolve(wt.worktreePath, rawSearchPath);
+      if (!isPathInside(resolvedSub, wt.worktreePath) && !isPathInside(resolvedSub, ROOT_DIR)) {
+        return { status: 400, data: { ok: false, error: `Path outside workspace blocked: ${rawSearchPath}` } };
+      }
+      if (fs.existsSync(resolvedSub)) {
+        targetSearchDir = resolvedSub;
+      }
+    }
+
+    const matches = [];
+    let usedGitGrep = false;
+    try {
+      const gitGrepArgs = ["grep", "-n", "-I", "--untracked"];
+      if (isRegexFlag) gitGrepArgs.push("-E");
+      else gitGrepArgs.push("-F");
+      gitGrepArgs.push(patternStr);
+
+      const gitGrepOut = execFileSync("git", gitGrepArgs, {
+        cwd: targetSearchDir,
+        stdio: "pipe",
+        timeout: 8000
+      }).toString("utf8");
+
+      const lines = gitGrepOut.split(/\r?\n/).filter(Boolean);
+      for (const l of lines) {
+        const firstColon = l.indexOf(":");
+        if (firstColon === -1) continue;
+        const secondColon = l.indexOf(":", firstColon + 1);
+        if (secondColon === -1) continue;
+        const matchFile = l.slice(0, firstColon);
+        const lineNum = parseInt(l.slice(firstColon + 1, secondColon), 10);
+        const lineText = l.slice(secondColon + 1);
+        matches.push({ file: matchFile, line: lineNum, text: lineText });
+      }
+      usedGitGrep = true;
+    } catch (gitErr) {
+      if (gitErr.status === 1) {
+        usedGitGrep = true;
+      }
+    }
+
+    if (!usedGitGrep) {
+      const ignoreNames = new Set(["node_modules", ".git", ".venv", "target", "dist", ".cache"]);
+      function walkDir(d, relPrefix = "") {
+        if (matches.length >= 250) return;
+        let entries = [];
+        try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+        for (const ent of entries) {
+          if (ignoreNames.has(ent.name) || ent.name.startsWith(".")) continue;
+          const fullP = path.join(d, ent.name);
+          const relP = relPrefix ? `${relPrefix}/${ent.name}` : ent.name;
+          if (ent.isDirectory()) {
+            walkDir(fullP, relP);
+          } else if (ent.isFile()) {
+            try {
+              const stat = fs.statSync(fullP);
+              if (stat.size > 1000000) continue;
+              const fileStr = fs.readFileSync(fullP, "utf8");
+              const fileLines = fileStr.split(/\r?\n/);
+              for (let i = 0; i < fileLines.length; i++) {
+                const lineContent = fileLines[i];
+                let hit = false;
+                if (isRegexFlag && regexObj) {
+                  hit = regexObj.test(lineContent);
+                } else {
+                  hit = lineContent.includes(patternStr);
+                }
+                if (hit) {
+                  matches.push({ file: relP, line: i + 1, text: lineContent });
+                  if (matches.length >= 250) break;
+                }
+              }
+            } catch {}
+          }
+        }
+      }
+      walkDir(targetSearchDir);
+    }
+
+    const outputLines = matches.slice(0, 100).map(m => `${m.file}:${m.line}: ${m.text}`);
+    const formattedOut = outputLines.length > 0 ? outputLines.join("\n") : "(no matches found)";
+
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "grep_search",
+        matches,
+        output: formattedOut
+      }
+    };
+  }
+
+  // 10. FIND FILES
+  if (toolName === "find_files") {
+    const query = content !== undefined ? String(content) : (args.query || args.content || args.pattern || "");
+    if (query.includes("..")) {
+      return { status: 400, data: { ok: false, error: "Path traversal outside workspace blocked" } };
+    }
+
+    let allFiles = [];
+    try {
+      const lsOut = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
+        cwd: wt.worktreePath,
+        stdio: "pipe",
+        timeout: 5000
+      }).toString("utf8");
+      allFiles = lsOut.split(/\r?\n/).filter(Boolean);
+    } catch {}
+
+    if (allFiles.length === 0) {
+      const ignoreNames = new Set(["node_modules", ".git", ".venv", "target", "dist", ".cache"]);
+      function walk(d, prefix = "") {
+        let entries = [];
+        try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+        for (const ent of entries) {
+          if (ignoreNames.has(ent.name) || ent.name.startsWith(".")) continue;
+          const fullP = path.join(d, ent.name);
+          const relP = prefix ? `${prefix}/${ent.name}` : ent.name;
+          if (ent.isDirectory()) walk(fullP, relP);
+          else if (ent.isFile()) allFiles.push(relP);
+        }
+      }
+      walk(wt.worktreePath);
+    }
+
+    if (fs.existsSync(wt.codeDir)) {
+      for (const cf of listAgentCodeFiles(wt.codeDir)) {
+        const relInWt = path.relative(wt.worktreePath, path.join(wt.codeDir, cf.name));
+        if (!allFiles.includes(cf.name) && !allFiles.includes(relInWt)) {
+          allFiles.push(cf.name);
+        }
+      }
+    }
+
+    let filtered = [];
+    if (!query.trim()) {
+      filtered = allFiles;
+    } else {
+      const cleanQ = query.trim();
+      const hasWildcard = cleanQ.includes("*") || cleanQ.includes("?");
+      if (hasWildcard) {
+        try {
+          const globRx = new RegExp("^" + cleanQ.replace(/([.+^$[\]\\(){}|])/g, "\\$1").replace(/\*/g, ".*").replace(/\?/g, ".") + "$", "i");
+          filtered = allFiles.filter(f => globRx.test(f) || globRx.test(path.basename(f)));
+        } catch {
+          filtered = allFiles.filter(f => f.toLowerCase().includes(cleanQ.toLowerCase()));
+        }
+      } else {
+        const lowerQ = cleanQ.toLowerCase();
+        filtered = allFiles.filter(f => f.toLowerCase().includes(lowerQ));
+      }
+    }
+
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "find_files",
+        files: filtered,
+        output: filtered.length > 0 ? filtered.join("\n") : "(no files found)"
+      }
+    };
+  }
+
+  // 11. START PROCESS (P2)
+  if (toolName === "start_process") {
+    const rawCmd = String(command || content || args.command || "").trim();
+    if (!rawCmd) {
+      return { status: 400, data: { ok: false, error: "Missing process command" } };
+    }
+    const procId = "proc_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+    const procName = String(name || args.name || rawCmd.slice(0, 30));
+    const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
+    const child = spawnShellProcessGroup(rawCmd, {
+      cwd: execCwd,
+      env: buildAgentExecEnv(execCwd, wt.worktreePath)
+    });
+    const logs = [];
+    const MAX_LOG_LINES = 1000;
+    const appendLog = (chunk) => {
+      const text = chunk.toString("utf8");
+      const lines = text.split(/\r?\n/);
+      for (const l of lines) {
+        if (l) logs.push(`[${new Date().toLocaleTimeString()}] ${l}`);
+      }
+      if (logs.length > MAX_LOG_LINES) logs.splice(0, logs.length - MAX_LOG_LINES);
+    };
+    if (child.stdout) child.stdout.on("data", appendLog);
+    if (child.stderr) child.stderr.on("data", appendLog);
+    const procEntry = {
+      id: procId,
+      name: procName,
+      command: rawCmd,
+      child,
+      pid: child.pid,
+      cwd: execCwd,
+      botId: botId || "bot_r1",
+      logs,
+      startedAt: new Date().toISOString(),
+      exitCode: null
+    };
+    child.on("exit", (code, signal) => {
+      procEntry.exitCode = code !== null ? code : signal;
+      logs.push(`[SYSTEM] Process exited with ${code !== null ? `code ${code}` : `signal ${signal}`}`);
+    });
+    agentBackgroundProcesses.set(procId, procEntry);
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "start_process",
+        processId: procId,
+        pid: child.pid,
+        name: procName,
+        command: rawCmd,
+        status: "running",
+        output: `Started background process ${procId} (PID: ${child.pid}): ${rawCmd}`
+      }
+    };
+  }
+
+  // 12. STOP PROCESS (P2)
+  if (toolName === "stop_process") {
+    const targetId = String(processId || args.processId || name || args.name || "").trim();
+    if (!targetId) {
+      return { status: 400, data: { ok: false, error: "Missing processId" } };
+    }
+    let found = agentBackgroundProcesses.get(targetId);
+    if (!found) {
+      for (const p of agentBackgroundProcesses.values()) {
+        if (p.name === targetId || String(p.pid) === targetId) {
+          found = p;
+          break;
+        }
+      }
+    }
+    if (!found) {
+      return { status: 200, data: { ok: false, error: `Background process not found: ${targetId}` } };
+    }
+    killProcessTree(found.child);
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "stop_process",
+        processId: found.id,
+        pid: found.pid,
+        status: "stopped",
+        output: `Stopped background process ${found.id} (PID ${found.pid})`
+      }
+    };
+  }
+
+  // 13. GET PROCESS LOGS (P2)
+  if (toolName === "get_process_logs") {
+    const targetId = String(processId || args.processId || name || args.name || "").trim();
+    let found = agentBackgroundProcesses.get(targetId);
+    if (!found) {
+      for (const p of agentBackgroundProcesses.values()) {
+        if (p.name === targetId || String(p.pid) === targetId) {
+          found = p;
+          break;
+        }
+      }
+    }
+    if (!found) {
+      return { status: 200, data: { ok: false, error: `Background process not found: ${targetId}` } };
+    }
+    const numLines = parseInt(lines || args.lines || 50, 10) || 50;
+    const tail = found.logs.slice(-numLines);
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "get_process_logs",
+        processId: found.id,
+        status: found.exitCode === null ? "running" : `exited (${found.exitCode})`,
+        output: tail.length > 0 ? tail.join("\n") : "(no logs yet)"
+      }
+    };
+  }
+
+  // 14. VERIFY PROJECT (P2)
+  if (toolName === "verify_project") {
+    let verifyCmd = String(command || content || args.command || "").trim();
+    const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
+    if (!verifyCmd) {
+      if (fs.existsSync(path.join(execCwd, "run.sh"))) verifyCmd = "./run.sh";
+      else if (fs.existsSync(path.join(wt.worktreePath, "run.sh"))) verifyCmd = "./run.sh";
+      else if (fs.existsSync(path.join(execCwd, "package.json"))) verifyCmd = "npm test";
+      else if (fs.existsSync(path.join(execCwd, "pytest.ini")) || fs.existsSync(path.join(execCwd, "tests"))) verifyCmd = "pytest";
+      else verifyCmd = "git status";
+    }
+    const execRes = await spawnCommandAsync(verifyCmd, {
+      cwd: execCwd,
+      worktreePath: wt.worktreePath,
+      timeout: 120000,
+      trackKey: botId || "bot_r1",
+      onProgress: (chunk, tailOutput) => {
+        if (streamId) {
+          broadcastEvent("tool_stream", {
+            streamId,
+            threadId,
+            botId: botId || "bot_r1",
+            botName: botName || "R1",
+            command: verifyCmd,
+            cwd: execCwd,
+            branch: wt.branch,
+            chunk,
+            output: tailOutput
+          });
+        }
+      }
+    });
+    return {
+      status: 200,
+      data: {
+        ok: execRes.exitCode === 0,
+        exitCode: execRes.exitCode,
+        command: verifyCmd,
+        output: (execRes.output || `(exit ${execRes.exitCode})`).slice(-15000)
+      }
+    };
+  }
+
+  return { status: 400, data: { error: `Unknown agent tool: ${toolName}` } };
+}
+
+  // 2D. Per-Agent Tool & MCP Server Executor (/api/agent/tool)
+  if (req.method === "POST" && req.url === "/api/agent/tool") {
+    try {
+      const body = await readJsonBody(req);
+      const resObj = await executeAgentToolInternal(body);
+      return sendJson(res, resObj.status || 200, resObj.data || resObj);
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
     }
@@ -3639,217 +3926,971 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 6B. Universal Multi-Provider LLM Chat Proxy (Local, OpenRouter, Gemini, OpenAI, Claude, Qwen)
-  if (req.method === "POST" && req.url === "/api/llm/chat") {
-    try {
-      const {
-        provider = "local",
-        baseUrl = "http://192.168.68.102:1234/v1",
-        apiKey: rawApiKey = "",
-        botId = "",
-        model = "",
-        messages = [],
-        temperature = 0.7,
-        max_tokens = 8192,
-        enableReasoning = false
-      } = await readJsonBody(req);
-      const apiKey = resolveVaultApiKey(provider, rawApiKey, botId);
-      if (rawApiKey && String(rawApiKey).trim() && provider !== "local") {
-        saveLocalKeysVault({
-          providers: { [String(provider).toLowerCase()]: String(rawApiKey).trim() },
-          ...(botId ? { bots: { [botId]: String(rawApiKey).trim() } } : {})
-        });
-      }
-
-      const effectiveBase = (provider === "openrouter" && (!baseUrl || baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost") || baseUrl.includes("192.168.")))
-        ? "https://openrouter.ai/api/v1"
-        : baseUrl;
-      const cleanBase = normalizeOpenAIBaseUrl(effectiveBase);
-
-      // Native Anthropic Messages API
-      if (provider === "anthropic" || provider === "claude" || cleanBase.includes("api.anthropic.com")) {
-        const systemMsg = messages.find(m => m.role === "system")?.content || "";
-        const userMsgs = messages.filter(m => m.role !== "system").map(m => ({
-          role: m.role === "assistant" ? "assistant" : "user",
-          content: m.content
-        }));
-        const endpoint = cleanBase.endsWith("/messages")
-          ? cleanBase
-          : `${cleanBase.replace(/\/v1$/, "")}/v1/messages`;
-
-        const upstream = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01"
+  // 6B-1. Native Tools Schema for Autonomous Squad Agents (P1b & P2)
+  const VANARAS_NATIVE_TOOLS = [
+    {
+      type: "function",
+      function: {
+        name: "exact_edit",
+        description: "Surgically edit a file by finding a unique target string and replacing it with new content. Fails if the target string appears 0 times or more than 1 time.",
+        parameters: {
+          type: "object",
+          properties: {
+            filePath: { type: "string", description: "Path to file to edit (relative to workspace or worktree)" },
+            oldString: { type: "string", description: "The exact substring to replace. Must match existing file content character-for-character and appear exactly once." },
+            newString: { type: "string", description: "The new replacement content to insert in place of oldString." }
           },
-          body: JSON.stringify({
-            model: model || "claude-sonnet-4-20250514",
-            max_tokens,
-            temperature,
-            system: systemMsg,
-            messages: userMsgs
-          })
-        });
-
-        const raw = await upstream.text();
-        if (!upstream.ok) {
-          return sendJson(res, upstream.status, { error: `Anthropic HTTP ${upstream.status}: ${raw}` });
-        }
-        const parsed = JSON.parse(raw);
-        const textBlock = (parsed.content || []).find(b => b.type === "text")?.text || "";
-        const thinkingBlock = (parsed.content || []).find(b => b.type === "thinking")?.thinking || "";
-        return sendJson(res, 200, {
-          choices: [{
-            message: {
-              role: "assistant",
-              content: textBlock,
-              reasoning_content: thinkingBlock
-            }
-          }],
-          model: parsed.model
-        });
-      }
-
-      // Native Google Gemini API
-      if (provider === "gemini" && !cleanBase.includes("/openai")) {
-        const geminiModel = model || "gemini-2.5-flash";
-        const systemMsg = messages.find(m => m.role === "system")?.content || "";
-        const contents = messages.filter(m => m.role !== "system").map(m => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }]
-        }));
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-        const body = {
-          contents,
-          generationConfig: { temperature, maxOutputTokens: max_tokens }
-        };
-        if (systemMsg) {
-          body.systemInstruction = { parts: [{ text: systemMsg }] };
-        }
-        const upstream = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
-        });
-        const raw = await upstream.text();
-        if (!upstream.ok) {
-          return sendJson(res, upstream.status, { error: `Gemini HTTP ${upstream.status}: ${raw}` });
-        }
-        const parsed = JSON.parse(raw);
-        const parts = parsed.candidates?.[0]?.content?.parts || [];
-        const text = parts.filter(p => !p.thought).map(p => p.text || "").join("\n");
-        const thought = parts.filter(p => p.thought).map(p => p.text || "").join("\n");
-        return sendJson(res, 200, {
-          choices: [{
-            message: {
-              role: "assistant",
-              content: text,
-              reasoning_content: thought
-            }
-          }],
-          model: geminiModel
-        });
-      }
-
-      // OpenAI-Compatible (Local LM Studio, Ollama, OpenRouter, OpenAI, Qwen)
-      const chatUrl = cleanBase.endsWith("/chat/completions")
-        ? cleanBase
-        : `${cleanBase}/chat/completions`;
-
-      const headers = { "Content-Type": "application/json" };
-      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-      if (provider === "openrouter" || cleanBase.includes("openrouter.ai")) {
-        headers["HTTP-Referer"] = "http://localhost:3000";
-        headers["X-Title"] = "Vanaras Desktop App";
-      }
-
-      const payload = { messages, temperature, max_tokens };
-      if (model) payload.model = model;
-      if (!enableReasoning) {
-        payload.reasoning = { enabled: false };
-        if (provider === "local") {
-          payload.chat_template_kwargs = { enable_thinking: false };
+          required: ["filePath", "oldString", "newString"]
         }
       }
-
-      const reqInit = {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload)
-      };
-      let upstream = provider === "local"
-        ? await fetchWithLocalFallback(cleanBase, "/chat/completions", reqInit, 25000)
-        : await fetch(chatUrl, reqInit);
-
-      let raw = await upstream.text();
-      if (!upstream.ok && upstream.status === 400) {
-        if ((provider === "openrouter" || cleanBase.includes("openrouter.ai")) && /not a valid model ID/i.test(raw)) {
-          const fallbackModel = await resolveOpenRouterModelSlug(model, cleanBase, headers);
-          if (fallbackModel && fallbackModel !== model) {
-            payload.model = fallbackModel;
-            upstream = await fetch(chatUrl, {
-              ...reqInit,
-              body: JSON.stringify(payload)
-            });
-            raw = await upstream.text();
+    },
+    {
+      type: "function",
+      function: {
+        name: "fs_read",
+        description: "Read the content of a file or inspect directory entries.",
+        parameters: {
+          type: "object",
+          properties: {
+            filePath: { type: "string", description: "Path to file or directory to read" }
+          },
+          required: ["filePath"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "fs_write",
+        description: "Write full file content to the agent workspace and worktree.",
+        parameters: {
+          type: "object",
+          properties: {
+            filePath: { type: "string", description: "Path to file to write" },
+            content: { type: "string", description: "Full content to write to the file" }
+          },
+          required: ["filePath", "content"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "shell_exec",
+        description: "Execute a shell command inside the agent's worktree with process-tree tracking.",
+        parameters: {
+          type: "object",
+          properties: {
+            command: { type: "string", description: "Shell command line to execute" },
+            timeout: { type: "integer", description: "Timeout in milliseconds (default: 120000, max: 300000)" }
+          },
+          required: ["command"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "grep_search",
+        description: "Fast regex or literal code search across files with line number matches.",
+        parameters: {
+          type: "object",
+          properties: {
+            pattern: { type: "string", description: "Search pattern or query" },
+            isRegex: { type: "boolean", description: "Whether pattern is a regular expression" },
+            path: { type: "string", description: "Optional subpath or directory to scope search" }
+          },
+          required: ["pattern"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "find_files",
+        description: "Find files in the workspace matching a name or glob pattern.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "File name substring or glob pattern (e.g. *.py, server*)" }
           }
         }
-        if (!upstream.ok && /reasoning/i.test(raw)) {
-          const retryPayload = { ...payload };
-          delete retryPayload.reasoning;
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "start_process",
+        description: "Start a long-running background process (such as a local dev server or test watcher) without blocking the turn.",
+        parameters: {
+          type: "object",
+          properties: {
+            command: { type: "string", description: "Shell command to start in the background" },
+            name: { type: "string", description: "Optional descriptive label for this process" }
+          },
+          required: ["command"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "stop_process",
+        description: "Stop a background process previously started with start_process.",
+        parameters: {
+          type: "object",
+          properties: {
+            processId: { type: "string", description: "Process ID returned from start_process" }
+          },
+          required: ["processId"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_process_logs",
+        description: "Get recent log lines from a background process.",
+        parameters: {
+          type: "object",
+          properties: {
+            processId: { type: "string", description: "Process ID returned from start_process" },
+            lines: { type: "integer", description: "Number of recent lines to retrieve (default: 50)" }
+          },
+          required: ["processId"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "verify_project",
+        description: "Run the project's test suite or verification script (e.g. ./run.sh, pytest, npm test) and return exit code and failure traceback to self-heal.",
+        parameters: {
+          type: "object",
+          properties: {
+            command: { type: "string", description: "Optional verification command (defaults to ./run.sh, pytest, or npm test)" }
+          }
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "git_status",
+        description: "Check git status and modified files in the agent's worktree.",
+        parameters: {
+          type: "object",
+          properties: {}
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "git_diff",
+        description: "Check git unified diff for current modifications in the worktree.",
+        parameters: {
+          type: "object",
+          properties: {}
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "git_commit",
+        description: "Commit current changes in the agent worktree.",
+        parameters: {
+          type: "object",
+          properties: {
+            message: { type: "string", description: "Commit message" }
+          }
+        }
+      }
+    }
+  ];
+
+  function parseTextToolCalls(text) {
+    if (!text) return [];
+    const calls = [];
+    const toolRx = /\[TOOL:\s*([a-zA-Z0-9_.-]+)(?:\s*\|\s*([\s\S]*?))?\]/gi;
+    let match;
+    while ((match = toolRx.exec(text)) !== null) {
+      const name = match[1].trim();
+      const rawArg = (match[2] || "").trim();
+      let args = {};
+      if (name === "shell_exec" || name === "shell") {
+        args = { command: rawArg };
+      } else if (name === "fs_read") {
+        args = { filePath: rawArg };
+      } else if (name === "exact_edit") {
+        const parts = rawArg.split("|||");
+        if (parts.length >= 3) {
+          args = { filePath: parts[0].trim(), oldString: parts[1].trim(), newString: parts[2].trim() };
+        }
+      } else if (name === "grep_search") {
+        args = { pattern: rawArg };
+      } else if (name === "find_files") {
+        args = { query: rawArg };
+      } else if (name === "verify_project") {
+        args = { command: rawArg };
+      } else if (name === "start_process") {
+        args = { command: rawArg };
+      } else if (name === "stop_process" || name === "get_process_logs") {
+        args = { processId: rawArg };
+      } else if (name === "git_commit") {
+        args = { message: rawArg };
+      } else {
+        try {
+          args = JSON.parse(rawArg);
+        } catch {
+          args = { content: rawArg };
+        }
+      }
+      calls.push({ tool: name, args });
+    }
+    return calls;
+  }
+
+  function parseDeliverableBlocksText(rawText) {
+    if (!rawText) return [];
+    const files = [];
+    const regex = /===FILE:\s*([^\n=]+)===\s*\n([\s\S]*?)(===END_FILE===|(?====FILE:)|$)/gi;
+    let m;
+    while ((m = regex.exec(rawText)) !== null) {
+      const rawName = (m[1] || "").trim();
+      let content = (m[2] || "").trim()
+        .replace(/^```[a-zA-Z0-9_.-]*\r?\n/, "")
+        .replace(/\r?\n```\s*$/, "")
+        .trim();
+      if (rawName && content) {
+        files.push({ name: rawName, content });
+      }
+    }
+    return files;
+  }
+
+  // 6B-2. Unified LLM Query Function (OpenAI, Grok, Anthropic, Gemini, Local)
+  async function queryLLMInternal(params = {}) {
+    const {
+      provider = "local",
+      baseUrl = "http://192.168.68.102:1234/v1",
+      apiKey: rawApiKey = "",
+      botId = "",
+      model = "",
+      messages = [],
+      temperature = 0.7,
+      max_tokens = 8192,
+      enableReasoning = false,
+      tools = null,
+      tool_choice = null,
+      signal = null
+    } = params;
+
+    const apiKey = resolveVaultApiKey(provider, rawApiKey, botId);
+    if (rawApiKey && String(rawApiKey).trim() && provider !== "local") {
+      saveLocalKeysVault({
+        providers: { [String(provider).toLowerCase()]: String(rawApiKey).trim() },
+        ...(botId ? { bots: { [botId]: String(rawApiKey).trim() } } : {})
+      });
+    }
+
+    const effectiveBase = (provider === "openrouter" && (!baseUrl || baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost") || baseUrl.includes("192.168.")))
+      ? "https://openrouter.ai/api/v1"
+      : baseUrl;
+    const cleanBase = normalizeOpenAIBaseUrl(effectiveBase);
+
+    // 1. Native Anthropic Messages API
+    if (provider === "anthropic" || provider === "claude" || cleanBase.includes("api.anthropic.com")) {
+      const systemMsg = messages.find(m => m.role === "system")?.content || "";
+      const userMsgs = messages.filter(m => m.role !== "system").map(m => {
+        if (m.role === "tool") {
+          return {
+            role: "user",
+            content: [{
+              type: "tool_result",
+              tool_use_id: m.tool_call_id,
+              content: m.content
+            }]
+          };
+        }
+        if (m.tool_calls && m.tool_calls.length > 0) {
+          const blocks = [];
+          if (m.content) blocks.push({ type: "text", text: m.content });
+          for (const tc of m.tool_calls) {
+            let input = {};
+            try { input = typeof tc.function.arguments === "string" ? JSON.parse(tc.function.arguments) : tc.function.arguments; } catch {}
+            blocks.push({
+              type: "tool_use",
+              id: tc.id,
+              name: tc.function.name,
+              input
+            });
+          }
+          return { role: "assistant", content: blocks };
+        }
+        return {
+          role: m.role === "assistant" ? "assistant" : "user",
+          content: m.content
+        };
+      });
+      const endpoint = cleanBase.endsWith("/messages")
+        ? cleanBase
+        : `${cleanBase.replace(/\/v1$/, "")}/v1/messages`;
+
+      const anthropicBody = {
+        model: model || "claude-sonnet-4-20250514",
+        max_tokens,
+        temperature,
+        system: systemMsg,
+        messages: userMsgs
+      };
+      if (tools && tools.length > 0) {
+        anthropicBody.tools = tools.map(t => {
+          const fn = t.function || t;
+          return {
+            name: fn.name,
+            description: fn.description || "",
+            input_schema: fn.parameters || { type: "object", properties: {} }
+          };
+        });
+      }
+
+      const upstream = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify(anthropicBody),
+        signal
+      });
+
+      const raw = await upstream.text();
+      if (!upstream.ok) {
+        return { ok: false, status: upstream.status, error: `Anthropic HTTP ${upstream.status}: ${raw}` };
+      }
+      const parsed = JSON.parse(raw);
+      const textBlock = (parsed.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+      const thinkingBlock = (parsed.content || []).find(b => b.type === "thinking")?.thinking || "";
+      const toolUseBlocks = (parsed.content || []).filter(b => b.type === "tool_use");
+      const tool_calls = toolUseBlocks.length > 0 ? toolUseBlocks.map(b => ({
+        id: b.id,
+        type: "function",
+        function: {
+          name: b.name,
+          arguments: JSON.stringify(b.input || {})
+        }
+      })) : null;
+
+      return {
+        ok: true,
+        status: 200,
+        content: textBlock,
+        reasoning: thinkingBlock,
+        tool_calls,
+        model: parsed.model,
+        raw
+      };
+    }
+
+    // 2. Native Google Gemini API
+    if (provider === "gemini" && !cleanBase.includes("/openai")) {
+      const geminiModel = model || "gemini-2.5-flash";
+      const systemMsg = messages.find(m => m.role === "system")?.content || "";
+      const contents = messages.filter(m => m.role !== "system").map(m => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content || "" }]
+      }));
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const body = {
+        contents,
+        generationConfig: { temperature, maxOutputTokens: max_tokens }
+      };
+      if (systemMsg) {
+        body.systemInstruction = { parts: [{ text: systemMsg }] };
+      }
+      if (tools && tools.length > 0) {
+        body.tools = [{
+          functionDeclarations: tools.map(t => {
+            const fn = t.function || t;
+            return {
+              name: fn.name,
+              description: fn.description || "",
+              parameters: fn.parameters
+            };
+          })
+        }];
+      }
+      const upstream = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal
+      });
+      const raw = await upstream.text();
+      if (!upstream.ok) {
+        return { ok: false, status: upstream.status, error: `Gemini HTTP ${upstream.status}: ${raw}` };
+      }
+      const parsed = JSON.parse(raw);
+      const parts = parsed.candidates?.[0]?.content?.parts || [];
+      const text = parts.filter(p => !p.thought && !p.functionCall).map(p => p.text || "").join("\n");
+      const thought = parts.filter(p => p.thought).map(p => p.text || "").join("\n");
+      const fnParts = parts.filter(p => p.functionCall);
+      const tool_calls = fnParts.length > 0 ? fnParts.map((p, idx) => ({
+        id: "call_gemini_" + idx,
+        type: "function",
+        function: {
+          name: p.functionCall.name,
+          arguments: JSON.stringify(p.functionCall.args || {})
+        }
+      })) : null;
+
+      return {
+        ok: true,
+        status: 200,
+        content: text,
+        reasoning: thought,
+        tool_calls,
+        model: geminiModel,
+        raw
+      };
+    }
+
+    // 3. OpenAI-Compatible (Grok, Local LM Studio, Ollama, OpenRouter, OpenAI, Qwen)
+    const chatUrl = cleanBase.endsWith("/chat/completions")
+      ? cleanBase
+      : `${cleanBase}/chat/completions`;
+
+    const headers = { "Content-Type": "application/json" };
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+    if (provider === "openrouter" || cleanBase.includes("openrouter.ai")) {
+      headers["HTTP-Referer"] = "http://localhost:3000";
+      headers["X-Title"] = "Vanaras Desktop App";
+    }
+
+    const payload = { messages, temperature, max_tokens };
+    if (model) payload.model = model;
+    if (tools && tools.length > 0) {
+      payload.tools = tools;
+      if (tool_choice) payload.tool_choice = tool_choice;
+    }
+    if (!enableReasoning) {
+      payload.reasoning = { enabled: false };
+      if (provider === "local") {
+        payload.chat_template_kwargs = { enable_thinking: false };
+      }
+    }
+
+    const reqInit = {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal
+    };
+    let upstream = provider === "local"
+      ? await fetchWithLocalFallback(cleanBase, "/chat/completions", reqInit, 25000)
+      : await fetch(chatUrl, reqInit);
+
+    let raw = await upstream.text();
+    if (!upstream.ok && upstream.status === 400) {
+      if ((provider === "openrouter" || cleanBase.includes("openrouter.ai")) && /not a valid model ID/i.test(raw)) {
+        const fallbackModel = await resolveOpenRouterModelSlug(model, cleanBase, headers);
+        if (fallbackModel && fallbackModel !== model) {
+          payload.model = fallbackModel;
           upstream = await fetch(chatUrl, {
             ...reqInit,
-            body: JSON.stringify(retryPayload)
+            body: JSON.stringify(payload)
           });
           raw = await upstream.text();
         }
       }
-      if (!upstream.ok) {
-        return sendJson(res, upstream.status, { error: `Upstream HTTP ${upstream.status}: ${raw}` });
+      if (!upstream.ok && /reasoning/i.test(raw)) {
+        const retryPayload = { ...payload };
+        delete retryPayload.reasoning;
+        upstream = await fetch(chatUrl, {
+          ...reqInit,
+          body: JSON.stringify(retryPayload)
+        });
+        raw = await upstream.text();
       }
-      try {
-        const parsedChat = JSON.parse(raw);
-        const msg = parsedChat?.choices?.[0]?.message;
-        const rawContent = String(msg?.content || "");
-        const visibleText = rawContent
-          .replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/gi, "")
-          .replace(/<(?:think|thinking)>[\s\S]*$/gi, "")
-          .trim();
-        const rawReason = String(msg?.reasoning_content || msg?.reasoning || "").trim();
-        if (!visibleText && (rawReason || rawContent) && msg) {
-          const followRes = await fetch(chatUrl, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              ...payload,
-              reasoning: { enabled: false },
-              messages: [
-                ...messages,
-                {
-                  role: "user",
-                  content: "Output your direct visible response, [TOOL: ...] actions, or ===FILE: ...=== blocks now without <think> tags."
-                }
-              ]
-            })
+    }
+    if (!upstream.ok) {
+      return { ok: false, status: upstream.status, error: `Upstream HTTP ${upstream.status}: ${raw}` };
+    }
+
+    let parsedChat = null;
+    let msg = null;
+    let rawContent = "";
+    let visibleText = "";
+    let rawReason = "";
+    let tool_calls = null;
+
+    try {
+      parsedChat = JSON.parse(raw);
+      msg = parsedChat?.choices?.[0]?.message;
+      rawContent = String(msg?.content || "");
+      visibleText = rawContent
+        .replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/gi, "")
+        .replace(/<(?:think|thinking)>[\s\S]*$/gi, "")
+        .trim();
+      rawReason = String(msg?.reasoning_content || msg?.reasoning || "").trim();
+      tool_calls = msg?.tool_calls || null;
+
+      if (!visibleText && !tool_calls && (rawReason || rawContent) && msg) {
+        const followRes = await fetch(chatUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            ...payload,
+            reasoning: { enabled: false },
+            messages: [
+              ...messages,
+              {
+                role: "user",
+                content: "Output your direct visible response, [TOOL: ...] actions, or ===FILE: ...=== blocks now without <think> tags."
+              }
+            ]
+          }),
+          signal
+        });
+        if (followRes.ok) {
+          const followData = await followRes.json();
+          const followMsg = followData?.choices?.[0]?.message;
+          const followContent = String(followMsg?.content || "").trim();
+          if (followContent) {
+            msg.content = followContent;
+            visibleText = followContent;
+          }
+          if (followMsg?.tool_calls) {
+            tool_calls = followMsg.tool_calls;
+            msg.tool_calls = tool_calls;
+          }
+          raw = JSON.stringify(parsedChat);
+        }
+      }
+    } catch {}
+
+    return {
+      ok: true,
+      status: 200,
+      content: visibleText || rawContent,
+      reasoning: rawReason,
+      tool_calls,
+      model: parsedChat?.model || model,
+      raw
+    };
+  }
+
+  // 6B-3. Server-Side Session Turn Execution Loop (P1a, P1b, P2)
+  async function executeServerSessionTurn({
+    threadId = "default_thread",
+    botId = "bot_r1",
+    botName = "R1",
+    prompt = "",
+    systemPrompt = "",
+    verifyCommand = "",
+    maxSteps = 30
+  }) {
+    const turnRecord = {
+      threadId,
+      botId,
+      botName,
+      prompt,
+      verifyCommand,
+      step: 0,
+      maxSteps: Math.max(1, Math.min(100, maxSteps)),
+      status: "running",
+      message: `Turn initialized for ${botName}`,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      toolCalls: [],
+      finalContent: "",
+      reasoning: "",
+      abortController: new AbortController()
+    };
+    activeServerTurns.set(threadId, turnRecord);
+
+    let state = loadWorkspaceDiskState() || { threads: [], bots: [] };
+    let thread = (state.threads || []).find(t => t.id === threadId);
+    if (!thread) {
+      thread = {
+        id: threadId,
+        title: prompt.slice(0, 40) || "Session Turn",
+        botId,
+        messages: [],
+        createdAt: new Date().toISOString()
+      };
+      state.threads = state.threads || [];
+      state.threads.unshift(thread);
+    }
+
+    const agentCfg = loadAgentConfig(botId) || {};
+    const botDef = (state.bots || []).find(b => b.id === botId) || {};
+    const provider = botDef.provider || agentCfg.provider || "local";
+    const baseUrl = botDef.baseUrl || agentCfg.baseUrl || (provider === "local" ? "http://127.0.0.1:1234/v1" : "https://openrouter.ai/api/v1");
+    const model = botDef.model || agentCfg.model || "";
+    const apiKey = resolveVaultApiKey(provider, botDef.apiKey || agentCfg.apiKey || "", botId);
+
+    const lastMsg = thread.messages[thread.messages.length - 1];
+    if (prompt && (!lastMsg || lastMsg.role !== "user" || lastMsg.content !== prompt)) {
+      thread.messages.push({
+        id: "msg_user_" + Date.now(),
+        role: "user",
+        content: prompt,
+        timestamp: new Date().toISOString()
+      });
+    }
+    saveWorkspaceDiskState(state);
+
+    broadcastEvent("turn_progress", {
+      threadId,
+      botId,
+      step: 0,
+      maxSteps: turnRecord.maxSteps,
+      status: "running",
+      message: `Starting autonomous turn for ${botName} (${turnRecord.maxSteps} max steps)...`
+    });
+
+    const effectiveSysPrompt = systemPrompt || botDef.systemPrompt || agentCfg.systemPrompt ||
+      `You are ${botName}, an expert autonomous software engineer working in your isolated git worktree.\nYour mission is to plan, inspect files, edit code surgically, run tests/verifications, and fix all errors until working end-to-end.\nAlways verify your changes before declaring completion.`;
+
+    const conversationMessages = [
+      { role: "system", content: effectiveSysPrompt },
+      ...thread.messages.slice(-20).map(m => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content || ""
+      }))
+    ];
+
+    let accumulatedReasoning = "";
+    let finalVisibleContent = "";
+    let verifyRunCount = 0;
+
+    try {
+      for (let step = 0; step < turnRecord.maxSteps; step++) {
+        if (turnRecord.abortController.signal.aborted) {
+          turnRecord.status = "stopped";
+          turnRecord.message = "Turn stopped by user";
+          break;
+        }
+        turnRecord.step = step + 1;
+        turnRecord.updatedAt = new Date().toISOString();
+        turnRecord.message = `${botName} thinking (Step ${turnRecord.step}/${turnRecord.maxSteps})...`;
+
+        broadcastEvent("turn_progress", {
+          threadId,
+          botId,
+          step: turnRecord.step,
+          maxSteps: turnRecord.maxSteps,
+          status: "thinking",
+          message: turnRecord.message
+        });
+
+        const llmRes = await queryLLMInternal({
+          provider,
+          baseUrl,
+          apiKey,
+          botId,
+          model,
+          messages: conversationMessages,
+          temperature: 0.2,
+          max_tokens: 8192,
+          enableReasoning: true,
+          tools: VANARAS_NATIVE_TOOLS,
+          signal: turnRecord.abortController.signal
+        });
+
+        if (turnRecord.abortController.signal.aborted) {
+          turnRecord.status = "stopped";
+          turnRecord.message = "Turn stopped by user";
+          break;
+        }
+
+        const replyContent = llmRes.content || "";
+        const replyReasoning = llmRes.reasoning || "";
+        if (replyReasoning) {
+          accumulatedReasoning = [accumulatedReasoning, replyReasoning].filter(Boolean).join("\n\n---\n\n");
+          turnRecord.reasoning = accumulatedReasoning;
+        }
+
+        const nativeToolCalls = Array.isArray(llmRes.tool_calls) && llmRes.tool_calls.length > 0 ? llmRes.tool_calls : [];
+        const textToolCalls = parseTextToolCalls(replyContent);
+        const filesToWrite = parseDeliverableBlocksText(replyContent);
+
+        const allToolCalls = [...nativeToolCalls];
+        for (const tt of textToolCalls) {
+          allToolCalls.push({
+            id: "call_txt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+            type: "function",
+            function: { name: tt.tool, arguments: JSON.stringify(tt.args) }
           });
-          if (followRes.ok) {
-            const followData = await followRes.json();
-            const followContent = String(followData?.choices?.[0]?.message?.content || "").trim();
-            if (followContent) {
-              msg.content = followContent;
-              raw = JSON.stringify(parsedChat);
+        }
+        for (const f of filesToWrite) {
+          allToolCalls.push({
+            id: "call_file_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+            type: "function",
+            function: { name: "fs_write", arguments: JSON.stringify({ filePath: f.name, content: f.content }) }
+          });
+        }
+
+        if (allToolCalls.length === 0) {
+          if (verifyCommand && verifyRunCount === 0) {
+            verifyRunCount++;
+            turnRecord.message = `${botName} running project verification (${verifyCommand})...`;
+            broadcastEvent("turn_progress", {
+              threadId,
+              botId,
+              step: turnRecord.step,
+              maxSteps: turnRecord.maxSteps,
+              status: "verifying",
+              message: turnRecord.message
+            });
+            const vResult = await executeAgentToolInternal({
+              botId,
+              botName,
+              tool: "verify_project",
+              command: verifyCommand,
+              threadId
+            });
+            const vOut = vResult.data || vResult;
+            if (!vOut.ok) {
+              conversationMessages.push({
+                role: "assistant",
+                content: replyContent
+              });
+              conversationMessages.push({
+                role: "user",
+                content: `[VERIFICATION FAILED (exit code ${vOut.exitCode})]:\n${vOut.output}\nPlease fix the failing code, re-verify with verify_project or shell_exec, and ensure it passes.`
+              });
+              continue;
             }
           }
+
+          finalVisibleContent = replyContent;
+          break;
         }
-      } catch {}
-      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(raw);
-    } catch (e) {
-      sendJson(res, 502, { error: e.message || "Proxy request failed" });
+
+        const executedToolResults = [];
+        for (const tc of allToolCalls) {
+          if (turnRecord.abortController.signal.aborted) break;
+          const fnName = tc.function?.name || tc.name;
+          let fnArgs = {};
+          try {
+            fnArgs = typeof tc.function?.arguments === "string" ? JSON.parse(tc.function.arguments) : (tc.function?.arguments || {});
+          } catch {}
+
+          turnRecord.message = `${botName} executing ${fnName}...`;
+          broadcastEvent("turn_progress", {
+            threadId,
+            botId,
+            step: turnRecord.step,
+            maxSteps: turnRecord.maxSteps,
+            status: "tool_exec",
+            toolCall: { name: fnName, args: fnArgs },
+            message: turnRecord.message
+          });
+
+          const toolRes = await executeAgentToolInternal({
+            botId,
+            botName,
+            tool: fnName,
+            args: fnArgs,
+            ...fnArgs,
+            threadId
+          });
+
+          const outputStr = toolRes.data?.output !== undefined ? String(toolRes.data.output) : JSON.stringify(toolRes.data || toolRes);
+          executedToolResults.push({
+            toolCallId: tc.id,
+            name: fnName,
+            output: outputStr
+          });
+          turnRecord.toolCalls.push({ step: turnRecord.step, name: fnName, args: fnArgs, output: outputStr });
+        }
+
+        if (nativeToolCalls.length > 0) {
+          conversationMessages.push({
+            role: "assistant",
+            content: replyContent || null,
+            tool_calls: nativeToolCalls
+          });
+          for (const resItem of executedToolResults) {
+            conversationMessages.push({
+              role: "tool",
+              tool_call_id: resItem.toolCallId,
+              content: resItem.output
+            });
+          }
+        } else {
+          conversationMessages.push({
+            role: "assistant",
+            content: replyContent
+          });
+          const combinedOutputs = executedToolResults.map(r => `[Tool Output: ${r.name}]\n${r.output}`).join("\n\n");
+          conversationMessages.push({
+            role: "user",
+            content: `Real execution output from your worktree:\n${combinedOutputs}\nUse the tool output above to continue the task.`
+          });
+        }
+      }
+
+      if (turnRecord.status !== "stopped") {
+        turnRecord.status = "completed";
+        turnRecord.message = "Turn completed successfully";
+      }
+    } catch (err) {
+      turnRecord.status = "error";
+      turnRecord.error = err.message;
+      turnRecord.message = `Turn error: ${err.message}`;
+      finalVisibleContent = (finalVisibleContent ? finalVisibleContent + "\n\n" : "") + `Error during session execution: ${err.message}`;
     }
-    return;
+
+    turnRecord.finalContent = finalVisibleContent;
+    turnRecord.updatedAt = new Date().toISOString();
+
+    state = loadWorkspaceDiskState() || state;
+    thread = (state.threads || []).find(t => t.id === threadId);
+    if (thread) {
+      thread.messages.push({
+        id: "msg_ast_" + Date.now(),
+        role: "assistant",
+        botId,
+        botName,
+        content: finalVisibleContent,
+        reasoning: accumulatedReasoning,
+        toolCalls: turnRecord.toolCalls,
+        timestamp: new Date().toISOString()
+      });
+      saveWorkspaceDiskState(state);
+    }
+
+    broadcastEvent("turn_complete", {
+      threadId,
+      botId,
+      botName,
+      status: turnRecord.status,
+      finalContent: finalVisibleContent,
+      reasoning: accumulatedReasoning,
+      toolCallsCount: turnRecord.toolCalls.length
+    });
+
+    return turnRecord;
+  }
+
+  // 6B. Universal Multi-Provider LLM Chat Proxy
+  if (req.method === "POST" && req.url === "/api/llm/chat") {
+    try {
+      const body = await readJsonBody(req);
+      const resData = await queryLLMInternal(body);
+      if (!resData.ok) {
+        return sendJson(res, resData.status || 500, { error: resData.error });
+      }
+      return sendJson(res, 200, {
+        choices: [{
+          message: {
+            role: "assistant",
+            content: resData.content,
+            reasoning_content: resData.reasoning,
+            tool_calls: resData.tool_calls
+          }
+        }],
+        model: resData.model
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // 6C. Server-Side Autonomous Session Runner (POST /api/sessions/turn, GET /api/sessions/status, POST /api/sessions/stop)
+  if (req.method === "POST" && req.url === "/api/sessions/turn") {
+    try {
+      const body = await readJsonBody(req);
+      const { threadId, botId = "bot_r1", botName = "R1", prompt = "", systemPrompt = "", verifyCommand = "", maxSteps = 30 } = body;
+      if (!prompt && !verifyCommand) {
+        return sendJson(res, 400, { error: "prompt or verifyCommand required" });
+      }
+      const effectiveThreadId = threadId || `thread_${Date.now()}`;
+      const existing = activeServerTurns.get(effectiveThreadId);
+      if (existing && existing.status === "running") {
+        return sendJson(res, 409, { error: "A turn is already running for this thread", turn: existing });
+      }
+
+      executeServerSessionTurn({
+        threadId: effectiveThreadId,
+        botId,
+        botName,
+        prompt,
+        systemPrompt,
+        verifyCommand,
+        maxSteps: Number(maxSteps) || 30
+      }).catch(err => {
+        console.error("Unhandled error in executeServerSessionTurn:", err);
+      });
+
+      return sendJson(res, 200, {
+        ok: true,
+        threadId: effectiveThreadId,
+        botId,
+        status: "started"
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  if (req.method === "GET" && req.url.startsWith("/api/sessions/status")) {
+    const qIndex = req.url.indexOf("?");
+    const qParams = new URLSearchParams(qIndex >= 0 ? req.url.slice(qIndex) : "");
+    const threadId = qParams.get("threadId");
+    if (threadId) {
+      const turn = activeServerTurns.get(threadId);
+      return sendJson(res, 200, {
+        ok: true,
+        active: turn ? turn.status === "running" : false,
+        turn: turn || null
+      });
+    }
+    const all = Array.from(activeServerTurns.values()).map(t => ({
+      threadId: t.threadId,
+      botId: t.botId,
+      botName: t.botName,
+      status: t.status,
+      step: t.step,
+      maxSteps: t.maxSteps,
+      startedAt: t.startedAt,
+      updatedAt: t.updatedAt
+    }));
+    return sendJson(res, 200, { ok: true, activeCount: all.filter(t => t.status === "running").length, turns: all });
+  }
+
+  if (req.method === "POST" && req.url === "/api/sessions/stop") {
+    try {
+      const { threadId, botId } = await readJsonBody(req);
+      let stoppedCount = 0;
+      if (threadId && activeServerTurns.has(threadId)) {
+        const turn = activeServerTurns.get(threadId);
+        if (turn.status === "running") {
+          turn.abortController?.abort();
+          turn.status = "stopped";
+          stoppedCount++;
+        }
+      } else {
+        for (const turn of activeServerTurns.values()) {
+          if (turn.status === "running" && (!botId || turn.botId === botId)) {
+            turn.abortController?.abort();
+            turn.status = "stopped";
+            stoppedCount++;
+          }
+        }
+      }
+      if (botId) stopTrackedProcess(botId);
+      return sendJson(res, 200, { ok: true, stopped: stoppedCount > 0, count: stoppedCount });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
   }
 
   // 7. Universal Model Discovery
@@ -4299,6 +5340,8 @@ async function ensureAgentPortServerRunning(port, preferredBotId = "bot_r1") {
 function terminateOwnedProcessTrees() {
   for (const proc of activeRunProcs.values()) signalProcessTree(proc, "SIGTERM");
   for (const srv of agentDevServers.values()) if (srv && srv.proc) signalProcessTree(srv.proc, "SIGTERM");
+  for (const bg of agentBackgroundProcesses.values()) if (bg && bg.child) signalProcessTree(bg.child, "SIGTERM");
+  for (const turn of activeServerTurns.values()) if (turn && turn.status === "running") turn.abortController?.abort();
 }
 process.on("exit", terminateOwnedProcessTrees);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {

@@ -2993,6 +2993,25 @@ Auto-save: enabled</pre>
       if (!state.onboarded) {
         openOnboardingModal();
       }
+      checkActiveServerTurnsOnBoot();
+    }
+
+    async function checkActiveServerTurnsOnBoot() {
+      try {
+        const res = await fetch("/api/sessions/status");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.turns)) {
+            for (const t of data.turns) {
+              if (t.status === "running") {
+                activeWorkingThreads[t.threadId] = `Running on server (Step ${t.step}/${t.maxSteps})...`;
+              }
+            }
+            renderThreadList();
+            renderActiveThread();
+          }
+        }
+      } catch {}
     }
 
     function getBot(botId) {
@@ -8170,6 +8189,32 @@ ${handoffRule}
               loadAgentCodeWorkspaceFromServer(data.botId);
             }
           }
+        });
+
+        es.addEventListener("turn_progress", ev => {
+          try {
+            const data = JSON.parse(ev.data);
+            if (data.threadId) {
+              activeWorkingThreads[data.threadId] = data.message || `Step ${data.step}/${data.maxSteps}...`;
+              renderThreadList();
+              if (activeThreadId === data.threadId) {
+                renderActiveThread();
+              }
+            }
+          } catch {}
+        });
+
+        es.addEventListener("turn_complete", ev => {
+          try {
+            const data = JSON.parse(ev.data);
+            if (data.threadId) {
+              delete activeWorkingThreads[data.threadId];
+              renderThreadList();
+              if (activeThreadId === data.threadId) {
+                renderActiveThread();
+              }
+            }
+          } catch {}
         });
       } catch {}
     }

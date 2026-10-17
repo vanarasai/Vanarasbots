@@ -38,6 +38,10 @@ function parseCliArgs(argv) {
       options.url = args[++i];
     } else if (arg.startsWith("--url=")) {
       options.url = arg.split("=")[1];
+    } else if ((arg === "--verify" || arg === "-v") && i + 1 < args.length) {
+      options.verify = args[++i];
+    } else if (arg.startsWith("--verify=")) {
+      options.verify = arg.split("=")[1];
     } else if (!arg.startsWith("-")) {
       if (!options.command) {
         options.command = arg;
@@ -283,43 +287,103 @@ async function handleSearch(opts) {
 async function handleAsk(opts) {
   const prompt = opts.positionals.join(" ") || opts.positionals[0];
   if (!prompt) {
-    console.error("Error: prompt text required. Usage: vanaras-cli ask \"<prompt>\" [--agent <id>]");
+    console.error("Error: prompt text required. Usage: vanaras-cli ask \"<prompt>\" [--agent <id>] [--verify <cmd>]");
     process.exit(1);
   }
 
-  const payload = {
-    sender: "Human (CLI)",
-    text: prompt,
-    botId: opts.agent,
-    timestamp: new Date().toISOString()
+  const threadId = `cli_${Date.now()}`;
+  console.log(`[Vanaras CLI]: Initiating server-side autonomous turn for agent ${opts.agent}...`);
+  console.log(`Prompt: "${prompt}"`);
+  if (opts.verify) {
+    console.log(`Verify Command: "${opts.verify}"`);
+  }
+
+  let turnStarted = false;
+  try {
+    const res = await requestJson(`${opts.url}/api/sessions/turn`, {
+      method: "POST",
+      body: JSON.stringify({
+        threadId,
+        botId: opts.agent,
+        prompt,
+        verifyCommand: opts.verify || ""
+      })
+    }, 10000);
+    if (res.ok && res.body?.ok) {
+      turnStarted = true;
+    } else {
+      console.warn(`Server-side turn dispatch failed (${res.status}): ${res.body?.error || "Unknown error"}. Falling back to event bus.`);
+    }
+  } catch (e) {
+    console.warn(`Could not reach /api/sessions/turn: ${e.message}`);
+  }
+
+  if (!turnStarted) {
+    const payload = { sender: "Human (CLI)", text: prompt, botId: opts.agent, timestamp: new Date().toISOString() };
+    let published = false;
+    try {
+      const res = await requestJson(`${opts.url}/api/events/publish`, { method: "POST", body: JSON.stringify(payload) });
+      if (res.ok) published = true;
+    } catch {}
+    if (published) console.log("Status: Accepted by Vanaras event bus.");
+    else console.log("Status: Queued locally (Server unreachable at " + opts.url + ").");
+    return;
+  }
+
+  console.log(`Turn started (threadId: ${threadId}). Streaming execution...\n`);
+
+  let lastStatus = "";
+  let lastMessage = "";
+  const pollIntervalMs = 750;
+  const maxWaitMs = 600000;
+  const startTime = Date.now();
+
+  const cleanupAndExit = async (code = 0) => {
+    try {
+      await requestJson(`${opts.url}/api/sessions/stop`, {
+        method: "POST",
+        body: JSON.stringify({ threadId, botId: opts.agent })
+      });
+    } catch {}
+    process.exit(code);
   };
 
-  let published = false;
-  try {
-    const res = await requestJson(`${opts.url}/api/events/publish`, {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
-    if (res.ok) published = true;
-  } catch {}
+  process.on("SIGINT", () => {
+    console.log("\n[CLI]: Interrupted by user. Stopping turn on server...");
+    cleanupAndExit(130);
+  });
 
-  if (!published) {
+  while (Date.now() - startTime < maxWaitMs) {
+    await new Promise(r => setTimeout(r, pollIntervalMs));
     try {
-      const res = await requestJson(`${opts.url}/api/room/post`, {
-        method: "POST",
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) published = true;
+      const st = await requestJson(`${opts.url}/api/sessions/status?threadId=${encodeURIComponent(threadId)}`, { method: "GET" }, 3000);
+      if (st.ok && st.body?.turn) {
+        const turn = st.body.turn;
+        if (turn.status === "completed" || turn.status === "stopped" || turn.status === "error") {
+          console.log(`\n================== TURN COMPLETED (${turn.status.toUpperCase()}) ==================`);
+          if (turn.reasoning) {
+            console.log(`\n--- Agent Thoughts ---\n${turn.reasoning}\n`);
+          }
+          if (turn.finalContent) {
+            console.log(`\n--- Agent Deliverables / Output ---\n${turn.finalContent}\n`);
+          }
+          if (turn.error) {
+            console.error(`\nError: ${turn.error}`);
+            process.exit(1);
+          }
+          process.exit(0);
+        }
+
+        const msg = turn.message || turn.status;
+        if (msg && msg !== lastMessage) {
+          lastMessage = msg;
+          console.log(`[Step ${turn.step}/${turn.maxSteps}] ${msg}`);
+        }
+      }
     } catch {}
   }
 
-  console.log(`[CLI -> ${opts.agent}]: Prompt dispatched.`);
-  console.log(`Prompt: "${prompt}"`);
-  if (published) {
-    console.log("Status: Accepted by Vanaras event bus.");
-  } else {
-    console.log("Status: Queued locally (Server unreachable at " + opts.url + ").");
-  }
+  console.warn("\n[CLI]: Turn monitoring timed out after 10 minutes. The agent may still be running in the background.");
 }
 
 async function main() {

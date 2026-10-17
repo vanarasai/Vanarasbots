@@ -2774,6 +2774,7 @@ Auto-save: enabled</pre>
     // Server-run turns started by this window, keyed `${threadId}_${botId}`: their relay depth, so the squad
     // chain can continue when the server reports turn_complete.
     let serverTurnChains = {};
+    const SERVER_TURN_MAX_STEPS = 30;
 
     function saveApiKeysToLocalStore() {
       try {
@@ -4670,6 +4671,14 @@ ${handoffRule}
           if (ctx) {
             ctx.aborted = true;
             try { ctx.controller.abort(); } catch {}
+            // A server-run turn keeps working after the page lets go of it: stop exactly that turn.
+            if (String(ctx.turnId || "").startsWith("turn_srv_")) {
+              fetch("/api/sessions/stop", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ threadId: thread.id, botId: ctx.botId, turnId: ctx.turnId })
+              }).catch(() => {});
+            }
           }
         });
         delete allActiveTurnContexts[thread.id];
@@ -4972,6 +4981,7 @@ ${handoffRule}
         thoughtOpen: true,
         isStreaming: true,
         hooksTrace: ["ServerRunner"],
+        serverTurnId: turnCtx.turnId,
         collabRound: targetBot.worktreeBranch,
         hasDeliverables: false
       };
@@ -4979,6 +4989,10 @@ ${handoffRule}
       if (activeThreadId === threadId) renderActiveThread();
 
       try {
+        // The server turn gets the same grounded prompt (role, skills, memories, rules, squad relay) the
+        // browser loop used, and a step budget sized for diagnose-fix-verify work. maxReactSteps is the
+        // browser loop's small per-reply cap; it only raises this budget, never lowers it.
+        const folderSummary = await ensureFolderSnapshot(targetThread.mountPath, targetBot);
         const res = await fetch("/api/sessions/turn", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -4987,13 +5001,14 @@ ${handoffRule}
             botId: targetBot.id,
             botName: targetBot.name,
             prompt: triggerText,
-            systemPrompt: targetBot.systemPrompt || "",
-            maxSteps: Math.max(1, Math.min(60, Number(targetBot.maxReactSteps) || 30))
+            turnId: turnCtx.turnId,
+            systemPrompt: targetBot.systemPrompt || buildGroundedSystemPrompt(targetBot, targetThread, folderSummary),
+            maxSteps: Math.min(60, Math.max(SERVER_TURN_MAX_STEPS, Number(targetBot.maxReactSteps) || 0))
           })
         });
         const data = await res.json();
         if (data.ok) {
-          serverTurnChains[`${threadId}_${targetBot.id}`] = { chainDepth: Number(options.chainDepth) || 0 };
+          serverTurnChains[turnCtx.turnId] = { chainDepth: Number(options.chainDepth) || 0 };
         } else {
           liveMsg.isStreaming = false;
           liveMsg.text = `Server runner error: ${data.error || "Failed to start"}`;
@@ -5017,10 +5032,50 @@ ${handoffRule}
     // A server-run turn returns before the agent finishes, so the squad relay that runBotTurnInThread applies
     // after a browser-run turn never happened for it: the next teammate was never triggered. Apply the same
     // hand-off rules here once the server reports the turn complete.
+    function findServerTurnMessage(thread, data) {
+      const streaming = thread.messages.filter(m => m && m.isStreaming);
+      if (data.turnId) {
+        const own = streaming.find(m => m.serverTurnId === data.turnId);
+        if (own) return own;
+        // A turn this window did not start (CLI, another window): fall back to that bot's open message.
+        return streaming.find(m => !m.serverTurnId && m.botId === data.botId) || null;
+      }
+      return streaming.find(m => m.botId === data.botId) || null;
+    }
+
+    function releaseServerTurnState(data) {
+      const threadId = data.threadId;
+      const ctxs = Array.isArray(allActiveTurnContexts[threadId]) ? allActiveTurnContexts[threadId] : [];
+      const ctx = ctxs.find(c => c && c.turnId === data.turnId) || null;
+      if (ctx) {
+        allActiveTurnContexts[threadId] = ctxs.filter(c => c !== ctx);
+        if (activeTurnState[`${threadId}_${data.botId}`] === ctx) delete activeTurnState[`${threadId}_${data.botId}`];
+        if (activeTurnState[threadId] === ctx) delete activeTurnState[threadId];
+      } else if (!data.turnId) {
+        delete activeTurnState[threadId];
+      }
+      if (!allActiveTurnContexts[threadId] || allActiveTurnContexts[threadId].length === 0) {
+        delete allActiveTurnContexts[threadId];
+        delete activeTurnState[threadId];
+        delete activeWorkingThreads[threadId];
+      }
+    }
+
+    function rememberServerTurnFacts(data) {
+      const bot = getBot(data.botId);
+      if (!bot || !Array.isArray(data.remembered)) return;
+      if (!Array.isArray(bot.memories)) bot.memories = [];
+      for (const fact of data.remembered) {
+        if (!fact || bot.memories.includes(fact)) continue;
+        bot.memories.unshift(fact);
+        syncAgentMemoryOnServer(bot, "add", { item: fact });
+        showToast(`${bot.name} remembered: ${fact.slice(0, 42)}…`);
+      }
+    }
+
     function continueSquadAfterServerTurn(thread, data) {
-      const key = `${thread.id}_${data.botId}`;
-      const chain = serverTurnChains[key];
-      delete serverTurnChains[key];
+      const chain = serverTurnChains[data.turnId];
+      delete serverTurnChains[data.turnId];
       if (!chain || data.status === "stopped" || data.status === "error") return;
       if (thread.type !== "group" || state.autoTriggerEnabled === false) return;
       const finishedBot = getBot(data.botId);
@@ -5067,7 +5122,9 @@ ${handoffRule}
       const targetThread = state.threads.find(t => t.id === threadId);
       if (!targetThread || !targetBot) return;
 
-      if (state.useServerRunner !== false && (targetBot.id === "bot_r1" || options.useServerRunner || state.useServerRunner)) {
+      // Every agent runs on the server runner (native tools, evidence rules, verify-and-retry, survives
+      // reloads). The browser loop below remains only for an explicit useServerRunner === false setting.
+      if (state.useServerRunner !== false) {
         return runServerBotTurnInThread(threadId, targetBot, triggerText, { ...options, chainDepth });
       }
 
@@ -8495,7 +8552,7 @@ ${handoffRule}
               activeWorkingThreads[data.threadId] = data.message || `Step ${data.step}/${data.maxSteps}...`;
               const targetThread = state.threads.find(t => t.id === data.threadId);
               if (targetThread && Array.isArray(targetThread.messages)) {
-                const liveMsg = targetThread.messages.find(m => m && m.isStreaming && (!data.botId || m.botId === data.botId));
+                const liveMsg = findServerTurnMessage(targetThread, data);
                 if (liveMsg && data.message) {
                   liveMsg.text = data.message;
                 }
@@ -8513,12 +8570,13 @@ ${handoffRule}
           try {
             const data = JSON.parse(ev.data);
             if (data.threadId) {
-              delete activeWorkingThreads[data.threadId];
-              delete activeTurnState[data.threadId];
               const targetThread = state.threads.find(t => t.id === data.threadId);
+              // Several agents can stream in one group thread, and a superseded turn still reports in:
+              // finish only the message and turn state that belong to this turn.
+              let liveMsg = targetThread && Array.isArray(targetThread.messages) ? findServerTurnMessage(targetThread, data) : null;
+              if (!liveMsg && data.status === "stopped") return;
+              releaseServerTurnState(data);
               if (targetThread && Array.isArray(targetThread.messages)) {
-                // Several agents can stream in one group thread: finish this bot's message, not the first one.
-                let liveMsg = targetThread.messages.find(m => m && m.isStreaming && m.botId === data.botId);
                 if (!liveMsg) {
                   liveMsg = {
                     id: "msg_bot_" + Date.now(),
@@ -8533,6 +8591,7 @@ ${handoffRule}
                 if (data.reasoning) {
                   liveMsg.reasoning = data.reasoning;
                 }
+                rememberServerTurnFacts(data);
                 saveState();
                 continueSquadAfterServerTurn(targetThread, data);
               }

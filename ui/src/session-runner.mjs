@@ -5,8 +5,8 @@ import { executeAgentToolInternal } from "./agent-tools.mjs";
 import { compactMessagesList, detectUnfulfilledAction, threadMessagesToChat } from "./context.mjs";
 import { broadcastEvent } from "./events.mjs";
 import { queryLLMInternal } from "./llm.mjs";
-import { VANARAS_NATIVE_TOOLS, parseDeliverableBlocksText, parseTextToolCalls } from "./native-tools.mjs";
-import { activeServerTurns, sessionCheckpoints } from "./state.mjs";
+import { VANARAS_NATIVE_TOOLS, parseDeliverableBlocksText, parseRememberDirectives, parseSurgicalPatchesText, parseTextToolCalls } from "./native-tools.mjs";
+import { activeServerTurns, sessionCheckpoints, serverTurnKey } from "./state.mjs";
 import { resolveVaultApiKey } from "./vault.mjs";
 import { loadWorkspaceDiskState, saveWorkspaceDiskState } from "./workspace-state.mjs";
 import { ensureAgentWorktree } from "./worktree.mjs";
@@ -27,6 +27,30 @@ const MAX_NUDGES = 2;
 
 const freshOutput =(out) => `[output captured ${new Date().toISOString()}]\n${out}`;
 
+// A failed model call used to read as an empty reply, which ended the turn as if the agent had finished.
+// Retry transient failures (rate limits, 5xx, dropped connections) once, then fail the turn with the reason.
+async function queryModelWithRetry(params) {
+  for (let attempt = 1; ; attempt++) {
+    let res;
+    try {
+      res = await queryLLMInternal(params);
+    } catch (err) {
+      if (params.signal?.aborted || attempt >= 2) throw err;
+      await new Promise(r => setTimeout(r, 3000));
+      continue;
+    }
+    if (res && res.ok === false) {
+      const transient = res.status === 429 || res.status >= 500;
+      if (transient && attempt < 2 && !params.signal?.aborted) {
+        await new Promise(r => setTimeout(r, 3000));
+        continue;
+      }
+      throw new Error(`Model request failed: ${String(res.error || `HTTP ${res.status}`).slice(0, 500)}`);
+    }
+    return res;
+  }
+}
+
 export async function executeServerSessionTurn({
   threadId = "default_thread",
   botId = "bot_r1",
@@ -34,9 +58,11 @@ export async function executeServerSessionTurn({
   prompt = "",
   systemPrompt = "",
   verifyCommand = "",
-  maxSteps = 30
+  maxSteps = 30,
+  turnId = ""
 }) {
   const turnRecord = {
+    turnId,
     threadId,
     botId,
     botName,
@@ -49,11 +75,12 @@ export async function executeServerSessionTurn({
     startedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     toolCalls: [],
+    remembered: [],
     finalContent: "",
     reasoning: "",
     abortController: new AbortController()
   };
-  activeServerTurns.set(threadId, turnRecord);
+  activeServerTurns.set(serverTurnKey(threadId, botId), turnRecord);
 
   let state = loadWorkspaceDiskState() || { threads: [], bots: [] };
   let thread = (state.threads || []).find(t => t.id === threadId);
@@ -114,6 +141,7 @@ export async function executeServerSessionTurn({
   if (chkList.length > 30) chkList.shift();
 
   broadcastEvent("turn_progress", {
+    turnId,
     threadId,
     botId,
     step: 0,
@@ -142,6 +170,7 @@ export async function executeServerSessionTurn({
       conversationMessages.length = 0;
       conversationMessages.push(...compactRes.messages);
       broadcastEvent("session_compacted", {
+        turnId,
         threadId,
         botId,
         compactedTurnsCount: compactRes.compactedTurnsCount,
@@ -167,6 +196,7 @@ export async function executeServerSessionTurn({
       turnRecord.message = `${botName} thinking (Step ${turnRecord.step}/${turnRecord.maxSteps})...`;
 
       broadcastEvent("turn_progress", {
+        turnId,
         threadId,
         botId,
         step: turnRecord.step,
@@ -175,7 +205,7 @@ export async function executeServerSessionTurn({
         message: turnRecord.message
       });
 
-      const llmRes = await queryLLMInternal({
+      const llmRes = await queryModelWithRetry({
         provider,
         baseUrl,
         apiKey,
@@ -214,6 +244,16 @@ export async function executeServerSessionTurn({
           function: { name: tt.tool, arguments: JSON.stringify(tt.args) }
         });
       }
+      for (const e of parseSurgicalPatchesText(replyContent)) {
+        allToolCalls.push({
+          id: "call_patch_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+          type: "function",
+          function: { name: "exact_edit", arguments: JSON.stringify(e) }
+        });
+      }
+      for (const fact of parseRememberDirectives(replyContent)) {
+        if (!turnRecord.remembered.includes(fact)) turnRecord.remembered.push(fact);
+      }
       for (const f of filesToWrite) {
         allToolCalls.push({
           id: "call_file_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
@@ -232,6 +272,7 @@ export async function executeServerSessionTurn({
             content: `[RUNNER] ${unfulfilled} Call the tool now (prefer a native tool call; for a text tag, keep every [ and ] balanced), or, if the task is finished or blocked, say so plainly with the evidence.`
           });
           broadcastEvent("turn_progress", {
+            turnId,
             threadId,
             botId,
             step: turnRecord.step,
@@ -245,6 +286,7 @@ export async function executeServerSessionTurn({
           verifyRunCount++;
           turnRecord.message = `${botName} running project verification (${verifyCommand})...`;
           broadcastEvent("turn_progress", {
+            turnId,
             threadId,
             botId,
             step: turnRecord.step,
@@ -288,6 +330,7 @@ export async function executeServerSessionTurn({
 
         turnRecord.message = `${botName} executing ${fnName}...`;
         broadcastEvent("turn_progress", {
+          turnId,
           threadId,
           botId,
           step: turnRecord.step,
@@ -352,10 +395,16 @@ export async function executeServerSessionTurn({
       turnRecord.message = "Turn completed successfully";
     }
   } catch (err) {
-    turnRecord.status = "error";
-    turnRecord.error = err.message;
-    turnRecord.message = `Turn error: ${err.message}`;
-    finalVisibleContent = (finalVisibleContent ? finalVisibleContent + "\n\n" : "") + `Error during session execution: ${err.message}`;
+    if (turnRecord.abortController.signal.aborted) {
+      // Stopping aborts an in-flight model request; that is a stop, not an error.
+      turnRecord.status = "stopped";
+      turnRecord.message = "Turn stopped";
+    } else {
+      turnRecord.status = "error";
+      turnRecord.error = err.message;
+      turnRecord.message = `Turn error: ${err.message}`;
+      finalVisibleContent = (finalVisibleContent ? finalVisibleContent + "\n\n" : "") + `Error during session execution: ${err.message}`;
+    }
   }
 
   turnRecord.finalContent = finalVisibleContent;
@@ -380,13 +429,15 @@ export async function executeServerSessionTurn({
   }
 
   broadcastEvent("turn_complete", {
+    turnId,
     threadId,
     botId,
     botName,
     status: turnRecord.status,
     finalContent: finalVisibleContent,
     reasoning: accumulatedReasoning,
-    toolCallsCount: turnRecord.toolCalls.length
+    toolCallsCount: turnRecord.toolCalls.length,
+    remembered: turnRecord.remembered
   });
 
   return turnRecord;

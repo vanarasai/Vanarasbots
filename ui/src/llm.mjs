@@ -77,6 +77,8 @@ export async function resolveOpenRouterModelSlug(requestedModel, cleanBase, head
 }
 
 // 6B-2. Unified LLM Query Function (OpenAI, Grok, Anthropic, Gemini, Local)
+const LOCAL_COMPLETION_TIMEOUT_MS = 10 * 60 * 1000;
+
 export async function queryLLMInternal(params = {}) {
   const {
     provider = "local",
@@ -295,8 +297,12 @@ export async function queryLLMInternal(params = {}) {
     body: JSON.stringify(payload),
     signal
   };
+  // A non-streaming completion sends its response headers only when generation finishes, so this timeout
+  // bounds the whole generation, not the connection. A local model writing a long reply routinely needs
+  // minutes; 25s cut those replies off and ended the agent's turn. Unreachable servers still fail fast
+  // (connection refused) and fall through to the other local candidates.
   let upstream = provider === "local"
-    ? await fetchWithLocalFallback(cleanBase, "/chat/completions", reqInit, 25000)
+    ? await fetchWithLocalFallback(cleanBase, "/chat/completions", reqInit, LOCAL_COMPLETION_TIMEOUT_MS)
     : await fetch(chatUrl, reqInit);
 
   let raw = await upstream.text();

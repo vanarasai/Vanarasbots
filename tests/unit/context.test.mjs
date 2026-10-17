@@ -110,5 +110,10 @@ test("unfulfilled action: announced-but-not-run work and unparsed tool tags are 
   assert.match(detectUnfulfilledAction("[TOOL: shell | echo \"[\" broken"), /could not be parsed/);
   assert.equal(detectUnfulfilledAction("All 12 tests pass; the WAV is 24 kHz speech."), null);
   assert.equal(detectUnfulfilledAction("Should I regenerate the episode?"), null);
+  assert.match(detectUnfulfilledAction("Most likely causes: missing model, wrong sample rate.\nShould I proceed?"), /need no permission/);
+  assert.match(detectUnfulfilledAction("Want me to run the full diagnostics?"), /need no permission/);
+  assert.equal(detectUnfulfilledAction("Should I delete the old output folder?"), null);
+  assert.equal(detectUnfulfilledAction("Should I push this branch?"), null);
+  assert.equal(detectUnfulfilledAction("Can I check with Kokoro or switch to Piper?"), null);
   assert.equal(detectUnfulfilledAction(""), null);
 });

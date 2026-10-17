@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -137,5 +138,98 @@ export function registerTier4Tests(runner) {
     const lines = content.split(/\r?\n/);
     const tableHeader = lines.find(l => l.includes("|") && l.includes("Vanaras") && l.includes("Cursor"));
     assert(tableHeader, "Benchmark report must contain comparison table header with Vanaras and Cursor");
+  });
+
+  // T4.5 / T4.6 drive the real server-side session runner against a scripted OpenAI-compatible model.
+  // The script is chosen by the request's model id; each reply is consumed in order.
+  async function withFakeModel(scripts, fn) {
+    const seen = {};
+    const server = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", c => { body += c; });
+      req.on("end", async () => {
+        if (!req.url.endsWith("/chat/completions")) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ data: [] }));
+          return;
+        }
+        const payload = JSON.parse(body || "{}");
+        (seen[payload.model] ||= []).push(payload.messages);
+        const script = scripts[payload.model];
+        const step = script.replies[Math.min(seen[payload.model].length - 1, script.replies.length - 1)];
+        if (script.delayMs) await new Promise(r => setTimeout(r, script.delayMs));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: step.content || "", tool_calls: step.tool_calls } }] }));
+      });
+    });
+    await new Promise(r => server.listen(0, "127.0.0.1", r));
+    try {
+      return await fn(`http://127.0.0.1:${server.address().port}/v1`, seen);
+    } finally {
+      server.close();
+    }
+  }
+
+  async function configureFakeAgent(botId, baseUrl, model) {
+    const r = await requestJson("POST", "/api/agent/skill", {
+      botId, botName: botId, action: "set", skillMarkdown: "# test agent",
+      agentConfig: { provider: "local", baseUrl, model, permissionPolicy: "auto" }
+    });
+    assertEqual(r.status, 200, `configuring ${botId}`);
+  }
+
+  async function waitForTurns(threadId, botIds, timeoutMs = 30000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const st = await requestJson("GET", "/api/sessions/status");
+      const mine = (st.body.turns || []).filter(t => t.threadId === threadId && botIds.includes(t.botId));
+      if (mine.length === botIds.length && mine.every(t => t.status !== "running")) return mine;
+      await new Promise(r => setTimeout(r, 250));
+    }
+    throw new Error(`turns for ${botIds.join(", ")} did not finish within ${timeoutMs}ms`);
+  }
+
+  // T4.5: An agent that announces work without calling a tool is pushed to act, and the turn then runs the tool.
+  runner.register(4, "M6", "F12", "T4.5_session_runner_pushes_announced_work_to_run", async () => {
+    await withFakeModel({
+      announcer: {
+        replies: [
+          { content: "Running full audio diagnostics now:" },
+          { content: "", tool_calls: [{ id: "c1", type: "function", function: { name: "shell_exec", arguments: JSON.stringify({ command: "echo diag-ok" }) } }] },
+          { content: "Diagnostics ran: the output was diag-ok." }
+        ]
+      }
+    }, async (baseUrl, seen) => {
+      const botId = "bot_e2e_announcer";
+      const threadId = `thread_e2e_nudge_${Date.now()}`;
+      await configureFakeAgent(botId, baseUrl, "announcer");
+      const start = await requestJson("POST", "/api/sessions/turn", { threadId, botId, botName: "Announcer", prompt: "run diagnostics", maxSteps: 6 });
+      assertEqual(start.status, 200, `turn start: ${start.raw}`);
+      const [turn] = await waitForTurns(threadId, [botId]);
+      assertEqual(turn.status, "completed", "turn must complete after the nudge");
+      const st = await requestJson("GET", `/api/sessions/status?threadId=${encodeURIComponent(threadId)}`);
+      const calls = st.body.turn.toolCalls || [];
+      assert(calls.some(c => c.name === "shell_exec" && /diag-ok/.test(c.output)), `shell_exec must have run: ${JSON.stringify(calls)}`);
+      assertMatch(st.body.turn.finalContent, /diag-ok/, "final answer must come from the post-tool reply");
+      const secondRequest = JSON.stringify(seen.announcer[1] || []);
+      assertMatch(secondRequest, /\[RUNNER\].*did not call any tool/, "the model must be told its announcement ran nothing");
+    });
+  });
+
+  // T4.6: Two agents in one group thread run server turns at the same time instead of the second being refused.
+  runner.register(4, "M6", "F12", "T4.6_session_runner_runs_teammates_concurrently_in_one_thread", async () => {
+    await withFakeModel({
+      slow: { delayMs: 1200, replies: [{ content: "Done: reviewed the module." }] }
+    }, async (baseUrl) => {
+      const threadId = `thread_e2e_squad_${Date.now()}`;
+      const bots = ["bot_e2e_alpha", "bot_e2e_beta"];
+      for (const b of bots) await configureFakeAgent(b, baseUrl, "slow");
+      const starts = await Promise.all(bots.map(b =>
+        requestJson("POST", "/api/sessions/turn", { threadId, botId: b, botName: b, prompt: "review", maxSteps: 3 })
+      ));
+      starts.forEach((r, i) => assertEqual(r.status, 200, `${bots[i]} start: ${r.raw}`));
+      const turns = await waitForTurns(threadId, bots);
+      assert(turns.every(t => t.status === "completed"), `both turns must complete: ${JSON.stringify(turns.map(t => [t.botId, t.status]))}`);
+    });
   });
 }

@@ -1,7 +1,7 @@
 import "./_env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { VANARAS_NATIVE_TOOLS, parseTextToolCalls, parseDeliverableBlocksText } from "../../ui/src/native-tools.mjs";
+import { VANARAS_NATIVE_TOOLS, parseTextToolCalls, parseDeliverableBlocksText, parseRememberDirectives, parseSurgicalPatchesText } from "../../ui/src/native-tools.mjs";
 
 test("native tool schema: every tool is a well-formed OpenAI-compatible function definition", () => {
   assert.ok(VANARAS_NATIVE_TOOLS.length >= 15);
@@ -108,4 +108,42 @@ test("text fallback: brackets inside a command do not end the tag early (regress
   assert.equal(b.args.command, "[ -f a.txt ] && echo yes");
   const calls = parseTextToolCalls("[TOOL: fs_read | a[0].py] then [TOOL: git_status] and [TOOL: shell_exec | echo broken");
   assert.deepEqual(calls.map(c => c.tool), ["fs_read", "git_status"], "an unterminated tag is ignored");
+});
+
+test("patch blocks: every SEARCH/REPLACE hunk becomes an exact_edit, across blocks and without END markers", () => {
+  const text = [
+    "Fixing both:",
+    "===PATCH: engine.py===",
+    "<<<<<<< SEARCH",
+    "import kokoro",
+    "=======",
+    "import kokoro_onnx as kokoro",
+    ">>>>>>> REPLACE",
+    "<<<<<<< SEARCH",
+    "rate = 22050",
+    "=======",
+    "rate = 24000",
+    ">>>>>>> REPLACE",
+    "===END_PATCH===",
+    "===PATCH: app.py===",
+    "<<<<<<< SEARCH",
+    "main()",
+    "=======",
+    "main(sys.argv)",
+    ">>>>>>> REPLACE"
+  ].join("\n");
+  assert.deepEqual(parseSurgicalPatchesText(text), [
+    { filePath: "engine.py", oldString: "import kokoro", newString: "import kokoro_onnx as kokoro" },
+    { filePath: "engine.py", oldString: "rate = 22050", newString: "rate = 24000" },
+    { filePath: "app.py", oldString: "main()", newString: "main(sys.argv)" }
+  ]);
+  assert.deepEqual(parseSurgicalPatchesText("no patches"), []);
+});
+
+test("remember directives: facts are extracted once each, in order", () => {
+  assert.deepEqual(
+    parseRememberDirectives("ok [REMEMBER: engine imports kokoro_onnx] and [REMEMBER: use Python 3.12] [REMEMBER: use Python 3.12]"),
+    ["engine imports kokoro_onnx", "use Python 3.12"]
+  );
+  assert.deepEqual(parseRememberDirectives(""), []);
 });

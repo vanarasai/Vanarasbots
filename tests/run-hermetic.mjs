@@ -62,9 +62,10 @@ async function main() {
   // Sync working tree changes into the cloned sandbox so in-flight edits are tested
   const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: ROOT_DIR, stdio: "pipe" }).toString("utf8");
   for (const line of dirty.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const rel = trimmed.slice(3).trim();
+    // Porcelain lines are "XY <path>": the status occupies two fixed columns, the first of which is a space
+    // for unstaged edits (" M ui/x"). Trimming first would shift the path and drop its first character.
+    if (!line.trim()) continue;
+    const rel = line.slice(3).trim().replace(/^.* -> /, "");
     if (rel.startsWith(".worktrees") || rel.startsWith(".vanaras") || rel.startsWith("target") || rel.startsWith("node_modules")) continue;
     const src = path.join(ROOT_DIR, rel);
     const dst = path.join(tempRepoDir, rel);

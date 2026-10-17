@@ -135,7 +135,18 @@ export function detectUnfulfilledAction(reply = "") {
     return "Your reply contains a [TOOL: ...] tag that could not be parsed (unbalanced [ ] brackets or a missing closing ]), so nothing ran.";
   }
   const lastLine = text.split("\n").map(l => l.trim()).filter(Boolean).pop() || "";
-  if (/\?\s*$/.test(lastLine)) return null;
+  if (/\?\s*$/.test(lastLine)) {
+    // Asking leave to look ("Should I run the diagnostics?", "Want me to check the logs?") is not a real
+    // decision for the user: checks are read-only, and risky commands already go through the approval gate.
+    // Choices with consequences (delete, push, deploy, which option...) stay questions.
+    const asksLeave = /\b(?:should|shall|can|may) i\b|\b(?:want|like) me to\b|\bshould we\b|\bproceed\b/i.test(lastLine);
+    const routine = /\b(?:run|check|test|inspect|look|diagnos\w*|verify|investigate|debug|try|proceed|continue|dig)\b/i.test(lastLine);
+    const consequential = /\b(?:delete|remove|drop|wipe|reset|push|publish|deploy|release|merge|overwrite|rewrite|migrate|commit|pay|purchase|or)\b/i.test(lastLine);
+    if (asksLeave && routine && !consequential) {
+      return `You asked "${lastLine.slice(0, 120)}" instead of doing it. Read-only checks and diagnostics need no permission (risky commands are sent to the user for approval automatically), so run them now and report what the output shows.`;
+    }
+    return null;
+  }
   if (/:\s*$/.test(lastLine) || /^(?:now\s+)?(?:let me|i'll|i will|i'm going to|running|checking|fixing|retrying|next,? i)\b/i.test(lastLine)) {
     return `You said "${lastLine.slice(0, 120)}" but did not call any tool, so nothing ran.`;
   }

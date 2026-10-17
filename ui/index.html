@@ -4084,11 +4084,12 @@ Auto-save: enabled</pre>
         : `5. In this group squad room, talk naturally with your teammates (${otherAgentMentions}) by @mentioning them during discussions, or hand off implementation/review tasks as needed.`;
       const toolsProtocolBlock = `\n\nCODE & TOOL PROTOCOL (${enabledTools})${mcpLine}:
 1. Answer the user's message directly and naturally. If the user greets you (e.g. "Hi", "Hello") or asks a question, respond briefly in 1–3 sentences without invoking [TOOL: ...] tags and NEVER invent an unrequested project.
-2. When asked to build, fix, or create software, web apps, shaders, or scripts, output complete runnable files immediately in your visible response using:
+2. When asked to build, fix, diagnose, or create software, web apps, shaders, or scripts, output complete runnable files or tool directives IMMEDIATELY in your visible response using:
 ===FILE: <relative_filename>===
 <full source code>
 ===END_FILE===
-NEVER output a placeholder message like "Let me first inspect the current state of my workspace" without also including the \`===FILE: ...===\` or \`[TOOL: ...]\` tags in the same message!
+or \`===PATCH: <relative_filename>===\` or \`[TOOL: shell | <command>]\`.
+CRITICAL: You do NOT have asynchronous background processes running for you! NEVER output promises like "running diagnostics now", "hang tight — results incoming in ~5s", "checking now...", or "I will patch next" without outputting the actual \`[TOOL: ...]\` or \`===FILE: ...===\` / \`===PATCH: ...===\` tags in the SAME turn! If you do not emit a tool call or code block, NO work will happen and you will abandon the user.
 3. When surgically editing an existing file, output:
 ===PATCH: <relative_filename>===
 <<<<<<< SEARCH
@@ -5028,6 +5029,32 @@ ${handoffRule}
           ensureLiveMessageAtBottom(targetThread, liveMsg);
 
           if (stepObservations.length === 0) {
+            // Anti-stall guard: Check if the model emitted a conversational deferred promise
+            // (e.g. "Hang tight, running diagnostics now... results incoming in ~5s... I'll patch next")
+            // without actually calling tools or writing code. If detected, do NOT terminate the turn!
+            // Automatically prompt the model to execute immediately in the next ReAct iteration.
+            const hasDeferredPromise = (reactStep < maxSteps - 1) &&
+              (stepFiles.length === 0 && stepPatches.length === 0) &&
+              /(?:running (?:full )?diagnostics|live checks in progress|hang tight|results incoming|i'll patch|i will patch|let me check|in ~\d+s|will do and|checking now|fixing both|diagnostics now|checking everything|inspecting now)/i.test(stepCleaned);
+
+            if (hasDeferredPromise) {
+              hooksTrace.push("AutoNudge(UnfulfilledPromise)");
+              activeWorkingThreads[threadId] = `${targetBot.name} executing promised diagnostics & fixes...`;
+              renderThreadList();
+
+              priorStepsReasoning = liveMsg.reasoning || accumulatedReasoning;
+              const strippedPrev = stripAllToolDirectives(stepCleaned);
+              if (strippedPrev && strippedPrev.length > 20) {
+                priorStepsVisibleText = [priorStepsVisibleText, strippedPrev].filter(Boolean).join("\n\n").trim();
+              }
+
+              currentPrompt += `\n\n[SYSTEM DIRECTIVE — IMMEDIATE TOOL EXECUTION REQUIRED]:\nYou stated that diagnostics/checks are in progress or promised incoming results and patches, but you did NOT emit any [TOOL: ...] command or ===FILE:=== / ===PATCH:=== block. There are NO background workers — you must execute your actions RIGHT NOW in this step!\n1. If you need to run checks or diagnostics, invoke [TOOL: shell | <command>] or [TOOL: fs_read | <path>] now.\n2. If you know what to patch, output ===PATCH: <filename>=== or ===FILE: <filename>=== now.\nDo NOT say "Hang tight" or "running now" without outputting the tool tags or code blocks!`;
+
+              reply = await queryBotLLM(targetBot, sysPrompt, currentPrompt, 8192, onStreamProgress, turnController.signal);
+              if (!isStillActive()) return;
+              continue;
+            }
+
             reply.content = stepCleaned;
             if (stepHook.reasoning !== undefined) {
               reply.reasoning = stepHook.reasoning;

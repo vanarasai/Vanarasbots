@@ -3975,12 +3975,89 @@ const server = http.createServer(async (req, res) => {
       if (targetPort && targetPort !== Number(PORT)) {
         await ensureAgentPortServerRunning(targetPort, botId);
       }
-      res.writeHead(302, {
-        "Location": targetUrlObj.toString(),
-        "Cache-Control": "no-cache"
-      });
-      res.end();
-      return;
+
+      const backendPath = `${targetUrlObj.pathname || "/"}${targetUrlObj.search || ""}`;
+      const backendUrl = `http://127.0.0.1:${targetPort}${backendPath}`;
+
+      try {
+        const fetchCtrl = new AbortController();
+        const fetchTimer = setTimeout(() => fetchCtrl.abort(), 4000);
+        const upstream = await fetch(backendUrl, {
+          signal: fetchCtrl.signal,
+          headers: { "Accept": req.headers.accept || "*/*" }
+        });
+        clearTimeout(fetchTimer);
+
+        const contentType = upstream.headers.get("content-type") || "text/html; charset=utf-8";
+        if (contentType.includes("text/html")) {
+          let html = await upstream.text();
+          const baseTag = `<base href="http://localhost:${targetPort}/">`;
+          if (/<head\b[^>]*>/i.test(html)) {
+            html = html.replace(/(<head\b[^>]*>)/i, `$1\n  ${baseTag}`);
+          } else {
+            html = `<head>${baseTag}</head>\n${html}`;
+          }
+          res.writeHead(upstream.status, {
+            "Content-Type": "text/html; charset=utf-8",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-cache"
+          });
+          res.end(html);
+          return;
+        } else {
+          res.writeHead(upstream.status, {
+            "Content-Type": contentType,
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-cache"
+          });
+          if (upstream.body) {
+            const reader = upstream.body.getReader();
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              res.write(value);
+            }
+          }
+          res.end();
+          return;
+        }
+      } catch (proxyErr) {
+        // Fallback: Return clean auto-refreshing loading shell so the iframe never appears as a blank white box
+        const loadingHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Loading Web Preview...</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: #f8fafc; text-align: center; }
+    .box { padding: 24px; max-width: 380px; }
+    .spinner { width: 32px; height: 32px; border: 3px solid rgba(255,255,255,0.15); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f1f5f9; }
+    p { margin: 0 0 16px; font-size: 12px; color: #94a3b8; line-height: 1.5; }
+    a { display: inline-block; padding: 6px 14px; font-size: 12px; font-weight: 600; color: #38bdf8; text-decoration: none; border: 1px solid rgba(56,189,248,0.3); border-radius: 6px; }
+  </style>
+  <script>
+    setTimeout(function() { window.location.reload(); }, 1200);
+  </script>
+</head>
+<body>
+  <div class="box">
+    <div class="spinner"></div>
+    <h3>Starting App Preview on Port ${targetPort}...</h3>
+    <p>Connecting to <code>http://localhost:${targetPort}</code>. Connecting automatically...</p>
+    <a href="http://localhost:${targetPort}" target="_blank">Open in New Tab</a>
+  </div>
+</body>
+</html>`;
+        res.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "no-cache"
+        });
+        res.end(loadingHtml);
+        return;
+      }
     } catch (e) {
       return sendJson(res, 500, { ok: false, error: e.message });
     }
@@ -4095,7 +4172,7 @@ server.on("error", (err) => {
   console.error("Server error:", err);
 });
 
-server.listen(PORT, "0.0.0.0", () => {
+server.listen(PORT, () => {
   const promoted = syncAllWorktreesToMainRoot();
   ensureAgentPortServerRunning(3847, "bot_r1").catch(() => {});
   console.log(`Vanaras Desktop Engine listening at http://localhost:${PORT}${promoted.length > 0 ? ` (synced ${promoted.length} deliverables to main root)` : ""}`);

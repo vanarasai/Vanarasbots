@@ -7362,9 +7362,13 @@ ${handoffRule}
       const urlInput = document.getElementById("vncMountUrlInput");
       const vncFrame = document.getElementById("deliverableVncFrame");
       if (!urlInput || !vncFrame) return;
-      const url = urlInput.value.trim() || "http://localhost:4101";
+      let url = urlInput.value.trim();
+      if (!url || url === "http://localhost:4101") {
+        url = "http://localhost:3847";
+        urlInput.value = url;
+      }
       vncFrame.src = url;
-      showToast(`Mounted VNC/Web Sandbox: ${url}`);
+      showToast(`Mounted Web Sandbox: ${url}`);
     }
 
     function updateEditorLineNumbers() {
@@ -7485,9 +7489,18 @@ ${handoffRule}
         if (vncWrap) vncWrap.classList.add("hidden");
         frame.classList.remove("hidden");
         const htmlFile = active.name.endsWith(".html") ? active : (deliverables.find(d => d.name.endsWith(".html")) || null);
-        frame.srcdoc = htmlFile
-          ? htmlFile.content
-          : `<body style="font-family:-apple-system,sans-serif; padding:24px; background:#fff; color:#111;"><pre style="white-space:pre-wrap;">${escapeHtml(active.content)}</pre></body>`;
+        if (htmlFile) {
+          let htmlContent = String(htmlFile.content || "");
+          const baseTag = `<base href="http://localhost:3847/">`;
+          if (/<head\b[^>]*>/i.test(htmlContent)) {
+            htmlContent = htmlContent.replace(/(<head\b[^>]*>)/i, `$1\n  ${baseTag}`);
+          } else {
+            htmlContent = `<head>${baseTag}</head>\n${htmlContent}`;
+          }
+          frame.srcdoc = htmlContent;
+        } else {
+          frame.srcdoc = `<body style="font-family:-apple-system,sans-serif; padding:24px; background:#fff; color:#111;"><pre style="white-space:pre-wrap;">${escapeHtml(active.content)}</pre></body>`;
+        }
       } else {
         if (diffWrap) diffWrap.classList.add("hidden");
         frame.classList.add("hidden");
@@ -7935,7 +7948,7 @@ ${handoffRule}
               </div>
             </div>
             <div class="inline-webpage-body">
-              <iframe sandbox="allow-scripts allow-forms allow-same-origin" src="/api/workspace/web-preview?url=${encodeURIComponent(fullUrl)}&botId=${encodeURIComponent(botId || "")}" style="width:100%; height:320px; border:1px solid var(--border-subtle); border-radius:8px; background:#ffffff; display:block;"></iframe>
+              <iframe src="/api/workspace/web-preview?url=${encodeURIComponent(fullUrl)}&botId=${encodeURIComponent(botId || "")}" allow="autoplay; clipboard-write" style="width:100%; height:420px; border:1px solid var(--border-subtle); border-radius:8px; background:#ffffff; display:block;"></iframe>
             </div>
           </div>
         `);

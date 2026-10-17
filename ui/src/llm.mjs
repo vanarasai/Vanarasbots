@@ -400,6 +400,10 @@ export async function queryLLMInternal(params = {}) {
     reasoning: rawReason,
     tool_calls,
     model: parsedChat?.model || model,
+    // Token counts as the provider reports them (OpenAI-compatible APIs, OpenRouter, Ollama); null if absent.
+    usage: parsedChat?.usage
+      ? { prompt: Number(parsedChat.usage.prompt_tokens) || 0, completion: Number(parsedChat.usage.completion_tokens) || 0 }
+      : null,
     raw
   };
 }

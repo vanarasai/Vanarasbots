@@ -88,8 +88,12 @@ export async function executeServerSessionTurn({
   systemPrompt = "",
   verifyCommand = "",
   maxSteps = 30,
-  turnId = ""
+  turnId = "",
+  disabledTools = []
 }) {
+  // Tools withheld from this turn: not offered to the model, and refused if it asks for them anyway.
+  const withheld = new Set((Array.isArray(disabledTools) ? disabledTools : []).map(String));
+  const offeredTools = VANARAS_NATIVE_TOOLS.filter(t => !withheld.has(t.function?.name));
   const turnRecord = {
     turnId,
     threadId,
@@ -104,6 +108,7 @@ export async function executeServerSessionTurn({
     startedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     toolCalls: [],
+    usage: { prompt: 0, completion: 0, calls: 0, reported: 0, toolOutputChars: 0 },
     remembered: [],
     finalContent: "",
     reasoning: "",
@@ -239,9 +244,15 @@ export async function executeServerSessionTurn({
         temperature: 0.2,
         max_tokens: 8192,
         enableReasoning: true,
-        tools: VANARAS_NATIVE_TOOLS,
+        tools: offeredTools,
         signal: turnRecord.abortController.signal
       });
+      turnRecord.usage.calls++;
+      if (llmRes.usage) {
+        turnRecord.usage.reported++;
+        turnRecord.usage.prompt += llmRes.usage.prompt;
+        turnRecord.usage.completion += llmRes.usage.completion;
+      }
 
       if (turnRecord.abortController.signal.aborted) {
         turnRecord.status = "stopped";
@@ -365,14 +376,16 @@ export async function executeServerSessionTurn({
           message: turnRecord.message
         });
 
-        const toolRes = await executeAgentToolInternal({
-          botId,
-          botName,
-          tool: fnName,
-          args: fnArgs,
-          ...fnArgs,
-          threadId
-        });
+        const toolRes = withheld.has(fnName)
+          ? { status: 200, data: { ok: false, error: `${fnName} is not available in this turn.` } }
+          : await executeAgentToolInternal({
+            botId,
+            botName,
+            tool: fnName,
+            args: fnArgs,
+            ...fnArgs,
+            threadId
+          });
 
         const outputStr = toolRes.data?.output !== undefined ? String(toolRes.data.output) : JSON.stringify(toolRes.data || toolRes);
         executedToolResults.push({
@@ -381,6 +394,7 @@ export async function executeServerSessionTurn({
           output: outputStr
         });
         turnRecord.toolCalls.push({ step: turnRecord.step, name: fnName, args: fnArgs, output: outputStr });
+        turnRecord.usage.toolOutputChars += outputStr.length;
         broadcastEvent("turn_progress", {
           turnId,
           threadId,

@@ -23,7 +23,7 @@ export async function handleSessionsRoutes(req, res) {
   if (req.method === "POST" && req.url === "/api/sessions/turn") {
     try {
       const body = await readJsonBody(req);
-      const { threadId, botId = "bot_r1", botName = "R1", prompt = "", systemPrompt = "", verifyCommand = "", maxSteps = 30, turnId = "" } = body;
+      const { threadId, botId = "bot_r1", botName = "R1", prompt = "", systemPrompt = "", verifyCommand = "", maxSteps = 30, turnId = "", disabledTools = [] } = body;
       if (!prompt && !verifyCommand) {
         return sendJson(res, 400, { error: "prompt or verifyCommand required" });
       }
@@ -45,7 +45,8 @@ export async function handleSessionsRoutes(req, res) {
         systemPrompt,
         verifyCommand,
         maxSteps: Number(maxSteps) || 30,
-        turnId: String(turnId || "")
+        turnId: String(turnId || ""),
+        disabledTools
       }).catch(err => {
         console.error("Unhandled error in executeServerSessionTurn:", err);
       });
@@ -88,6 +89,7 @@ export async function handleSessionsRoutes(req, res) {
       message: t.message,
       // Shorter output tails here: this list is polled every few seconds by every open window.
       toolCalls: (t.toolCalls || []).map((c, i) => summarizeToolStep(c, i, 600)),
+      usage: t.usage,
       startedAt: t.startedAt,
       updatedAt: t.updatedAt,
       ...(t.status === "running" ? {} : {

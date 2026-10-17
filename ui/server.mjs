@@ -511,13 +511,13 @@ function splitReasoningAndVisibleOutput(rawOutput = "", priorReasoning = "") {
   if (cleanedOutput.trim() === "*(Completed reasoning pass — see Internal Reasoning above)*") {
     cleanedOutput = "";
   }
-  cleanedOutput = cleanedOutput.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
+  cleanedOutput = cleanedOutput.replace(/<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/gi, (_, t) => {
     if (t && t.trim()) thoughts.push(t.trim());
     return "";
   });
-  const openIdx = cleanedOutput.search(/<think>/i);
-  if (openIdx !== -1 && !/<\/think>/i.test(cleanedOutput.slice(openIdx))) {
-    const rawThink = cleanedOutput.slice(openIdx).replace(/^<think>/i, "").trim();
+  const openIdx = cleanedOutput.search(/<(?:think|thinking)>/i);
+  if (openIdx !== -1 && !/<\/(?:think|thinking)>/i.test(cleanedOutput.slice(openIdx))) {
+    const rawThink = cleanedOutput.slice(openIdx).replace(/^<(?:think|thinking)>/i, "").trim();
     if (rawThink) thoughts.push(rawThink);
     cleanedOutput = cleanedOutput.slice(0, openIdx);
   }
@@ -530,7 +530,7 @@ function splitReasoningAndVisibleOutput(rawOutput = "", priorReasoning = "") {
   let combinedReasoning = thoughts.join("\n\n").trim();
 
   // If visible output is empty because an unclosed <think> or delta.reasoning_content swallowed
-  // the final reply / ===FILE:=== / File 1: / [TOOL:...] blocks at the tail, split at the response boundary:
+  // the reply / ===FILE:=== / File 1: / [TOOL:...] blocks at the tail, split at the response boundary:
   if (!finalCleaned && combinedReasoning) {
     const transitionRx = /\n((?:@[a-zA-Z0-9_-]+\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n|(?:Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+)|File\s+1\s*:\s*[^\n]+\n)[\s\S]*)$/i;
     const m = combinedReasoning.match(transitionRx);
@@ -540,6 +540,8 @@ function splitReasoningAndVisibleOutput(rawOutput = "", priorReasoning = "") {
         .replace(/^Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+/i, "")
         .trim();
       combinedReasoning = combinedReasoning.slice(0, m.index).trim();
+    } else if (rawOutput && !priorReasoning && !rawOutput.trim().startsWith("<think>") && !rawOutput.trim().startsWith("<thinking>")) {
+      finalCleaned = rawOutput.trim();
     }
   }
 

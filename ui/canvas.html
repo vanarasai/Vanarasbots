@@ -4116,13 +4116,14 @@ ${handoffRule}
       if (visible.trim() === "*(Completed reasoning pass — see Internal Reasoning above)*") {
         visible = "";
       }
-      visible = visible.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => {
+      // Match both <think> and <thinking>
+      visible = visible.replace(/<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/gi, (_, t) => {
         if (t && t.trim()) thoughts.push(t.trim());
         return "";
       });
-      const openIdx = visible.search(/<think>/i);
-      if (openIdx !== -1 && !/<\/think>/i.test(visible.slice(openIdx))) {
-        const openThink = visible.slice(openIdx).replace(/^<think>/i, "").trim();
+      const openIdx = visible.search(/<(?:think|thinking)>/i);
+      if (openIdx !== -1 && !/<\/(?:think|thinking)>/i.test(visible.slice(openIdx))) {
+        const openThink = visible.slice(openIdx).replace(/^<(?:think|thinking)>/i, "").trim();
         if (openThink) thoughts.push(openThink);
         visible = visible.slice(0, openIdx);
       }
@@ -4135,7 +4136,7 @@ ${handoffRule}
       let thoughtText = thoughts.join("\n\n").trim();
 
       // If visibleText is empty because an unclosed <think> or delta.reasoning_content swallowed
-      // the final reply / ===FILE:=== / File 1: / [TOOL:...] blocks at the tail, split at the response boundary:
+      // the reply / ===FILE:=== / File 1: / [TOOL:...] blocks at the tail, split at the response boundary:
       if (!visibleText && thoughtText) {
         const transitionRx = /\n((?:@[a-zA-Z0-9_-]+\b|===FILE:\s*[^\n=]+===|===PATCH:\s*[^\n=]+===|(?:Final\s+)?Response:\s*\n|(?:Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+)|File\s+1\s*:\s*[^\n]+\n)[\s\S]*)$/i;
         const m = thoughtText.match(transitionRx);
@@ -4145,6 +4146,9 @@ ${handoffRule}
             .replace(/^Let me write (?:all )?the (?:actual )?(?:files|code) now[^\n]*\n+/i, "")
             .trim();
           thoughtText = thoughtText.slice(0, m.index).trim();
+        } else if (rawText && !rawReasoning && !rawText.trim().startsWith("<think>") && !rawText.trim().startsWith("<thinking>")) {
+          // If rawText had visible content and no external reasoning was provided, preserve rawText
+          visibleText = rawText.trim();
         }
       }
 
@@ -4595,7 +4599,7 @@ ${handoffRule}
       delete activeWorkingThreads[thread.id];
 
       // Finalize or clean up any in-flight streaming message
-      thread.messages = thread.messages.filter(m => {
+      thread.messages = thread.messages.map(m => {
         if (m && (m.isStreaming || m.streaming)) {
           m.isStreaming = false;
           delete m.streaming;
@@ -4605,20 +4609,19 @@ ${handoffRule}
           const t = (m.text || "").trim();
           const r = (m.reasoning || "").trim();
           const isPlaceholder = !t || t === "▍" || t.startsWith("⏳ Thinking") || t.startsWith("Synthesizing squad");
-          if (isPlaceholder && !r) {
-            return false;
-          }
           if (isPlaceholder && r) {
             m.text = keepStoppedNote
               ? "*(Generation stopped by user — Chain-of-Thought preserved above)*"
               : "*(Completed reasoning pass — see Internal Reasoning above)*";
             m.thoughtOpen = true;
+          } else if (isPlaceholder && !r) {
+            m.text = keepStoppedNote ? "*(Generation stopped)*" : "(Turn completed)";
           } else if (keepStoppedNote) {
             m.thoughtOpen = true;
           }
         }
-        return true;
-      });
+        return m;
+      }).filter(Boolean);
 
       const controller = new AbortController();
       const nextCtx = {
@@ -4654,7 +4657,12 @@ ${handoffRule}
       if (thread.type === "dm") {
         return getBot(thread.botId);
       }
+      const lower = String(promptText || "").toLowerCase();
       const relay = buildDynamicSquadRelay(thread);
+      if (/\b(?:ui|frontend|css|html|styling|look like|theme|layout|webpage|page|interface|screen|component|design|dashboard|player)\b/i.test(lower)) {
+        const frontendBot = relay.find(b => classifyAgentSquadArchetype(b) === "frontend") || state.bots.find(b => classifyAgentSquadArchetype(b) === "frontend");
+        if (frontendBot) return frontendBot;
+      }
       return relay[0] || state.bots[0];
     }
 
@@ -4959,10 +4967,8 @@ ${handoffRule}
           }
           if (fullVisibleNow) {
             liveMsg.text = fullVisibleNow;
-          } else if (liveMsg.reasoning) {
-            liveMsg.text = "⏳ Thinking...";
-          } else {
-            liveMsg.text = "▍";
+          } else if (!liveMsg.text || liveMsg.text === "▍" || liveMsg.text.startsWith("⏳ Thinking")) {
+            liveMsg.text = liveMsg.reasoning ? "⏳ Thinking..." : "▍";
           }
 
           const now = Date.now();
@@ -5036,11 +5042,10 @@ ${handoffRule}
             renderActiveThread();
           }
 
-          // Preserve reasoning across ReAct rounds; only keep prior visible text if it wasn't a short "Checking state first" stub
+          // Preserve reasoning & visible text across ReAct rounds
           priorStepsReasoning = liveMsg.reasoning || accumulatedReasoning;
           const strippedPrevVisible = stripAllToolDirectives(stepCleaned);
-          const isCheckingStub = strippedPrevVisible.length < 320 && /\b(checking|let me|on it|pulling|inspect|start by|i'll perform|i'll fix|isn't installed yet)\b/i.test(strippedPrevVisible);
-          if (!isCheckingStub && strippedPrevVisible) {
+          if (strippedPrevVisible && strippedPrevVisible.length > 20) {
             priorStepsVisibleText = [priorStepsVisibleText, strippedPrevVisible].filter(Boolean).join("\n\n").trim();
           }
           hooksTrace.push(`ReActObsStep(${reactStep + 1})`);

@@ -3071,6 +3071,26 @@ Auto-save: enabled</pre>
           }
         }
       } catch {}
+      await syncPendingApprovals();
+    }
+
+    // An approval request shown only by its live event is lost if the window missed it, and the agent's
+    // command then times out as if the user had ignored it. Show whatever is pending; drop a banner whose
+    // request is no longer pending (answered elsewhere or timed out).
+    async function syncPendingApprovals() {
+      try {
+        const res = await fetch("/api/approvals/list");
+        if (!res.ok) return;
+        const data = await res.json();
+        const pending = (data.approvals || []).filter(a => a && a.status === "pending");
+        if (pending.length > 0) {
+          if (!pending.some(a => a.approvalId === currentPendingApprovalId)) handleApprovalRequested(pending[0]);
+        } else if (currentPendingApprovalId) {
+          currentPendingApprovalId = null;
+          const banner = document.getElementById("vanarasApprovalBanner");
+          if (banner) banner.style.display = "none";
+        }
+      } catch {}
     }
 
     function getBot(botId) {

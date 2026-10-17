@@ -453,6 +453,107 @@ const agentBackgroundProcesses = new Map();
 const activeServerTurns = new Map();
 // P4: Dynamic Subagents (General, Explore, Plan) with Worktree Isolation
 const activeSubagents = new Map();
+// P3: Approvals (Allow/Ask/Deny) and Session Checkpoints / Rewind
+const activeApprovals = new Map();
+const sessionCheckpoints = new Map();
+
+function checkCommandPermission(cmdStr, { botId = "", role = "", permissionPolicy = "auto" } = {}) {
+  const trimmed = String(cmdStr || "").trim();
+
+  // 1. Strict DENY patterns (Destructive system operations, root escapes, fork bombs)
+  const denyPatterns = [
+    /\brm\s+-(?:[a-zA-Z]*r[a-zA-Z]*f|[a-zA-Z]*f[a-zA-Z]*r)\s+(?:(?:\/|\/\*|~|\$HOME|\.\.)(?:\s|$)|(?:\/(?:etc|usr|bin|sbin|var|System|Library))\b)/,
+    /(?::\(\)\s*\{\s*:\|:&\s*\};:|:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\};:)/,
+    /\b(mkfs|dd\s+if=|\bshutdown\b|\breboot\b|\binit\s+0)\b/,
+    />\s*(?:\/etc\/|\/usr\/|\/System\/|\/Library\/|\/dev\/(?!null\b))/,
+    /\bchmod\s+(?:-R\s+)?777\s+(?:(?:\/|~|\$HOME)(?:\s|$))/
+  ];
+  for (const pat of denyPatterns) {
+    if (pat.test(trimmed)) {
+      return {
+        policy: "deny",
+        reason: `Destructive system command matches security deny rule (${pat.source}): execution permanently forbidden.`
+      };
+    }
+  }
+
+  // 2. ASK patterns (Actions with external side effects or high impact)
+  const askPatterns = [
+    { regex: /\bgit\s+(?:push\b|reset\s+--hard\s+origin)/, reason: "Command pushes code to remote repository or resets to remote origin." },
+    { regex: /\b(?:npm|yarn|pnpm)\s+(?:publish|login)\b/, reason: "Command publishes package or modifies credentials." },
+    { regex: /\b(?:curl|wget)\s+[^|;&]+\|\s*(?:ba|z)?sh\b/, reason: "Piping remote network script directly to shell execution." },
+    { regex: /\brm\s+-(?:[a-zA-Z]*r[a-zA-Z]*f|[a-zA-Z]*f[a-zA-Z]*r)\b/, reason: "Recursive forced deletion command requires confirmation." }
+  ];
+
+  if (permissionPolicy === "strict" || permissionPolicy === "ask") {
+    const isSafeRead = /^(?:ls|cat|pwd|git\s+(?:status|diff|log|branch)|node\s+--check|echo|which|grep|find)\b/.test(trimmed);
+    if (!isSafeRead) {
+      return {
+        policy: "ask",
+        reason: `Agent is in strict approval mode: command '${trimmed.slice(0, 50)}...' requires user authorization.`
+      };
+    }
+  }
+
+  for (const p of askPatterns) {
+    if (p.regex.test(trimmed)) {
+      return { policy: "ask", reason: p.reason };
+    }
+  }
+
+  return { policy: "allow" };
+}
+
+function compactMessagesList(messages, maxRecent = 4) {
+  if (!Array.isArray(messages) || messages.length <= (maxRecent + 2)) {
+    return { compacted: false, messages };
+  }
+  const sysMsg = messages[0]?.role === "system" ? messages[0] : null;
+  const conversation = sysMsg ? messages.slice(1) : messages;
+
+  if (conversation.length <= maxRecent) {
+    return { compacted: false, messages };
+  }
+
+  const toSummarize = conversation.slice(0, conversation.length - maxRecent);
+  const preservedRecent = conversation.slice(conversation.length - maxRecent);
+
+  const actions = [];
+  const userGoals = [];
+  for (const m of toSummarize) {
+    if (m.role === "user") {
+      userGoals.push(String(m.content || "").slice(0, 150));
+    } else if (m.role === "assistant") {
+      const toolMatch = (m.content || "").match(/\[TOOL:\s*(\w+)/g);
+      if (toolMatch) actions.push(...toolMatch);
+    }
+  }
+
+  const summaryContent = [
+    `[CONTEXT COMPACTION SUMMARY - Earlier ${toSummarize.length} conversation turns compacted]`,
+    userGoals.length > 0 ? `Initial Goals: ${userGoals.slice(0, 3).join(" -> ")}` : "",
+    actions.length > 0 ? `Key Tools Run: ${Array.from(new Set(actions)).slice(0, 8).join(", ")}` : "",
+    `Summary: Previous turns completed requirements analysis and incremental worktree changes. Recent context retained below.`
+  ].filter(Boolean).join("\n");
+
+  const summaryMessage = {
+    id: "msg_compact_" + Date.now(),
+    role: "user",
+    content: summaryContent,
+    timestamp: new Date().toISOString()
+  };
+
+  const compacted = sysMsg
+    ? [sysMsg, summaryMessage, ...preservedRecent]
+    : [summaryMessage, ...preservedRecent];
+
+  return {
+    compacted: true,
+    compactedTurnsCount: toSummarize.length,
+    summary: summaryContent,
+    messages: compacted
+  };
+}
 
 function signalProcessTree(proc, signal = "SIGTERM") {
   if (!proc || !proc.pid) return false;
@@ -2604,6 +2705,68 @@ async function executeAgentToolInternal(params = {}) {
     if (!cmdStr) {
       return { status: 400, data: { ok: false, error: "Missing shell command" } };
     }
+
+    // P3: Permission check (Allow / Ask / Deny)
+    const permCheck = checkCommandPermission(cmdStr, {
+      botId,
+      role: botName,
+      permissionPolicy: savedAgentCfg.permissionPolicy || (args.permissionPolicy || "auto")
+    });
+
+    if (permCheck.policy === "deny") {
+      return {
+        status: 200,
+        data: {
+          ok: false,
+          error: `Permission Denied: ${permCheck.reason}`
+        }
+      };
+    }
+
+    if (permCheck.policy === "ask" && !args.approved && !params.approved) {
+      const approvalId = `appr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const approvalPromise = new Promise((resolve) => {
+        activeApprovals.set(approvalId, {
+          approvalId,
+          threadId: threadId || "",
+          botId: botId || "bot_r1",
+          botName: botName || "R1",
+          command: cmdStr,
+          reason: permCheck.reason,
+          status: "pending",
+          createdAt: Date.now(),
+          resolve
+        });
+      });
+
+      broadcastEvent("approval_requested", {
+        approvalId,
+        threadId: threadId || "",
+        botId: botId || "bot_r1",
+        botName: botName || "R1",
+        command: cmdStr,
+        reason: permCheck.reason
+      });
+
+      // Wait up to 60s for user response
+      const decision = await Promise.race([
+        approvalPromise,
+        new Promise(res => setTimeout(() => res({ decision: "timeout" }), 60000))
+      ]);
+
+      activeApprovals.delete(approvalId);
+
+      if (decision.decision !== "allow") {
+        return {
+          status: 200,
+          data: {
+            ok: false,
+            error: `Command '${cmdStr}' was ${decision.decision === "timeout" ? "timed out waiting for approval" : "denied by user"}.`
+          }
+        };
+      }
+    }
+
     const effectiveTimeout = Math.min(300000, Math.max(5000, Number(timeout || args.timeout || 120000)));
     const effectiveMaxOutput = Math.min(50000, Math.max(1000, Number(maxOutput || args.maxOutput || 25000)));
 
@@ -4682,6 +4845,30 @@ async function executeAgentToolInternal(params = {}) {
     }
     saveWorkspaceDiskState(state);
 
+    // P3: Session Checkpoint before turn execution
+    const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
+    let preTurnSha = "";
+    try {
+      preTurnSha = execSync("git rev-parse HEAD", { cwd: wt.worktreePath, stdio: "pipe", timeout: 4000 }).toString().trim();
+    } catch {}
+
+    const checkpointId = `chk_${threadId}_${Date.now()}`;
+    const checkpoint = {
+      checkpointId,
+      threadId,
+      botId,
+      botName,
+      preTurnSha,
+      messagesCount: (thread?.messages || []).length,
+      timestamp: new Date().toISOString()
+    };
+    if (!sessionCheckpoints.has(threadId)) {
+      sessionCheckpoints.set(threadId, []);
+    }
+    const chkList = sessionCheckpoints.get(threadId);
+    chkList.push(checkpoint);
+    if (chkList.length > 30) chkList.shift();
+
     broadcastEvent("turn_progress", {
       threadId,
       botId,
@@ -4701,6 +4888,21 @@ async function executeAgentToolInternal(params = {}) {
         content: m.content || ""
       }))
     ];
+
+    // P3: Auto-compaction if conversation messages exceed threshold
+    if (conversationMessages.length > 16) {
+      const compactRes = compactMessagesList(conversationMessages, 6);
+      if (compactRes.compacted) {
+        conversationMessages.length = 0;
+        conversationMessages.push(...compactRes.messages);
+        broadcastEvent("session_compacted", {
+          threadId,
+          botId,
+          compactedTurnsCount: compactRes.compactedTurnsCount,
+          newCount: conversationMessages.length
+        });
+      }
+    }
 
     let accumulatedReasoning = "";
     let finalVisibleContent = "";
@@ -5025,6 +5227,149 @@ async function executeAgentToolInternal(params = {}) {
       }
       if (botId) stopTrackedProcess(botId);
       return sendJson(res, 200, { ok: true, stopped: stoppedCount > 0, count: stoppedCount });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // P3: Session Checkpoints & Rewind Endpoints
+  if (req.method === "GET" && req.url.startsWith("/api/sessions/checkpoints")) {
+    const qIndex = req.url.indexOf("?");
+    const qParams = new URLSearchParams(qIndex >= 0 ? req.url.slice(qIndex) : "");
+    const threadId = qParams.get("threadId");
+    if (!threadId) return sendJson(res, 400, { error: "threadId required" });
+    const list = sessionCheckpoints.get(threadId) || [];
+    return sendJson(res, 200, { ok: true, threadId, checkpoints: list });
+  }
+
+  if (req.method === "POST" && req.url === "/api/sessions/rewind") {
+    try {
+      const { threadId, checkpointId, botId = "bot_r1", botName = "R1" } = await readJsonBody(req);
+      if (!threadId) return sendJson(res, 400, { error: "threadId required" });
+      const chkList = sessionCheckpoints.get(threadId) || [];
+      if (chkList.length === 0) {
+        return sendJson(res, 404, { error: `No checkpoints recorded for thread ${threadId}` });
+      }
+      let targetChk = null;
+      if (checkpointId) {
+        targetChk = chkList.find(c => c.checkpointId === checkpointId);
+      } else {
+        targetChk = chkList.pop();
+      }
+      if (!targetChk) {
+        return sendJson(res, 404, { error: `Checkpoint not found: ${checkpointId}` });
+      }
+
+      const wt = ensureAgentWorktree(targetChk.botId || botId, targetChk.botName || botName);
+      let gitResetOut = "";
+      if (targetChk.preTurnSha) {
+        try {
+          execSync(`git reset --hard ${targetChk.preTurnSha}`, { cwd: wt.worktreePath, stdio: "pipe", timeout: 10000 });
+          execSync("git clean -fd", { cwd: wt.worktreePath, stdio: "pipe", timeout: 10000 });
+          gitResetOut = `Reset worktree to ${targetChk.preTurnSha}`;
+        } catch (err) {
+          gitResetOut = `Git reset failed: ${err.message}`;
+        }
+      }
+
+      let state = loadWorkspaceDiskState() || { threads: [] };
+      let thread = (state.threads || []).find(t => t.id === threadId);
+      let remainingCount = 0;
+      if (thread && Array.isArray(thread.messages)) {
+        if (typeof targetChk.messagesCount === "number" && targetChk.messagesCount >= 0) {
+          thread.messages = thread.messages.slice(0, targetChk.messagesCount);
+        } else if (thread.messages.length > 0) {
+          thread.messages.pop();
+        }
+        remainingCount = thread.messages.length;
+        saveWorkspaceDiskState(state);
+      }
+
+      broadcastEvent("session_rewound", {
+        threadId,
+        botId: targetChk.botId || botId,
+        checkpointId: targetChk.checkpointId,
+        headSha: targetChk.preTurnSha,
+        remainingMessages: remainingCount
+      });
+
+      return sendJson(res, 200, {
+        ok: true,
+        threadId,
+        checkpointId: targetChk.checkpointId,
+        restoredSha: targetChk.preTurnSha,
+        remainingMessages: remainingCount,
+        gitResetOut
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // P3: Session Compaction Endpoint
+  if (req.method === "POST" && req.url === "/api/sessions/compact") {
+    try {
+      const { threadId, maxRecent = 4 } = await readJsonBody(req);
+      if (!threadId) return sendJson(res, 400, { error: "threadId required" });
+      let state = loadWorkspaceDiskState() || { threads: [] };
+      let thread = (state.threads || []).find(t => t.id === threadId);
+      if (!thread) return sendJson(res, 404, { error: `Thread not found: ${threadId}` });
+
+      const originalCount = (thread.messages || []).length;
+      const resCompact = compactMessagesList(thread.messages || [], Number(maxRecent) || 4);
+      if (resCompact.compacted) {
+        thread.messages = resCompact.messages;
+        saveWorkspaceDiskState(state);
+        broadcastEvent("session_compacted", {
+          threadId,
+          originalCount,
+          newCount: thread.messages.length,
+          compactedTurnsCount: resCompact.compactedTurnsCount
+        });
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        threadId,
+        compacted: resCompact.compacted,
+        originalCount,
+        newCount: (thread.messages || []).length,
+        summary: resCompact.summary || "No compaction required"
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // P3: Command Approvals Endpoints (GET /api/approvals/list, POST /api/approvals/respond)
+  if (req.method === "GET" && req.url === "/api/approvals/list") {
+    const list = Array.from(activeApprovals.values()).map(({ resolve, ...rest }) => rest);
+    return sendJson(res, 200, { ok: true, count: list.length, approvals: list });
+  }
+
+  if (req.method === "POST" && req.url === "/api/approvals/respond") {
+    try {
+      const { approvalId, decision = "allow" } = await readJsonBody(req);
+      if (!approvalId) return sendJson(res, 400, { error: "approvalId required" });
+      const appr = activeApprovals.get(approvalId);
+      if (!appr) return sendJson(res, 404, { error: `Approval request not found: ${approvalId}` });
+
+      const cleanDecision = decision === "deny" ? "deny" : "allow";
+      appr.status = cleanDecision === "allow" ? "approved" : "denied";
+      if (typeof appr.resolve === "function") {
+        appr.resolve({ decision: cleanDecision });
+      }
+      activeApprovals.delete(approvalId);
+
+      broadcastEvent("approval_resolved", {
+        approvalId,
+        threadId: appr.threadId,
+        botId: appr.botId,
+        decision: cleanDecision,
+        command: appr.command
+      });
+
+      return sendJson(res, 200, { ok: true, approvalId, decision: cleanDecision });
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
     }

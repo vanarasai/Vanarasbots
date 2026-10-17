@@ -1751,6 +1751,14 @@
             </button>
           </div>
           <div style="display:flex; align-items:center; gap:8px;">
+            <button onclick="rewindActiveSessionTurn()" class="btn-secondary" style="height:24px; padding:0 8px; font-size:11px;" title="Rewind worktree and chat to previous turn checkpoint">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              <span>Undo Turn</span>
+            </button>
+            <button onclick="compactActiveSessionContext()" class="btn-secondary" style="height:24px; padding:0 8px; font-size:11px;" title="Compact earlier conversation history to conserve token window">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+              <span>Compact</span>
+            </button>
             <span style="display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600; color:var(--text-secondary);">
               <span style="width:7px; height:7px; border-radius:50%; background:#10b981;"></span>
               <span id="workspaceConsoleTitle">Ready</span>
@@ -1758,6 +1766,19 @@
             <button onclick="clearWorkspaceConsole()" class="side-icon-btn" style="width:24px; height:24px;" title="Clear terminal output">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
             </button>
+          </div>
+        </div>
+
+        <div id="vanarasApprovalBanner" style="display:none; margin:8px 12px; padding:10px 14px; background:rgba(245, 158, 11, 0.12); border:1px solid #f59e0b; border-radius:8px; font-size:12px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+            <div>
+              <span style="font-weight:700; color:#d97706;">⚠️ Action Requires Approval</span>
+              <div id="approvalBannerDetails" class="mono" style="margin-top:3px; color:var(--text-primary); font-size:11.5px; word-break:break-all;"></div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button onclick="respondPendingApproval('allow')" class="btn-primary" style="background:#10b981; border:none; height:26px; padding:0 12px; font-size:11.5px; font-weight:600; cursor:pointer;">Allow</button>
+              <button onclick="respondPendingApproval('deny')" class="btn-secondary" style="background:#ef4444; color:#fff; border:none; height:26px; padding:0 12px; font-size:11.5px; font-weight:600; cursor:pointer;">Deny</button>
+            </div>
           </div>
         </div>
 
@@ -7508,6 +7529,86 @@ ${handoffRule}
       }
     }
 
+    let currentPendingApprovalId = null;
+
+    function handleApprovalRequested(data) {
+      currentPendingApprovalId = data.approvalId;
+      const banner = document.getElementById("vanarasApprovalBanner");
+      const details = document.getElementById("approvalBannerDetails");
+      if (banner && details) {
+        details.innerHTML = `<strong>Command:</strong> <code style="color:var(--accent-blue);">${escapeHtml(data.command || "")}</code><br><span style="color:var(--text-secondary);">${escapeHtml(data.reason || "")}</span>`;
+        banner.style.display = "block";
+      }
+      showToast(`⚠️ Approval required for: ${data.command ? data.command.slice(0, 30) : "command"}...`);
+    }
+
+    async function respondPendingApproval(decision) {
+      if (!currentPendingApprovalId) return;
+      try {
+        await fetch("/api/approvals/respond", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ approvalId: currentPendingApprovalId, decision })
+        });
+        const banner = document.getElementById("vanarasApprovalBanner");
+        if (banner) banner.style.display = "none";
+        currentPendingApprovalId = null;
+        showToast(`Approval ${decision === "allow" ? "granted" : "denied"}`);
+      } catch (err) {
+        showToast(`Approval error: ${err.message}`);
+      }
+    }
+
+    async function rewindActiveSessionTurn() {
+      if (!activeThreadId) {
+        showToast("No active session thread to rewind");
+        return;
+      }
+      if (!confirm("Rewind previous turn and revert worktree files to checkpoint?")) return;
+      try {
+        const res = await fetch("/api/sessions/rewind", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threadId: activeThreadId })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(`Turn rewound. Head restored to ${data.restoredSha?.slice(0, 7) || "checkpoint"}`);
+          await loadDiskWorkspaceOnBoot();
+          renderActiveThread();
+          if (typeof refreshWorkspaceDiff === "function") refreshWorkspaceDiff();
+        } else {
+          showToast(`Rewind error: ${data.error || "failed"}`);
+        }
+      } catch (err) {
+        showToast(`Rewind network error: ${err.message}`);
+      }
+    }
+
+    async function compactActiveSessionContext() {
+      if (!activeThreadId) {
+        showToast("No active session thread to compact");
+        return;
+      }
+      try {
+        const res = await fetch("/api/sessions/compact", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threadId: activeThreadId, maxRecent: 4 })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(data.compacted ? `Context compacted: ${data.originalCount} -> ${data.newCount} messages` : "Context is already compact");
+          await loadDiskWorkspaceOnBoot();
+          renderActiveThread();
+        } else {
+          showToast(`Compaction error: ${data.error || "failed"}`);
+        }
+      } catch (err) {
+        showToast(`Compaction error: ${err.message}`);
+      }
+    }
+
     function renderDeliverableDrawer() {
       populateWorkspaceAgentSelector();
       const tabs = document.getElementById("deliverableTabs");
@@ -8236,6 +8337,47 @@ ${handoffRule}
                 renderActiveThread();
               }
             }
+          } catch {}
+        });
+
+        es.addEventListener("approval_requested", ev => {
+          try {
+            const data = JSON.parse(ev.data);
+            handleApprovalRequested(data);
+          } catch {}
+        });
+
+        es.addEventListener("approval_resolved", ev => {
+          try {
+            const data = JSON.parse(ev.data);
+            const banner = document.getElementById("vanarasApprovalBanner");
+            if (banner && currentPendingApprovalId === data.approvalId) {
+              banner.style.display = "none";
+              currentPendingApprovalId = null;
+            }
+            showToast(`Approval ${data.decision}`);
+          } catch {}
+        });
+
+        es.addEventListener("session_rewound", ev => {
+          try {
+            const data = JSON.parse(ev.data);
+            showToast(`Turn rewound for thread ${data.threadId}`);
+            loadDiskWorkspaceOnBoot().then(() => {
+              renderActiveThread();
+              if (typeof refreshWorkspaceDiff === "function") refreshWorkspaceDiff();
+            });
+          } catch {}
+        });
+
+        es.addEventListener("session_compacted", ev => {
+          try {
+            const data = JSON.parse(ev.data);
+            showToast(`Context compacted (${data.compactedTurnsCount} turns)`);
+            loadDiskWorkspaceOnBoot().then(() => renderActiveThread());
+          } catch {}
+        });
+
         es.addEventListener("subagent_spawned", ev => {
           try {
             const data = JSON.parse(ev.data);

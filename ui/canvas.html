@@ -4308,7 +4308,7 @@ ${handoffRule}
       let scanSource = normalizeLooseToolSyntax(visibleText || "");
 
       // If visibleText had no [TOOL: ...] tags, check if the agent emitted concrete [TOOL: ...] tags at the tail of reasoningText
-      const toolCheckRx = /\[TOOL:\s*[a-z_]+(?:\s*\|\s*[^\]\n]+)?\]/i;
+      const toolCheckRx = /\[TOOL:\s*[a-z_]+(?:\s*\|\s*(?:[^\[\]]|\[[^\]]*\])+)?\]/i;
       if (!toolCheckRx.test(scanSource) && reasoningText) {
         const tailReasoning = normalizeLooseToolSyntax(String(reasoningText).slice(-800));
         const reasoningTools = tailReasoning.match(/\[TOOL:\s*(?:fs_read|fs_write|grep_search|find_files|shell_exec|shell|git_status|git_diff|git_commit)(?:\s*\|\s*[^\]<.\n][^\]<\n]*)?\]/gi);
@@ -4340,7 +4340,7 @@ ${handoffRule}
       }
 
       // 2. Extract [TOOL: type | arg1 | arg2] OR loose [TOOL: type] arg1 (plus optional following code fence for fs_write)
-      const toolRx = /\[TOOL:\s*([a-z_]+)(?:\s*\|\s*([^\]\n]+))?\](?:[ \t]*:?[ \t]*([^\n\[`]+))?(?:\s*\n```[a-zA-Z0-9_.-]*\n([\s\S]*?)```)?/gi;
+      const toolRx = /\[TOOL:\s*([a-z_]+)(?:\s*\|\s*((?:[^\[\]]|\[[^\]]*\])+))?\](?:[ \t]*:?[ \t]*([^\n\[`]+))?(?:\s*\n```[a-zA-Z0-9_.-]*\n([\s\S]*?)```)?/gi;
       const seenToolCalls = new Set();
       let tMatch;
       while ((tMatch = toolRx.exec(scanSource)) !== null) {

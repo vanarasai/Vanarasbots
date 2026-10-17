@@ -75,15 +75,24 @@ export async function handleSessionsRoutes(req, res) {
         turn: turn ? { ...turn, ...turnLiveness(turn) } : null
       });
     }
+    // Enough for a window that missed live events (suspended, reloaded, reconnecting) to catch up: the
+    // current progress line while running, and the result once finished.
     const all = Array.from(activeServerTurns.values()).map(t => ({
+      turnId: t.turnId,
       threadId: t.threadId,
       botId: t.botId,
       botName: t.botName,
       status: t.status,
       step: t.step,
       maxSteps: t.maxSteps,
+      message: t.message,
       startedAt: t.startedAt,
       updatedAt: t.updatedAt,
+      ...(t.status === "running" ? {} : {
+        finalContent: t.finalContent,
+        reasoning: t.reasoning,
+        remembered: t.remembered || []
+      }),
       ...turnLiveness(t)
     }));
     return sendJson(res, 200, { ok: true, activeCount: all.filter(t => t.status === "running").length, turns: all });

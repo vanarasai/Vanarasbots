@@ -203,10 +203,14 @@ export function registerTier4Tests(runner) {
       const botId = "bot_e2e_announcer";
       const threadId = `thread_e2e_nudge_${Date.now()}`;
       await configureFakeAgent(botId, baseUrl, "announcer");
-      const start = await requestJson("POST", "/api/sessions/turn", { threadId, botId, botName: "Announcer", prompt: "run diagnostics", maxSteps: 6 });
+      const turnId = `turn_srv_e2e_${Date.now()}`;
+      const start = await requestJson("POST", "/api/sessions/turn", { threadId, botId, botName: "Announcer", prompt: "run diagnostics", maxSteps: 6, turnId });
       assertEqual(start.status, 200, `turn start: ${start.raw}`);
       const [turn] = await waitForTurns(threadId, [botId]);
       assertEqual(turn.status, "completed", "turn must complete after the nudge");
+      // A window that missed the live events catches up from the status list alone.
+      assertEqual(turn.turnId, turnId, "status list must identify the turn");
+      assertMatch(String(turn.finalContent || ""), /diag-ok/, "status list must carry the finished turn's result");
       const st = await requestJson("GET", `/api/sessions/status?threadId=${encodeURIComponent(threadId)}`);
       const calls = st.body.turn.toolCalls || [];
       assert(calls.some(c => c.name === "shell_exec" && /diag-ok/.test(c.output)), `shell_exec must have run: ${JSON.stringify(calls)}`);

@@ -3024,6 +3024,16 @@ Auto-save: enabled</pre>
       }
       checkActiveServerTurnsOnBoot();
       setInterval(checkActiveServerTurnsOnBoot, 6000);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          ensureMultiplayerStream();
+          checkActiveServerTurnsOnBoot();
+        }
+      });
+      window.addEventListener("focus", () => {
+        ensureMultiplayerStream();
+        checkActiveServerTurnsOnBoot();
+      });
     }
 
     const threadLivenessState = {};
@@ -3041,11 +3051,17 @@ Auto-save: enabled</pre>
                 idleMs: t.idleMs || 0
               };
               if (t.status === "running") {
-                activeWorkingThreads[t.threadId] = t.stalled
-                  ? `[STALLED] No progress for ${Math.round((t.idleMs || 0) / 1000)}s`
-                  : `Running on server (Step ${t.step}/${t.maxSteps})...`;
-              } else if (t.status === "completed" && t.awaitingUser) {
-                delete activeWorkingThreads[t.threadId];
+                applyServerTurnProgress({ ...t, message: t.message || `Running on server (Step ${t.step}/${t.maxSteps})...` });
+                if (t.stalled) {
+                  activeWorkingThreads[t.threadId] = `[STALLED] No progress for ${Math.round((t.idleMs || 0) / 1000)}s`;
+                }
+              } else {
+                // Finishes a turn whose turn_complete event this window never received. Only a turn this
+                // window is still showing as streaming is applied, so old turns in the list are ignored.
+                const thread = state.threads.find(th => th.id === t.threadId);
+                const waiting = thread && thread.messages.some(m => m && m.isStreaming && m.serverTurnId && m.serverTurnId === t.turnId);
+                if (waiting) applyServerTurnComplete(t);
+                else if (t.status === "completed" && t.awaitingUser) delete activeWorkingThreads[t.threadId];
               }
             }
             renderThreadList();
@@ -5032,6 +5048,66 @@ ${handoffRule}
     // A server-run turn returns before the agent finishes, so the squad relay that runBotTurnInThread applies
     // after a browser-run turn never happened for it: the next teammate was never triggered. Apply the same
     // hand-off rules here once the server reports the turn complete.
+    // Server turns are reported two ways: live SSE events, and the 6s status poll that catches a window up
+    // after it missed events (the macOS app's web view is suspended while hidden). Both go through these.
+    const completedServerTurns = new Set();
+
+    function applyServerTurnProgress(data) {
+      if (!data || !data.threadId) return;
+      if (data.turnId && completedServerTurns.has(data.turnId)) return;
+      activeWorkingThreads[data.threadId] = data.message || `Step ${data.step}/${data.maxSteps}...`;
+      const targetThread = state.threads.find(t => t.id === data.threadId);
+      if (targetThread && Array.isArray(targetThread.messages)) {
+        const liveMsg = findServerTurnMessage(targetThread, data);
+        if (liveMsg && data.message) {
+          liveMsg.text = data.message;
+        }
+      }
+      renderThreadList();
+      if (activeThreadId === data.threadId) {
+        renderActiveThread();
+      }
+      updateComposerStopButton();
+    }
+
+    function applyServerTurnComplete(data) {
+      if (!data || !data.threadId) return;
+      if (data.turnId) {
+        if (completedServerTurns.has(data.turnId)) return;
+      }
+      const targetThread = state.threads.find(t => t.id === data.threadId);
+      // Several agents can stream in one group thread, and a superseded turn still reports in:
+      // finish only the message and turn state that belong to this turn.
+      let liveMsg = targetThread && Array.isArray(targetThread.messages) ? findServerTurnMessage(targetThread, data) : null;
+      if (!liveMsg && data.status === "stopped") return;
+      if (data.turnId) completedServerTurns.add(data.turnId);
+      releaseServerTurnState(data);
+      if (targetThread && Array.isArray(targetThread.messages)) {
+        if (!liveMsg) {
+          liveMsg = {
+            id: "msg_bot_" + Date.now(),
+            senderType: "bot",
+            botId: data.botId,
+            botName: data.botName
+          };
+          targetThread.messages.push(liveMsg);
+        }
+        liveMsg.isStreaming = false;
+        liveMsg.text = data.finalContent || "(Completed)";
+        if (data.reasoning) {
+          liveMsg.reasoning = data.reasoning;
+        }
+        rememberServerTurnFacts(data);
+        saveState();
+        continueSquadAfterServerTurn(targetThread, data);
+      }
+      renderThreadList();
+      if (activeThreadId === data.threadId) {
+        renderActiveThread();
+      }
+      updateComposerStopButton();
+    }
+
     function findServerTurnMessage(thread, data) {
       const streaming = thread.messages.filter(m => m && m.isStreaming);
       if (data.turnId) {
@@ -8433,9 +8509,29 @@ ${handoffRule}
       updateHeaderPills();
     }
 
+    // EventSource retries a dropped connection by itself, but a stream the browser has CLOSED (for example
+    // after the hidden macOS web view was suspended) never comes back. Reopen it in that case.
+    let multiplayerStream = null;
+    function ensureMultiplayerStream() {
+      if (!multiplayerStream || multiplayerStream.readyState === EventSource.CLOSED) {
+        initMultiplayerStream();
+      }
+    }
+
     function initMultiplayerStream() {
       try {
+        if (multiplayerStream) {
+          try { multiplayerStream.close(); } catch {}
+        }
         const es = new EventSource("/api/events");
+        multiplayerStream = es;
+        es.addEventListener("error", () => {
+          if (es.readyState === EventSource.CLOSED && multiplayerStream === es) {
+            setTimeout(ensureMultiplayerStream, 3000);
+          }
+        });
+        // After any (re)connect, pull state for events missed while disconnected.
+        es.addEventListener("open", () => { checkActiveServerTurnsOnBoot(); });
         es.addEventListener("room_message", ev => {
           const payload = JSON.parse(ev.data);
           if (payload.clientId && payload.clientId === CLIENT_SESSION_ID) return;
@@ -8547,60 +8643,13 @@ ${handoffRule}
 
         es.addEventListener("turn_progress", ev => {
           try {
-            const data = JSON.parse(ev.data);
-            if (data.threadId) {
-              activeWorkingThreads[data.threadId] = data.message || `Step ${data.step}/${data.maxSteps}...`;
-              const targetThread = state.threads.find(t => t.id === data.threadId);
-              if (targetThread && Array.isArray(targetThread.messages)) {
-                const liveMsg = findServerTurnMessage(targetThread, data);
-                if (liveMsg && data.message) {
-                  liveMsg.text = data.message;
-                }
-              }
-              renderThreadList();
-              if (activeThreadId === data.threadId) {
-                renderActiveThread();
-              }
-              updateComposerStopButton();
-            }
+            applyServerTurnProgress(JSON.parse(ev.data));
           } catch {}
         });
 
         es.addEventListener("turn_complete", ev => {
           try {
-            const data = JSON.parse(ev.data);
-            if (data.threadId) {
-              const targetThread = state.threads.find(t => t.id === data.threadId);
-              // Several agents can stream in one group thread, and a superseded turn still reports in:
-              // finish only the message and turn state that belong to this turn.
-              let liveMsg = targetThread && Array.isArray(targetThread.messages) ? findServerTurnMessage(targetThread, data) : null;
-              if (!liveMsg && data.status === "stopped") return;
-              releaseServerTurnState(data);
-              if (targetThread && Array.isArray(targetThread.messages)) {
-                if (!liveMsg) {
-                  liveMsg = {
-                    id: "msg_bot_" + Date.now(),
-                    senderType: "bot",
-                    botId: data.botId,
-                    botName: data.botName
-                  };
-                  targetThread.messages.push(liveMsg);
-                }
-                liveMsg.isStreaming = false;
-                liveMsg.text = data.finalContent || "(Completed)";
-                if (data.reasoning) {
-                  liveMsg.reasoning = data.reasoning;
-                }
-                rememberServerTurnFacts(data);
-                saveState();
-                continueSquadAfterServerTurn(targetThread, data);
-              }
-              renderThreadList();
-              if (activeThreadId === data.threadId) {
-                renderActiveThread();
-              }
-              updateComposerStopButton();
-            }
+            applyServerTurnComplete(JSON.parse(ev.data));
           } catch {}
         });
 

@@ -451,6 +451,8 @@ const USE_PROCESS_GROUPS = process.platform !== "win32";
 // P1a & P2: Process supervision for agent background tasks and server-side session turns
 const agentBackgroundProcesses = new Map();
 const activeServerTurns = new Map();
+// P4: Dynamic Subagents (General, Explore, Plan) with Worktree Isolation
+const activeSubagents = new Map();
 
 function signalProcessTree(proc, signal = "SIGTERM") {
   if (!proc || !proc.pid) return false;
@@ -767,7 +769,7 @@ function ensureAgentWorktree(botId, botName, customWorkspacePath = "") {
   const botSlug = sanitizeSlug(botId, "bot");
   const effectiveName = (botName && (botName !== "R1" || botId === "bot_r1")) ? botName : (botId ? botId.replace(/^bot_/, "") : "r1");
   const nameSlug = sanitizeSlug(effectiveName, "vanara");
-  const branchName = `vanara/${nameSlug}`;
+  const branchName = (botId && botId.startsWith("sub_")) ? `vanara/${nameSlug}-${botSlug}` : `vanara/${nameSlug}`;
   const worktreePath = path.join(WORKTREES_DIR, botSlug);
 
   try {
@@ -2319,6 +2321,18 @@ async function executeAgentToolInternal(params = {}) {
   const savedAgentCfg = loadAgentConfig(botId || "bot_r1") || {};
   const effectiveMcpCommand = String(mcpCommand || savedAgentCfg.mcpCommand || "").trim();
 
+  // P4 Explore subagent read-only enforcement
+  const isSubExplore = String(botId || "").startsWith("sub_explore");
+  if (isSubExplore && ["fs_write", "exact_edit", "shell_exec", "shell", "start_process", "stop_process", "git_commit"].includes(toolName)) {
+    return {
+      status: 200,
+      data: {
+        ok: false,
+        error: `Access Denied: Explore subagent '${botId}' has read-only permissions and cannot run '${toolName}'. Use fs_read, grep_search, find_files, git_status, or git_diff.`
+      }
+    };
+  }
+
   // 1. MCP PROBE
   if (toolName === "mcp_probe" && effectiveMcpCommand) {
     const mcpRes = await callStdioMcpServer({ commandLine: effectiveMcpCommand, cwd: wt.worktreePath, method: "tools/list" });
@@ -2977,6 +2991,77 @@ async function executeAgentToolInternal(params = {}) {
         exitCode: execRes.exitCode,
         command: verifyCmd,
         output: (execRes.output || `(exit ${execRes.exitCode})`).slice(-15000)
+      }
+    };
+  }
+
+  // 15. SPAWN SUBAGENT (P4)
+  if (toolName === "spawn_subagent") {
+    const subType = String(args.type || content || "general").toLowerCase();
+    const subRole = String(args.role || name || "Subagent");
+    const subPrompt = String(args.prompt || content || "");
+    if (!subPrompt) return { status: 400, data: { ok: false, error: "Missing subagent prompt" } };
+    const sub = await spawnSubagentAsync({
+      type: subType,
+      role: subRole,
+      prompt: subPrompt,
+      leadBotId: botId || "bot_r1",
+      leadBotName: botName || "R1"
+    });
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "spawn_subagent",
+        subagentId: sub.id,
+        type: sub.type,
+        role: sub.role,
+        branch: sub.branch,
+        status: "started",
+        output: `Spawned ${sub.type.toUpperCase()} subagent '${sub.role}' (${sub.id}) in isolated worktree ${sub.branch}.`
+      }
+    };
+  }
+
+  // 16. GET SUBAGENT OUTPUT (P4)
+  if (toolName === "get_subagent_output") {
+    const targetId = String(args.subagentId || processId || content || "").trim();
+    if (!targetId) return { status: 400, data: { ok: false, error: "Missing subagentId" } };
+    const sub = activeSubagents.get(targetId);
+    if (!sub) return { status: 200, data: { ok: false, error: `Subagent not found: ${targetId}` } };
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "get_subagent_output",
+        subagentId: sub.id,
+        status: sub.status,
+        step: sub.currentStep,
+        maxSteps: sub.maxSteps,
+        output: sub.output || `(Subagent status: ${sub.status})`,
+        reasoning: sub.reasoning || ""
+      }
+    };
+  }
+
+  // 17. LIST SUBAGENTS (P4)
+  if (toolName === "list_subagents") {
+    const all = Array.from(activeSubagents.values()).map(s => ({
+      id: s.id,
+      type: s.type,
+      role: s.role,
+      status: s.status,
+      step: s.currentStep,
+      output: (s.output || "").slice(0, 150)
+    }));
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        tool: "list_subagents",
+        count: all.length,
+        subagents: all,
+        output: all.length > 0 ? all.map(s => `[${s.type.toUpperCase()}] ${s.role} (${s.id}): ${s.status}`).join("\n") : "(no active subagents)"
       }
     };
   }
@@ -4108,6 +4193,47 @@ async function executeAgentToolInternal(params = {}) {
           }
         }
       }
+    },
+    {
+      type: "function",
+      function: {
+        name: "spawn_subagent",
+        description: "Spawn an autonomous subagent in an isolated git worktree. Types: 'explore' (read-only search & inspection), 'plan' (architecture & breakdown), 'general' (coding & testing in worktree).",
+        parameters: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["explore", "plan", "general"], description: "Subagent specialization type" },
+            role: { type: "string", description: "Role or job title (e.g. 'Explore Tests', 'Planner', 'Backend Dev')" },
+            prompt: { type: "string", description: "Clear instructions and objective for the subagent" }
+          },
+          required: ["type", "role", "prompt"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_subagent_output",
+        description: "Retrieve status, reasoning, and deliverables from a spawned subagent by subagentId.",
+        parameters: {
+          type: "object",
+          properties: {
+            subagentId: { type: "string", description: "ID of the subagent" }
+          },
+          required: ["subagentId"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "list_subagents",
+        description: "List all active and completed subagents with their status and outputs.",
+        parameters: {
+          type: "object",
+          properties: {}
+        }
+      }
     }
   ];
 
@@ -4139,6 +4265,17 @@ async function executeAgentToolInternal(params = {}) {
         args = { command: rawArg };
       } else if (name === "stop_process" || name === "get_process_logs") {
         args = { processId: rawArg };
+      } else if (name === "get_subagent_output") {
+        args = { subagentId: rawArg };
+      } else if (name === "list_subagents") {
+        args = {};
+      } else if (name === "spawn_subagent") {
+        const parts = rawArg.split("|||");
+        if (parts.length >= 3) {
+          args = { type: parts[0].trim(), role: parts[1].trim(), prompt: parts[2].trim() };
+        } else {
+          args = { prompt: rawArg };
+        }
       } else if (name === "git_commit") {
         args = { message: rawArg };
       } else {
@@ -4893,6 +5030,301 @@ async function executeAgentToolInternal(params = {}) {
     }
   }
 
+  // 6D-1. Dynamic Subagent Spawning Engine (P4)
+  async function spawnSubagentAsync({
+    type = "general",
+    role = "Subagent",
+    prompt = "",
+    leadBotId = "bot_r1",
+    leadBotName = "R1",
+    maxSteps = null
+  }) {
+    const cleanType = ["explore", "plan", "general"].includes(String(type).toLowerCase()) ? String(type).toLowerCase() : "general";
+    const subagentId = `sub_${cleanType}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const effectiveRole = role || (cleanType === "explore" ? "Codebase Explorer" : cleanType === "plan" ? "Architecture Planner" : "General Implementer");
+
+    const wt = ensureAgentWorktree(subagentId, effectiveRole);
+    const effectiveMaxSteps = Number(maxSteps) || (cleanType === "explore" ? 10 : cleanType === "plan" ? 8 : 20);
+
+    const subRecord = {
+      id: subagentId,
+      type: cleanType,
+      role: effectiveRole,
+      prompt,
+      leadBotId,
+      leadBotName,
+      status: "running",
+      currentStep: 0,
+      maxSteps: effectiveMaxSteps,
+      worktreePath: wt.worktreePath,
+      branch: wt.branch,
+      codeDir: wt.codeDir,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      logs: [],
+      toolCalls: [],
+      output: "",
+      reasoning: "",
+      abortController: new AbortController()
+    };
+    activeSubagents.set(subagentId, subRecord);
+
+    broadcastEvent("subagent_spawned", {
+      subagentId,
+      type: cleanType,
+      role: effectiveRole,
+      branch: wt.branch,
+      leadBotId,
+      prompt: prompt.slice(0, 100),
+      status: "running"
+    });
+
+    (async () => {
+      try {
+        let subTools = VANARAS_NATIVE_TOOLS;
+        if (cleanType === "explore") {
+          subTools = VANARAS_NATIVE_TOOLS.filter(t => ["fs_read", "grep_search", "find_files", "git_status", "git_diff"].includes(t.function.name));
+        } else if (cleanType === "plan") {
+          subTools = VANARAS_NATIVE_TOOLS.filter(t => ["fs_read", "grep_search", "find_files"].includes(t.function.name));
+        }
+
+        let sysPrompt = "";
+        if (cleanType === "explore") {
+          sysPrompt = `You are ${effectiveRole}, an Explore Subagent specializing in read-only codebase navigation, search, and fact gathering.\nYour isolated worktree is on branch ${wt.branch}.\nYou have read-only access: use grep_search, find_files, and fs_read to investigate and gather facts thoroughly.\nYou CANNOT write files or execute mutation commands.\nReport your findings with concrete file paths, line numbers, and concise summaries.`;
+        } else if (cleanType === "plan") {
+          sysPrompt = `You are ${effectiveRole}, a Plan Subagent specializing in software planning and breakdown.\nYour task is to analyze requirements, inspect files if needed, and produce a structured, phased implementation plan with exact steps and verification checks.`;
+        } else {
+          sysPrompt = `You are ${effectiveRole}, a General Subagent working in your dedicated isolated git worktree (${wt.branch}).\nYou have full authority to inspect, edit (using exact_edit or fs_write), and verify code in your worktree.\nReport all results and changes clearly.`;
+        }
+
+        const conversation = [
+          { role: "system", content: sysPrompt },
+          { role: "user", content: prompt }
+        ];
+
+        const state = loadWorkspaceDiskState() || {};
+        const botDef = (state.bots || []).find(b => b.id === leadBotId) || {};
+        const agentCfg = loadAgentConfig(leadBotId) || {};
+        const provider = botDef.provider || agentCfg.provider || "local";
+        const baseUrl = botDef.baseUrl || agentCfg.baseUrl || (provider === "local" ? "http://127.0.0.1:1234/v1" : "https://openrouter.ai/api/v1");
+        const model = botDef.model || agentCfg.model || "";
+        const apiKey = resolveVaultApiKey(provider, botDef.apiKey || agentCfg.apiKey || "", leadBotId);
+
+        for (let step = 0; step < effectiveMaxSteps; step++) {
+          if (subRecord.abortController.signal.aborted) {
+            subRecord.status = "stopped";
+            break;
+          }
+          subRecord.currentStep = step + 1;
+          subRecord.updatedAt = new Date().toISOString();
+
+          broadcastEvent("subagent_progress", {
+            subagentId,
+            step: subRecord.currentStep,
+            maxSteps: effectiveMaxSteps,
+            status: "thinking",
+            message: `${effectiveRole} thinking (Step ${subRecord.currentStep}/${effectiveMaxSteps})...`
+          });
+
+          const reply = await queryLLMInternal({
+            provider,
+            baseUrl,
+            apiKey,
+            botId: leadBotId,
+            model,
+            messages: conversation,
+            temperature: 0.2,
+            max_tokens: 4096,
+            enableReasoning: true,
+            tools: subTools,
+            signal: subRecord.abortController.signal
+          });
+
+          if (subRecord.abortController.signal.aborted) {
+            subRecord.status = "stopped";
+            break;
+          }
+
+          const replyContent = reply.content || "";
+          const replyReason = reply.reasoning || "";
+          if (replyReason) {
+            subRecord.reasoning = [subRecord.reasoning, replyReason].filter(Boolean).join("\n\n---\n\n");
+          }
+
+          const nativeTools = Array.isArray(reply.tool_calls) && reply.tool_calls.length > 0 ? reply.tool_calls : [];
+          const textTools = parseTextToolCalls(replyContent);
+
+          const allTools = [...nativeTools];
+          for (const tt of textTools) {
+            allTools.push({
+              id: "call_sub_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+              type: "function",
+              function: { name: tt.tool, arguments: JSON.stringify(tt.args) }
+            });
+          }
+
+          if (cleanType === "general") {
+            const files = parseDeliverableBlocksText(replyContent);
+            for (const f of files) {
+              allTools.push({
+                id: "call_sub_file_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+                type: "function",
+                function: { name: "fs_write", arguments: JSON.stringify({ filePath: f.name, content: f.content }) }
+              });
+            }
+          }
+
+          if (allTools.length === 0) {
+            subRecord.output = replyContent;
+            break;
+          }
+
+          const executedResults = [];
+          for (const tc of allTools) {
+            if (subRecord.abortController.signal.aborted) break;
+            const fnName = tc.function?.name || tc.name;
+            let fnArgs = {};
+            try { fnArgs = typeof tc.function?.arguments === "string" ? JSON.parse(tc.function.arguments) : (tc.function?.arguments || {}); } catch {}
+
+            broadcastEvent("subagent_progress", {
+              subagentId,
+              step: subRecord.currentStep,
+              maxSteps: effectiveMaxSteps,
+              status: "tool_exec",
+              toolCall: { name: fnName, args: fnArgs },
+              message: `${effectiveRole} executing ${fnName}...`
+            });
+
+            const tRes = await executeAgentToolInternal({
+              botId: subagentId,
+              botName: effectiveRole,
+              tool: fnName,
+              args: fnArgs,
+              ...fnArgs
+            });
+
+            const outStr = tRes.data?.output !== undefined ? String(tRes.data.output) : JSON.stringify(tRes.data || tRes);
+            executedResults.push({ toolCallId: tc.id, name: fnName, output: outStr });
+            subRecord.toolCalls.push({ step: subRecord.currentStep, name: fnName, args: fnArgs, output: outStr });
+          }
+
+          if (nativeTools.length > 0) {
+            conversation.push({ role: "assistant", content: replyContent || null, tool_calls: nativeTools });
+            for (const item of executedResults) {
+              conversation.push({ role: "tool", tool_call_id: item.toolCallId, content: item.output });
+            }
+          } else {
+            conversation.push({ role: "assistant", content: replyContent });
+            const combined = executedResults.map(r => `[Tool Output: ${r.name}]\n${r.output}`).join("\n\n");
+            conversation.push({ role: "user", content: `Tool output from ${wt.branch}:\n${combined}\nContinue your task.` });
+          }
+        }
+
+        if (subRecord.status !== "stopped") {
+          subRecord.status = "completed";
+        }
+      } catch (e) {
+        subRecord.status = "error";
+        subRecord.error = e.message;
+        subRecord.output = (subRecord.output ? subRecord.output + "\n\n" : "") + `Subagent execution error: ${e.message}`;
+      }
+
+      subRecord.updatedAt = new Date().toISOString();
+      broadcastEvent("subagent_completed", {
+        subagentId,
+        type: cleanType,
+        role: effectiveRole,
+        status: subRecord.status,
+        output: subRecord.output,
+        reasoning: subRecord.reasoning,
+        toolCallsCount: subRecord.toolCalls.length
+      });
+    })();
+
+    return subRecord;
+  }
+
+  // 6D-2. Subagent Endpoints (POST /api/subagents/spawn, GET /api/subagents/list, GET /api/subagents/status, POST /api/subagents/stop)
+  if (req.method === "POST" && req.url === "/api/subagents/spawn") {
+    try {
+      const body = await readJsonBody(req);
+      const { type = "general", role = "Subagent", prompt = "", leadBotId = "bot_r1", leadBotName = "R1", maxSteps } = body;
+      if (!prompt) return sendJson(res, 400, { error: "prompt is required" });
+      const sub = await spawnSubagentAsync({ type, role, prompt, leadBotId, leadBotName, maxSteps });
+      return sendJson(res, 200, {
+        ok: true,
+        subagentId: sub.id,
+        type: sub.type,
+        role: sub.role,
+        branch: sub.branch,
+        status: sub.status
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  if (req.method === "GET" && req.url === "/api/subagents/list") {
+    const list = Array.from(activeSubagents.values()).map(s => ({
+      id: s.id,
+      type: s.type,
+      role: s.role,
+      leadBotId: s.leadBotId,
+      status: s.status,
+      currentStep: s.currentStep,
+      maxSteps: s.maxSteps,
+      branch: s.branch,
+      startedAt: s.startedAt,
+      updatedAt: s.updatedAt,
+      toolCallsCount: s.toolCalls.length,
+      outputPreview: (s.output || "").slice(0, 200)
+    }));
+    return sendJson(res, 200, { ok: true, count: list.length, subagents: list });
+  }
+
+  if (req.method === "GET" && req.url.startsWith("/api/subagents/status")) {
+    const qIndex = req.url.indexOf("?");
+    const qParams = new URLSearchParams(qIndex >= 0 ? req.url.slice(qIndex) : "");
+    const subagentId = qParams.get("subagentId");
+    if (!subagentId) return sendJson(res, 400, { error: "subagentId parameter required" });
+    const sub = activeSubagents.get(subagentId);
+    if (!sub) return sendJson(res, 404, { error: `Subagent not found: ${subagentId}` });
+    return sendJson(res, 200, {
+      ok: true,
+      subagent: {
+        id: sub.id,
+        type: sub.type,
+        role: sub.role,
+        prompt: sub.prompt,
+        status: sub.status,
+        currentStep: sub.currentStep,
+        maxSteps: sub.maxSteps,
+        branch: sub.branch,
+        startedAt: sub.startedAt,
+        updatedAt: sub.updatedAt,
+        output: sub.output,
+        reasoning: sub.reasoning,
+        toolCalls: sub.toolCalls
+      }
+    });
+  }
+
+  if (req.method === "POST" && req.url === "/api/subagents/stop") {
+    try {
+      const { subagentId } = await readJsonBody(req);
+      if (!subagentId) return sendJson(res, 400, { error: "subagentId required" });
+      const sub = activeSubagents.get(subagentId);
+      if (!sub) return sendJson(res, 404, { error: `Subagent not found: ${subagentId}` });
+      if (sub.status === "running") {
+        sub.abortController?.abort();
+        sub.status = "stopped";
+      }
+      return sendJson(res, 200, { ok: true, subagentId, status: sub.status });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
   // 7. Universal Model Discovery
   if (req.method === "POST" && req.url === "/api/llm/models") {
     try {
@@ -5342,6 +5774,7 @@ function terminateOwnedProcessTrees() {
   for (const srv of agentDevServers.values()) if (srv && srv.proc) signalProcessTree(srv.proc, "SIGTERM");
   for (const bg of agentBackgroundProcesses.values()) if (bg && bg.child) signalProcessTree(bg.child, "SIGTERM");
   for (const turn of activeServerTurns.values()) if (turn && turn.status === "running") turn.abortController?.abort();
+  for (const sub of activeSubagents.values()) if (sub && sub.status === "running") sub.abortController?.abort();
 }
 process.on("exit", terminateOwnedProcessTrees);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {

@@ -1745,6 +1745,10 @@
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
               <span>Changes</span>
             </button>
+            <button onclick="switchConsoleTab('subagents')" id="btnConsoleTabSubagents" class="btn-secondary" style="height:26px; padding:0 10px; font-size:11.5px;">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 12l-4-4-4 4M12 16V8"/></svg>
+              <span>Subagents Squad</span>
+            </button>
           </div>
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600; color:var(--text-secondary);">
@@ -7452,14 +7456,31 @@ ${handoffRule}
     async function switchConsoleTab(tab) {
       const btnTerm = document.getElementById("btnConsoleTabTerminal");
       const btnChg = document.getElementById("btnConsoleTabChanges");
+      const btnSub = document.getElementById("btnConsoleTabSubagents");
       const consoleOut = document.getElementById("workspaceConsoleOutput");
       const bot = getBot(activeWorkspaceBotId) || state.bots[0];
       if (btnTerm && btnChg) {
-        if (tab === "changes") {
+        if (tab === "subagents") {
+          if (btnSub) { btnSub.style.borderColor = "var(--accent-blue)"; btnSub.style.color = "var(--accent-blue)"; }
+          btnChg.style.borderColor = ""; btnChg.style.color = "";
+          btnTerm.style.borderColor = ""; btnTerm.style.color = "";
+          if (consoleOut) consoleOut.textContent = "$ fetching active & completed subagents...";
+          try {
+            const res = await fetch("/api/subagents/list");
+            const data = await res.json();
+            if (consoleOut) {
+              const items = (data.subagents || []).map(s => `[${s.type.toUpperCase()}] ${s.role} (${s.id})\n  Status: ${s.status} | Step: ${s.currentStep}/${s.maxSteps} | Worktree: ${s.branch}\n  Preview: ${s.outputPreview || "(running)"}\n`).join("\n");
+              consoleOut.textContent = `=== SUBAGENT SQUAD DASHBOARD (${data.count || 0} registered) ===\n\n${items || "No subagents spawned yet. Tag agents or invoke spawn_subagent."}`;
+            }
+          } catch (e) {
+            if (consoleOut) consoleOut.textContent = `Error loading subagents: ${e.message}`;
+          }
+        } else if (tab === "changes") {
           btnChg.style.borderColor = "var(--accent-blue)";
           btnChg.style.color = "var(--accent-blue)";
           btnTerm.style.borderColor = "";
           btnTerm.style.color = "";
+          if (btnSub) { btnSub.style.borderColor = ""; btnSub.style.color = ""; }
           if (consoleOut) consoleOut.textContent = `$ git status & diff (${bot?.worktreeBranch || "vanara/r1"})...`;
           try {
             const res = await fetch("/api/agent/workspace", {
@@ -7481,6 +7502,7 @@ ${handoffRule}
           btnTerm.style.color = "var(--accent-blue)";
           btnChg.style.borderColor = "";
           btnChg.style.color = "";
+          if (btnSub) { btnSub.style.borderColor = ""; btnSub.style.color = ""; }
           clearWorkspaceConsole();
         }
       }
@@ -8213,6 +8235,35 @@ ${handoffRule}
               if (activeThreadId === data.threadId) {
                 renderActiveThread();
               }
+            }
+        es.addEventListener("subagent_spawned", ev => {
+          try {
+            const data = JSON.parse(ev.data);
+            showToast(`[${data.type.toUpperCase()}] Subagent '${data.role}' spawned`);
+            const consoleOut = document.getElementById("workspaceConsoleOutput");
+            if (consoleOut) {
+              consoleOut.textContent = (consoleOut.textContent + `\n[SQUAD] Spawned ${data.type} subagent '${data.role}' on ${data.branch}`).slice(-3500);
+            }
+          } catch {}
+        });
+
+        es.addEventListener("subagent_progress", ev => {
+          try {
+            const data = JSON.parse(ev.data);
+            const consoleOut = document.getElementById("workspaceConsoleOutput");
+            if (consoleOut && data.message) {
+              consoleOut.textContent = (consoleOut.textContent + `\n[${data.subagentId}] ${data.message}`).slice(-3500);
+            }
+          } catch {}
+        });
+
+        es.addEventListener("subagent_completed", ev => {
+          try {
+            const data = JSON.parse(ev.data);
+            showToast(`Subagent '${data.role}' ${data.status}`);
+            const consoleOut = document.getElementById("workspaceConsoleOutput");
+            if (consoleOut) {
+              consoleOut.textContent = (consoleOut.textContent + `\n[SQUAD] Subagent '${data.role}' ${data.status.toUpperCase()}`).slice(-3500);
             }
           } catch {}
         });

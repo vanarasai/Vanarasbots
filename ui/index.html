@@ -1414,7 +1414,7 @@
 
       <!-- Mounted Repository Pill Card: [ 📁 vanaras  › ] -->
       <div class="sidebar-repo-card">
-        <button onclick="openMountModal()" class="sidebar-repo-btn" title="Switch Mounted Repository or Inspect Symbol Map">
+        <button onclick="openProjectSwitcher(event)" class="sidebar-repo-btn" title="Switch project">
           <span style="display:flex; align-items:center; gap:9px; min-width:0;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d7dfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -3632,7 +3632,10 @@ Auto-save: enabled</pre>
       const query = (document.getElementById("threadSearchInput")?.value || "").trim().toLowerCase();
       container.innerHTML = "";
 
+      // One project at a time: the sidebar shows the rooms and agents of the current room's project.
+      const currentProject = projectKeyOf(getActiveThread());
       const filtered = state.threads.filter(thread => {
+        if (projectKeyOf(thread) !== currentProject) return false;
         const bot = thread.type === "dm" ? getBot(thread.botId) : null;
         const title = (thread.type === "dm" ? getAgentShortTitle(bot) : thread.name) || "";
         const role = bot?.role || "";
@@ -3956,6 +3959,8 @@ Auto-save: enabled</pre>
     function renderActiveThread() {
       const thread = getActiveThread();
       if (!thread) return;
+      if (!state.lastThreadByProject || typeof state.lastThreadByProject !== "object") state.lastThreadByProject = {};
+      state.lastThreadByProject[projectKeyOf(thread)] = thread.id;
       unreadCounts[thread.id] = 0;
       updateHeaderPills();
       updateComposerStopButton();
@@ -6399,6 +6404,73 @@ ${handoffRule}
     // =========================================================================
     let newProjectSuggestTimer = null;
 
+    // Projects are the distinct folders rooms work on; switching shows that project's rooms and agents.
+    function listProjects() {
+      const byKey = new Map();
+      for (const t of state.threads) {
+        const key = projectKeyOf(t);
+        if (!byKey.has(key)) byKey.set(key, { key, rooms: 0, agents: 0 });
+        const entry = byKey.get(key);
+        if (t.type === "dm") entry.agents++;
+        else entry.rooms++;
+      }
+      return [...byKey.values()].sort((a, b) => (a.key ? 0 : 1) - (b.key ? 0 : 1) || a.key.localeCompare(b.key));
+    }
+
+    function switchToProject(key) {
+      const remembered = state.lastThreadByProject?.[key];
+      const inProject = state.threads.filter(t => projectKeyOf(t) === key);
+      const next = inProject.find(t => t.id === remembered) || inProject.find(t => t.type === "group") || inProject[0];
+      closeProjectSwitcher();
+      if (!next) return;
+      activeThreadId = next.id;
+      renderThreadList();
+      renderActiveThread();
+      updateHeaderPills();
+    }
+
+    function closeProjectSwitcher() {
+      document.getElementById("projectSwitcherMenu")?.remove();
+      document.removeEventListener("mousedown", projectSwitcherOutsideClick, true);
+    }
+
+    function projectSwitcherOutsideClick(ev) {
+      if (!ev.target.closest("#projectSwitcherMenu") && !ev.target.closest(".sidebar-repo-btn")) closeProjectSwitcher();
+    }
+
+    function openProjectSwitcher(ev) {
+      if (document.getElementById("projectSwitcherMenu")) return closeProjectSwitcher();
+      const current = projectKeyOf(getActiveThread());
+      const anchor = ev.currentTarget.getBoundingClientRect();
+      const menu = document.createElement("div");
+      menu.id = "projectSwitcherMenu";
+      menu.className = "popover-menu";
+      menu.style.cssText = `position:fixed; top:${Math.round(anchor.bottom + 6)}px; left:${Math.round(anchor.left)}px; width:${Math.max(260, Math.round(anchor.width))}px; z-index:1000; max-height:60vh; overflow-y:auto;`;
+      const rows = listProjects().map(p => {
+        const label = p.key ? p.key.split(/[\\/]/).filter(Boolean).pop() : "No project";
+        const detail = `${p.rooms} room${p.rooms === 1 ? "" : "s"} · ${p.agents} agent${p.agents === 1 ? "" : "s"}`;
+        return `<button class="popover-item" data-project="${escapeHtml(p.key)}" style="${p.key === current ? "background:var(--bg-surface-subtle);" : ""}">
+            <div style="min-width:0;">
+              <div class="popover-title">${p.key === current ? "✓ " : ""}${escapeHtml(label)}</div>
+              <div class="popover-sub" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(p.key)}">${escapeHtml(detail)}${p.key ? ` · ${escapeHtml(p.key.replace(/^\/Users\/[^/]+/, "~"))}` : ""}</div>
+            </div>
+          </button>`;
+      }).join("");
+      menu.innerHTML = `${rows}
+        <div class="popover-divider"></div>
+        <button class="popover-item" data-action="new"><div><div class="popover-title">+ New Project</div><div class="popover-sub">Folder, git repo, room and agents</div></div></button>
+        <button class="popover-item" data-action="mount"><div><div class="popover-title">Change this room's folder…</div><div class="popover-sub">Point the current room at another project</div></div></button>`;
+      menu.addEventListener("click", e => {
+        const item = e.target.closest(".popover-item");
+        if (!item) return;
+        if (item.dataset.action === "new") { closeProjectSwitcher(); openNewProjectModal(); return; }
+        if (item.dataset.action === "mount") { closeProjectSwitcher(); openMountModal(); return; }
+        switchToProject(item.dataset.project || "");
+      });
+      document.body.appendChild(menu);
+      setTimeout(() => document.addEventListener("mousedown", projectSwitcherOutsideClick, true), 0);
+    }
+
     function openNewProjectModal() {
       document.getElementById("newProjectNameInput").value = "";
       const loc = document.getElementById("newProjectLocationInput");
@@ -6435,8 +6507,8 @@ ${handoffRule}
     // A fresh agent copies a template's role, model and tools; it gets a new id (so its own worktree branch,
     // playbook and memory files) and a name unique within @mentions.
     function makeFreshProjectAgent(tpl, slug, i) {
-      const short = slug.slice(0, 14);
-      let name = `${tpl.name}-${short}`.slice(0, 28);
+      const short = slug.length <= 20 ? slug : slug.slice(0, 20).replace(/-[^-]*$/, "") || slug.slice(0, 20);
+      let name = `${tpl.name}-${short}`;
       while (state.bots.some(b => b.name.toLowerCase() === name.toLowerCase())) name = `${name.slice(0, 25)}${i}`;
       return {
         id: `bot_${Date.now()}_${i}`,
@@ -6480,6 +6552,8 @@ ${handoffRule}
         if (mode === "fresh") {
           state.bots.push(...agents);
           hydrateBotAgentFields();
+        }
+        {
           const stamp = Date.now();
           agents.forEach((b, i) => state.threads.push({
             id: `thread_dm_${stamp}_${i}`,

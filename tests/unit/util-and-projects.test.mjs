@@ -64,8 +64,9 @@ test("projects: a room's folder is classified before any agent may use it", () =
   assert.equal(inspectProject(empty).code, "NO_COMMITS");
   const repo = repoWithCommit("repo");
   const info = inspectProject(path.join(repo, "."));
-  assert.ok(info.ok && info.root === repo && info.isVanaras === false);
-  assert.equal(inspectProject(ROOT_DIR).isVanaras, true, "mounting Vanaras itself is recognised so the UI can confirm it");
+  assert.ok(info.ok && info.root === repo);
+  assert.equal(inspectProject(ROOT_DIR).code, "VANARAS_SOURCE", "Vanaras's own source is never a room's project");
+  assert.equal(inspectProject(path.join(ROOT_DIR, "ui")).code, "VANARAS_SOURCE", "nor any folder inside it");
   assert.throws(() => requireProject(plain), err => err.code === "NOT_GIT" && err.status === 409);
 });
 

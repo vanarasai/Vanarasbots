@@ -5508,15 +5508,6 @@ ${handoffRule}
         return false;
       }
       if (info.ok) {
-        if (info.isVanaras && !thread.vanarasConfirmed) {
-          const yes = interactive && confirm(`This room's project is Vanaras's own code:\n${info.root}\n\nAgents here would work on branches of Vanaras itself. Continue with this folder?`);
-          if (!yes) {
-            if (interactive && thread.id === activeThreadId) openMountModal();
-            return false;
-          }
-          thread.vanarasConfirmed = true;
-          saveState();
-        }
         if (info.root && info.root !== thread.mountPath) {
           thread.mountPath = info.root;
           saveState();
@@ -7651,7 +7642,6 @@ ${handoffRule}
       const thread = getActiveThread();
       if (thread) {
         thread.mountPath = p;
-        delete thread.vanarasConfirmed;
         saveState();
         // Check now (and offer to initialise git), so problems show when the folder is chosen, not mid-task.
         if (!(await ensureRoomProject(thread))) return;

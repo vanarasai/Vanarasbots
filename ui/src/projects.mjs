@@ -33,12 +33,16 @@ export function inspectProject(rawPath) {
   let root = "";
   try { root = fs.realpathSync(git(abs, ["rev-parse", "--show-toplevel"])); } catch {}
   const real = fs.realpathSync(abs);
-  const isVanaras = real === fs.realpathSync(ROOT_DIR);
-  if (!root) return { ok: false, code: "NOT_GIT", error: `${abs} is not a git repository.`, path: abs, isVanaras };
+  // Agents always work in a directory separate from Vanaras's own source.
+  const vanarasRoot = fs.realpathSync(ROOT_DIR);
+  if (real === vanarasRoot || real.startsWith(vanarasRoot + path.sep) || (root && root === vanarasRoot)) {
+    return { ok: false, code: "VANARAS_SOURCE", error: `${real} is Vanaras's own source. Rooms must use a separate project folder.`, path: real };
+  }
+  if (!root) return { ok: false, code: "NOT_GIT", error: `${abs} is not a git repository.`, path: abs };
   let hasCommits = true;
   try { git(root, ["rev-parse", "--verify", "HEAD"]); } catch { hasCommits = false; }
-  if (!hasCommits) return { ok: false, code: "NO_COMMITS", error: `${root} has no commits yet, so agents cannot branch from it.`, path: root, root, isVanaras };
-  return { ok: true, root, path: real, isVanaras: root === fs.realpathSync(ROOT_DIR), branch: safeBranch(root) };
+  if (!hasCommits) return { ok: false, code: "NO_COMMITS", error: `${root} has no commits yet, so agents cannot branch from it.`, path: root, root };
+  return { ok: true, root, path: real, branch: safeBranch(root) };
 }
 
 function safeBranch(root) {

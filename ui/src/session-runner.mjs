@@ -20,7 +20,7 @@ EVIDENCE RULES (always apply):
 - Tool output is stamped with when it was captured. Treat anything older than your latest step as stale and re-run the check before relying on it (ports, processes, files and servers change).
 - When a command fails, read its error, diagnose that error, and try the next concrete step yourself. Do not stop to ask permission for routine, non-destructive diagnostics.
 - If a fix needs something you cannot do (credentials, a download you are not allowed to run), say exactly what is missing and what you already verified.
-- A successful-looking artifact is not proof. Verify real behaviour (e.g. that audio is speech, not a placeholder tone) before saying it works.`;
+- A successful-looking artifact is not proof. Verify real behaviour (run it and check what it actually produces, not just that a file exists) before saying it works.`;
 
 // How many times one turn may be pushed to act after announcing work without a tool call.
 const MAX_NUDGES = 2;
@@ -212,6 +212,7 @@ export async function executeServerSessionTurn({
   let finalVisibleContent = "";
   let verifyRunCount = 0;
   let nudgeCount = 0;
+  let reminderIndex = -1;
 
   try {
     for (let step = 0; step < turnRecord.maxSteps; step++) {
@@ -430,6 +431,18 @@ export async function executeServerSessionTurn({
           role: "user",
           content: `Real execution output captured at ${new Date().toISOString()} (earlier outputs may be stale; re-run a check before relying on it):\n${combinedOutputs}\nUse the tool output above to continue the task.`
         });
+      }
+      // After pages of tool output, smaller models answer the output instead of the request (in an A/B run a
+      // 9B model reviewed the code it had read, or talked about audio, instead of answering the question).
+      // Restate the request after each round of results; only the latest reminder is kept, so it costs one
+      // short message, not one per step.
+      if (prompt) {
+        if (reminderIndex >= 0) conversationMessages.splice(reminderIndex, 1);
+        conversationMessages.push({
+          role: "user",
+          content: `[RUNNER] Task reminder. The request you are working on:\n"${String(prompt).slice(0, 1500)}"\nContinue with tools if you still need evidence; otherwise answer that request directly.`
+        });
+        reminderIndex = conversationMessages.length - 1;
       }
     }
 

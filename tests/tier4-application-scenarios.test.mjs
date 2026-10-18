@@ -222,6 +222,10 @@ export function registerTier4Tests(runner) {
       assertMatch(st.body.turn.finalContent, /diag-ok/, "final answer must come from the post-tool reply");
       const secondRequest = JSON.stringify(seen.announcer[1] || []);
       assertMatch(secondRequest, /\[RUNNER\].*did not call any tool/, "the model must be told its announcement ran nothing");
+      const afterTool = seen.announcer[2] || [];
+      const last = afterTool[afterTool.length - 1] || {};
+      assert(last.role === "user" && /Task reminder[\s\S]*run diagnostics/.test(last.content), `after tool output the request must be restated last: ${JSON.stringify(last).slice(0, 300)}`);
+      assertEqual(afterTool.filter(m => /Task reminder/.test(String(m.content || ""))).length, 1, "only the latest reminder is kept");
     });
   });
 

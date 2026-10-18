@@ -1,7 +1,7 @@
 // HTTP routes: /api/agent/worktree, /api/agent/memory, /api/agent/skill
 import fs from "node:fs";
 import path from "node:path";
-import { discoverWorkspaceSkillFiles, getAgentConfigFile, getAgentSkillFile, loadAgentConfig, loadAgentMemory, loadAgentSkill, saveAgentConfig, saveAgentMemory, saveAgentSkill } from "../agent-store.mjs";
+import { discoverWorkspaceSkillFiles, getAgentConfigFile, getAgentSkillFile, loadAgentConfig, loadAgentMemory, loadAgentProjectMemories, loadAgentSkill, saveAgentConfig, saveAgentMemory, saveAgentSkill } from "../agent-store.mjs";
 import { readJsonBody, sendJson, sendRouteError } from "../http-utils.mjs";
 import { projectFromRequest } from "../projects.mjs";
 import { execFileAsync, isPathInside, safeGitCommitAsync } from "../util.mjs";
@@ -49,20 +49,21 @@ export async function handleAgentConfigRoutes(req, res) {
   if (req.method === "POST" && req.url === "/api/agent/memory") {
     try {
       const reqBody = await readJsonBody(req);
-      const { botId, action = "get", fact, item, index, memories } = reqBody;
+      // `project` (the room's project root) selects that project's memory; without it, the legacy list.
+      const { botId, action = "get", fact, item, index, memories, project = "" } = reqBody;
       const memoryItem = fact || item;
-      let current = loadAgentMemory(botId);
+      let current = loadAgentMemory(botId, project);
       if (action === "add" && memoryItem) {
         if (!current.includes(memoryItem)) current.unshift(memoryItem);
-        saveAgentMemory(botId, current);
+        saveAgentMemory(botId, current, project);
       } else if (action === "remove" && typeof index === "number") {
         current.splice(index, 1);
-        saveAgentMemory(botId, current);
+        saveAgentMemory(botId, current, project);
       } else if (action === "set" && Array.isArray(memories)) {
         current = memories;
-        saveAgentMemory(botId, current);
+        saveAgentMemory(botId, current, project);
       }
-      return sendJson(res, 200, { botId, memories: current });
+      return sendJson(res, 200, { botId, project, memories: current, projects: loadAgentProjectMemories(botId) });
     } catch (e) {
       return sendRouteError(res, e, 500);
     }

@@ -383,4 +383,25 @@ export function registerTier4Tests(runner) {
     const outside = await requestJson("POST", "/api/code-search", { query: "x", root: "/etc" });
     assertEqual(outside.status, 400, `a root outside the project must be refused: ${outside.raw}`);
   });
+
+  // T4.12: New Project creates a ready git repo outside Vanaras, and agent memory stays within its project.
+  runner.register(4, "M5", "F10", "T4.12_new_project_and_per_project_memory", async () => {
+    const os = await import("node:os");
+    const location = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "vanaras-newproj-")), "demo-app");
+    const created = await requestJson("POST", "/api/projects/create", { name: "Demo App", location });
+    assertEqual(created.status, 200, `create: ${created.raw}`);
+    assert(created.body.ok && created.body.branch === "main", `project must be a ready repo: ${created.raw}`);
+    const again = await requestJson("POST", "/api/projects/create", { name: "Demo App", location });
+    assertEqual(again.body?.code, "EXISTS", "creating over a non-empty folder must be refused");
+    const inside = await requestJson("POST", "/api/projects/create", { name: "x", location: path.join(VANARAS_ROOT, "nested") });
+    assertEqual(inside.body?.code, "VANARAS_SOURCE", "a project inside Vanaras's source must be refused");
+
+    const botId = `bot_e2e_mem_${Date.now()}`;
+    const root = created.body.root;
+    await requestJson("POST", "/api/agent/memory", { botId, action: "add", item: "prefers TypeScript", project: root });
+    const own = await requestJson("POST", "/api/agent/memory", { botId, action: "get", project: root });
+    assertEqual(JSON.stringify(own.body.memories), JSON.stringify(["prefers TypeScript"]));
+    const other = await requestJson("POST", "/api/agent/memory", { botId, action: "get", project: process.env.VANARAS_TEST_PROJECT });
+    assertEqual(JSON.stringify(other.body.memories), "[]", "memory from one project must not appear in another");
+  });
 }

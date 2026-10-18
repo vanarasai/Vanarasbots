@@ -7,7 +7,8 @@ import path from "node:path";
 import { sanitizeSlug, isPathInside, getAgentAssignedPort } from "../../ui/src/util.mjs";
 import { execFileSync } from "node:child_process";
 import { ROOT_DIR } from "../../ui/src/config.mjs";
-import { inspectProject, initProject, requireProject } from "../../ui/src/projects.mjs";
+import { createProject, inspectProject, initProject, projectSlug, requireProject } from "../../ui/src/projects.mjs";
+import { loadAgentMemory, loadAgentProjectMemories, saveAgentMemory } from "../../ui/src/agent-store.mjs";
 import { agentWorktreePath, ensureAgentWorktree } from "../../ui/src/worktree.mjs";
 import { resolveInWorktree } from "../../ui/src/agent-tools.mjs";
 
@@ -117,4 +118,35 @@ test("worktrees: the default location is outside Vanaras's source", async () => 
   const out = run(process.execPath, ["--input-type=module", "-e", "const c = await import(process.argv[1]); console.log(c.WORKTREES_DIR + '\\n' + c.ROOT_DIR);", new URL("../../ui/src/config.mjs", import.meta.url).href], { env: { ...process.env, VANARAS_WORKTREES_DIR: "", HOME: SANDBOX } }).toString().trim().split("\n");
   const [worktrees, root] = out;
   assert.ok(!isPathInside(worktrees, root), `${worktrees} must not be inside ${root}`);
+});
+
+test("new project: one call makes a new folder a git repo with a README, .gitignore and a first commit", () => {
+  assert.equal(projectSlug("  Invoice Tracker! v2 "), "invoice-tracker-v2");
+  const target = path.join(freshDir("projects-home"), "invoice-tracker");
+  const info = createProject({ name: "Invoice Tracker", location: target });
+  assert.ok(info.ok && info.root === fs.realpathSync(target) && info.branch === "main", JSON.stringify(info));
+  assert.match(fs.readFileSync(path.join(target, "README.md"), "utf8"), /^# Invoice Tracker/);
+  assert.equal(git(target, "log", "--format=%s"), "Start Invoice Tracker");
+  assert.equal(git(target, "status", "--porcelain"), "", "everything is committed");
+});
+
+test("new project: refuses a folder inside Vanaras's source, a non-empty folder, and a blank name", () => {
+  assert.throws(() => createProject({ name: "x", location: path.join(ROOT_DIR, "tmp-project") }), err => err.code === "VANARAS_SOURCE");
+  const busy = freshDir("busy");
+  fs.writeFileSync(path.join(busy, "keep.txt"), "mine");
+  assert.throws(() => createProject({ name: "busy", location: busy }), err => err.code === "EXISTS");
+  assert.equal(fs.readFileSync(path.join(busy, "keep.txt"), "utf8"), "mine", "an existing folder is left untouched");
+  assert.throws(() => createProject({ name: "  !!  " }), err => err.code === "BAD_NAME");
+});
+
+test("agent memory: each project has its own list; the pre-project list is kept separately", () => {
+  const bot = `bot_mem_${Date.now()}`;
+  saveAgentMemory(bot, ["legacy fact"]);
+  saveAgentMemory(bot, ["uses Postgres"], "/projects/a");
+  saveAgentMemory(bot, ["uses SQLite"], "/projects/b");
+  assert.deepEqual(loadAgentMemory(bot, "/projects/a"), ["uses Postgres"]);
+  assert.deepEqual(loadAgentMemory(bot, "/projects/b"), ["uses SQLite"]);
+  assert.deepEqual(loadAgentMemory(bot, "/projects/new"), [], "a new project starts empty");
+  assert.deepEqual(loadAgentMemory(bot), ["legacy fact"]);
+  assert.deepEqual(Object.keys(loadAgentProjectMemories(bot)).sort(), ["/projects/a", "/projects/b"]);
 });

@@ -1,6 +1,6 @@
 // Disk-backed shared workspace state.
 import fs from "node:fs";
-import { saveAgentMemory } from "./agent-store.mjs";
+import { saveAgentMemory, saveAgentProjectMemories } from "./agent-store.mjs";
 import { WORKSPACE_FILE } from "./config.mjs";
 import { loadLocalKeysVault, saveLocalKeysVault } from "./vault.mjs";
 
@@ -42,6 +42,9 @@ export function saveWorkspaceDiskState(state) {
         delete b.apiKey;
         if (Array.isArray(b.memories)) {
           saveAgentMemory(b.id, b.memories);
+        }
+        if (b.projectMemories && typeof b.projectMemories === "object") {
+          saveAgentProjectMemories(b.id, b.projectMemories);
         }
       });
     }

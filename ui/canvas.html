@@ -1332,6 +1332,18 @@
 
           <!-- (+) Popover Menu -->
           <div id="plusMenuDropdown" class="popover-menu hidden" style="top: 32px; left: -170px; width: 232px;">
+            <button onclick="openNewProjectModal(); hidePlusMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:var(--accent-blue);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg>
+              </div>
+              <div>
+                <div class="popover-title">New Project</div>
+                <div class="popover-sub">Folder, git repo, room and agents with clean memory</div>
+              </div>
+            </button>
+
+            <div class="popover-divider"></div>
+
             <button onclick="openBotModal(null); hidePlusMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:var(--accent-blue);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
@@ -2105,6 +2117,45 @@ Auto-save: enabled</pre>
     </div>
   </div>
 
+  <div id="newProjectModal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width:620px; width:min(620px, 94vw);">
+      <div class="modal-header">
+        <div>
+          <div style="font-size:15px; font-weight:600;">New Project</div>
+          <div style="font-size:11.5px; color:var(--text-muted);">Creates the folder and its git repository, a room, and agents that start with clean memory in this project</div>
+        </div>
+        <button onclick="closeNewProjectModal()" class="side-icon-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" style="max-height:70vh; overflow-y:auto;">
+        <div>
+          <label class="field-label">Project name</label>
+          <input id="newProjectNameInput" type="text" class="field-input" placeholder="e.g. Invoice Tracker" oninput="suggestNewProjectLocation()">
+        </div>
+        <div>
+          <label class="field-label">Folder</label>
+          <input id="newProjectLocationInput" type="text" class="field-input mono" placeholder="~/VanarasProjects/invoice-tracker" oninput="this.dataset.edited = '1'">
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">A new or empty folder outside Vanaras's source. Vanaras makes it a git repository with a first commit.</div>
+        </div>
+        <div>
+          <label class="field-label">Agents</label>
+          <div style="display:flex; flex-direction:column; gap:6px; font-size:12.5px; margin-bottom:8px;">
+            <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="newProjectAgentMode" value="fresh" checked> <span><strong>Fresh agents</strong> — new copies of the ones you pick (same role and model, default playbook, no memory or history)</span></label>
+            <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="newProjectAgentMode" value="existing"> <span><strong>Existing agents</strong> — the same agents; they start with no memory in this project</span></label>
+          </div>
+          <div id="newProjectAgentsChecklist" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div style="display:flex; gap:8px; margin-left:auto;">
+          <button onclick="closeNewProjectModal()" class="btn-secondary">Cancel</button>
+          <button id="newProjectCreateBtn" onclick="createNewProjectFromModal()" class="btn-primary">Create Project</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="panelModal" class="modal-backdrop hidden">
     <div class="modal-card" style="max-width:760px; width:min(760px, 94vw);">
       <div class="modal-header">
@@ -2731,6 +2782,7 @@ Auto-save: enabled</pre>
     }
 
     function hydrateBotAgentFields() {
+      migrateMemoryToProjects();
       (state.bots || []).forEach(b => {
         const def = DEFAULT_STATE.bots.find(d => d.id === b.id);
         if (!Array.isArray(b.memories)) b.memories = def?.memories ? [...def.memories] : [];
@@ -3060,7 +3112,10 @@ Auto-save: enabled</pre>
         });
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data.memories)) {
+          if (extra.project && Array.isArray(data.memories)) {
+            if (!bot.projectMemories || typeof bot.projectMemories !== "object") bot.projectMemories = {};
+            bot.projectMemories[extra.project] = data.memories;
+          } else if (Array.isArray(data.memories)) {
             if (data.memories.length === 0 && Array.isArray(bot.memories) && bot.memories.length > 0 && action === "get") {
               await fetch("/api/agent/memory", {
                 method: "POST",
@@ -3422,7 +3477,7 @@ Auto-save: enabled</pre>
         wtEl.innerText = leadBot.worktreeBranch || `vanara/${leadBot.name.toLowerCase()}`;
       }
 
-      const factsCount = (state.sharedFacts || []).length;
+      const factsCount = projectFactsFor(getActiveThread()).length;
       const factsEl = document.getElementById("sharedFactsCountPill");
       if (factsEl) factsEl.innerText = `${factsCount}`;
 
@@ -4160,8 +4215,10 @@ Auto-save: enabled</pre>
       const msg = thread?.messages[idx];
       if (!msg) return;
       const snippet = msg.text.replace(/\s+/g, " ").slice(0, 180);
-      if (!state.sharedFacts.includes(snippet)) {
-        state.sharedFacts.unshift(snippet);
+      if (!projectKeyOf(thread)) return showToast("Choose a project for this room first");
+      const facts = projectFactsFor(thread);
+      if (!facts.includes(snippet)) {
+        facts.unshift(snippet);
         saveState();
         showToast("Pinned to Shared Workspace Memory");
       } else {
@@ -4340,15 +4397,63 @@ Auto-save: enabled</pre>
     // =========================================================================
     // 7. SEND MESSAGE, PER-AGENT MEMORY/TOOLS/WORKTREE & SELF-TRIGGERED LOOP
     // =========================================================================
+    // Memory is per project (the room's project folder): a room sees only its project's shared rules, and an
+    // agent sees only its private memory for that project. A new project therefore starts clean.
+    function projectKeyOf(thread) {
+      return String(thread?.mountPath || "");
+    }
+    function projectFactsFor(thread) {
+      const key = projectKeyOf(thread);
+      if (!key) return [];
+      if (!state.projectFacts || typeof state.projectFacts !== "object") state.projectFacts = {};
+      if (!Array.isArray(state.projectFacts[key])) state.projectFacts[key] = [];
+      return state.projectFacts[key];
+    }
+    function agentMemoriesFor(bot, thread) {
+      const key = projectKeyOf(thread);
+      if (!bot || !key) return [];
+      if (!bot.projectMemories || typeof bot.projectMemories !== "object") bot.projectMemories = {};
+      if (!Array.isArray(bot.projectMemories[key])) bot.projectMemories[key] = [];
+      return bot.projectMemories[key];
+    }
+    function rememberForAgent(bot, thread, fact) {
+      const key = projectKeyOf(thread);
+      const list = agentMemoriesFor(bot, thread);
+      if (!fact || !key || list.includes(fact)) return false;
+      list.unshift(fact);
+      syncAgentMemoryOnServer(bot, "add", { item: fact, project: key });
+      return true;
+    }
+    // Before memory was per project, the shared rules and each agent's memory applied everywhere. Copy them into
+    // every project already in use (so existing rooms behave as before); projects created later start empty.
+    function migrateMemoryToProjects() {
+      if (state.memoryVersion >= 2) return;
+      const threads = state.threads || [];
+      if (!state.projectFacts || typeof state.projectFacts !== "object") state.projectFacts = {};
+      for (const root of new Set(threads.map(t => t.mountPath).filter(Boolean))) {
+        if (!Array.isArray(state.projectFacts[root])) state.projectFacts[root] = [...(state.sharedFacts || [])];
+      }
+      for (const b of state.bots || []) {
+        if (!b.projectMemories || typeof b.projectMemories !== "object") b.projectMemories = {};
+        const roots = new Set(threads.filter(t => t.botId === b.id || (t.botIds || []).includes(b.id)).map(t => t.mountPath).filter(Boolean));
+        for (const root of roots) {
+          if (!Array.isArray(b.projectMemories[root])) b.projectMemories[root] = [...(b.memories || [])];
+        }
+      }
+      state.memoryVersion = 2;
+    }
+
     function buildGroundedSystemPrompt(bot, thread, folderSummary) {
       const skillBlock = (bot.skillMarkdown && String(bot.skillMarkdown).trim())
         ? `\n\nAGENT SKILL.md PLAYBOOK (${bot.name}):\n${String(bot.skillMarkdown).trim().slice(0, 4500)}`
         : "";
-      const privateMemories = Array.isArray(bot.memories) && bot.memories.length > 0
-        ? `\n\nPRIVATE MEMORY (${bot.name}):\n` + bot.memories.map((m, i) => `${i + 1}. ${m}`).join("\n")
+      const botMemories = agentMemoriesFor(bot, thread);
+      const privateMemories = botMemories.length > 0
+        ? `\n\nPRIVATE MEMORY (${bot.name}, this project):\n` + botMemories.map((m, i) => `${i + 1}. ${m}`).join("\n")
         : "";
-      const factsBlock = (state.sharedFacts && state.sharedFacts.length > 0)
-        ? `\n\nWORKSPACE RULES:\n` + state.sharedFacts.map((f, i) => `${i + 1}. ${f}`).join("\n")
+      const projectFacts = projectFactsFor(thread);
+      const factsBlock = projectFacts.length > 0
+        ? `\n\nWORKSPACE RULES (this project):\n` + projectFacts.map((f, i) => `${i + 1}. ${f}`).join("\n")
         : "";
       const wtBranch = bot.worktreeBranch || `vanara/${bot.name.toLowerCase()}`;
       const wtPath = agentWorktrees[bot.id]?.worktreeDir || `.worktrees/${bot.id}`;
@@ -4602,9 +4707,7 @@ ${handoffRule}
       let rmMatch;
       while ((rmMatch = rememberRx.exec(scanSource)) !== null) {
         const fact = rmMatch[1].trim();
-        if (fact && !bot.memories.includes(fact)) {
-          bot.memories.unshift(fact);
-          await syncAgentMemoryOnServer(bot, "add", { item: fact });
+        if (rememberForAgent(bot, thread, fact)) {
           showToast(`${bot.name} remembered: ${fact.slice(0, 42)}…`);
         }
       }
@@ -5433,13 +5536,10 @@ ${handoffRule}
 
     function rememberServerTurnFacts(data) {
       const bot = getBot(data.botId);
-      if (!bot || !Array.isArray(data.remembered)) return;
-      if (!Array.isArray(bot.memories)) bot.memories = [];
+      const thread = state.threads.find(t => t.id === data.threadId);
+      if (!bot || !thread || !Array.isArray(data.remembered)) return;
       for (const fact of data.remembered) {
-        if (!fact || bot.memories.includes(fact)) continue;
-        bot.memories.unshift(fact);
-        syncAgentMemoryOnServer(bot, "add", { item: fact });
-        showToast(`${bot.name} remembered: ${fact.slice(0, 42)}…`);
+        if (rememberForAgent(bot, thread, fact)) showToast(`${bot.name} remembered: ${fact.slice(0, 42)}…`);
       }
     }
 
@@ -6295,6 +6395,131 @@ ${handoffRule}
     // 8. MULTI-AGENT COLLABORATION
     // =========================================================================
     // =========================================================================
+    // NEW PROJECT: one step for folder + git repo + room + agents with clean, project-scoped memory
+    // =========================================================================
+    let newProjectSuggestTimer = null;
+
+    function openNewProjectModal() {
+      document.getElementById("newProjectNameInput").value = "";
+      const loc = document.getElementById("newProjectLocationInput");
+      loc.value = "";
+      delete loc.dataset.edited;
+      document.querySelector('input[name="newProjectAgentMode"][value="fresh"]').checked = true;
+      const defaultIds = new Set(["bot_r1", "bot_r2", "bot_r3", "bot_r4"]);
+      document.getElementById("newProjectAgentsChecklist").innerHTML = state.bots.map(b => `
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px; padding:6px 8px; border:1px solid var(--border-subtle); border-radius:8px; cursor:pointer;">
+          <input type="checkbox" class="new-project-bot-cb" value="${escapeHtml(b.id)}" ${defaultIds.has(b.id) ? "checked" : ""}>
+          ${renderCleanAgentCircle(b, 20)} <span>${escapeHtml(b.name)} <span style="color:var(--text-muted);">· ${escapeHtml(b.role || "")}</span></span>
+        </label>`).join("");
+      document.getElementById("newProjectModal").classList.remove("hidden");
+      document.getElementById("newProjectNameInput").focus();
+    }
+
+    function closeNewProjectModal() {
+      document.getElementById("newProjectModal").classList.add("hidden");
+    }
+
+    function suggestNewProjectLocation() {
+      const loc = document.getElementById("newProjectLocationInput");
+      if (loc.dataset.edited) return;
+      clearTimeout(newProjectSuggestTimer);
+      newProjectSuggestTimer = setTimeout(async () => {
+        try {
+          const name = document.getElementById("newProjectNameInput").value;
+          const r = await (await fetch("/api/projects/suggest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) })).json();
+          if (!loc.dataset.edited) loc.value = r.location || "";
+        } catch {}
+      }, 200);
+    }
+
+    // A fresh agent copies a template's role, model and tools; it gets a new id (so its own worktree branch,
+    // playbook and memory files) and a name unique within @mentions.
+    function makeFreshProjectAgent(tpl, slug, i) {
+      const short = slug.slice(0, 14);
+      let name = `${tpl.name}-${short}`.slice(0, 28);
+      while (state.bots.some(b => b.name.toLowerCase() === name.toLowerCase())) name = `${name.slice(0, 25)}${i}`;
+      return {
+        id: `bot_${Date.now()}_${i}`,
+        name,
+        role: tpl.role,
+        avatarStyle: tpl.avatarStyle,
+        provider: tpl.provider,
+        baseUrl: tpl.baseUrl,
+        apiKey: tpl.apiKey,
+        model: tpl.model,
+        customModelConfigured: true,
+        instructions: tpl.instructions || "",
+        skillMarkdown: "",
+        memories: [],
+        projectMemories: {},
+        tools: Array.isArray(tpl.tools) ? [...tpl.tools] : undefined,
+        mcpCommand: "",
+        maxReactSteps: tpl.maxReactSteps,
+        autoVerifyCode: tpl.autoVerifyCode !== false,
+        worktreeBranch: `vanara/${name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`
+      };
+    }
+
+    async function createNewProjectFromModal() {
+      const name = document.getElementById("newProjectNameInput").value.trim();
+      const location = document.getElementById("newProjectLocationInput").value.trim();
+      const mode = document.querySelector('input[name="newProjectAgentMode"]:checked')?.value || "fresh";
+      const picked = Array.from(document.querySelectorAll(".new-project-bot-cb:checked")).map(cb => getBot(cb.value)).filter(Boolean);
+      if (!name) return showToast("Give the project a name");
+      if (picked.length === 0) return showToast("Pick at least one agent");
+      const btn = document.getElementById("newProjectCreateBtn");
+      btn.disabled = true;
+      btn.textContent = "Creating…";
+      try {
+        const res = await fetch("/api/projects/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, location }) });
+        const info = await res.json();
+        if (!info.ok) throw new Error(info.error || "Could not create the project");
+        const root = info.root;
+        const slug = root.split(/[\\/]/).filter(Boolean).pop() || "project";
+        const agents = mode === "fresh" ? picked.map((tpl, i) => makeFreshProjectAgent(tpl, slug, i)) : picked;
+        if (mode === "fresh") {
+          state.bots.push(...agents);
+          hydrateBotAgentFields();
+          const stamp = Date.now();
+          agents.forEach((b, i) => state.threads.push({
+            id: `thread_dm_${stamp}_${i}`,
+            type: "dm",
+            botId: b.id,
+            mountPath: root,
+            messages: [{ senderType: "bot", botId: b.id, text: `Hi, I'm **${b.name}** (${b.role}), working on **${name}**. I start with no memory in this project.` }]
+          }));
+        }
+        if (!state.projectFacts || typeof state.projectFacts !== "object") state.projectFacts = {};
+        state.projectFacts[root] = [];
+        const roomId = "thread_grp_" + Date.now();
+        state.threads.unshift({
+          id: roomId,
+          type: "group",
+          name,
+          mountPath: root,
+          botIds: agents.map(b => b.id),
+          humanIds: [],
+          messages: [{
+            senderType: "bot",
+            botId: agents[0].id,
+            text: `Project **${name}** is ready in \`${root}\` (branch \`${info.branch || "main"}\`). ${agents.length} agent${agents.length === 1 ? "" : "s"}: ${agents.map(b => "@" + b.name).join(", ")}. Shared Workspace Memory for this project is empty. Tell the squad what to build.`
+          }]
+        });
+        activeThreadId = roomId;
+        saveState();
+        closeNewProjectModal();
+        renderThreadList();
+        renderActiveThread();
+        showToast(`Created ${name}`);
+      } catch (err) {
+        showToast(`Could not create the project: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Create Project";
+      }
+    }
+
+    // =========================================================================
     // PANELS: any number of persona agents debate, vote A/B, or review shared material (server-run)
     // =========================================================================
     let panelDraft = { panelists: [], options: [] };
@@ -7122,7 +7347,7 @@ ${handoffRule}
         if (skillInput) skillInput.value = bot.skillMarkdown || "";
 
         selectedAvatarStyleInModal = bot.avatarStyle || "vanara-crimson";
-        modalPrivateMemories = [...(bot.memories || [])];
+        modalPrivateMemories = [...agentMemoriesFor(bot, getActiveThread())];
         renderBotPrivateMemoryListInModal();
         renderBotToolsChecklistInModal(bot.tools || AVAILABLE_AGENT_TOOLS.map(t => t.id));
         deleteBtn.classList.toggle("hidden", state.bots.length <= 1);
@@ -7283,7 +7508,7 @@ ${handoffRule}
           instructions,
           skillMarkdown,
           avatarStyle: selectedAvatarStyleInModal,
-          memories: [...modalPrivateMemories],
+
           tools: selectedTools,
           mcpCommand,
           mcpCustomInstructions,
@@ -7307,7 +7532,7 @@ ${handoffRule}
           customModelConfigured: true,
           instructions,
           skillMarkdown,
-          memories: [...modalPrivateMemories],
+
           tools: selectedTools,
           mcpCommand,
           mcpCustomInstructions,
@@ -7338,7 +7563,13 @@ ${handoffRule}
       }
 
       if (targetBotRef) {
-        syncAgentMemoryOnServer(targetBotRef, "set", { memories: targetBotRef.memories });
+        // The editor shows and saves the agent's memory for the project of the room in view.
+        const memoryProject = projectKeyOf(getActiveThread());
+        if (memoryProject) {
+          if (!targetBotRef.projectMemories || typeof targetBotRef.projectMemories !== "object") targetBotRef.projectMemories = {};
+          targetBotRef.projectMemories[memoryProject] = [...modalPrivateMemories];
+          syncAgentMemoryOnServer(targetBotRef, "set", { memories: [...modalPrivateMemories], project: memoryProject });
+        }
         syncAgentSkillOnServer(targetBotRef, "set", { skillMarkdown: targetBotRef.skillMarkdown });
         ensureAgentWorktreeOnServer(targetBotRef);
       }
@@ -7582,26 +7813,27 @@ ${handoffRule}
     }
     function renderSharedFactsList() {
       const box = document.getElementById("sharedFactsList");
-      box.innerHTML = (state.sharedFacts || []).map((f, i) => `
+      box.innerHTML = projectFactsFor(getActiveThread()).map((f, i) => `
         <div style="padding:10px 12px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-card); display:flex; align-items:center; justify-content:space-between; gap:10px;">
           <span style="font-size:12.5px; color:var(--text-primary);">${escapeHtml(f)}</span>
           <button onclick="removeSharedFact(${i})" class="side-icon-btn" title="Remove">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-      `).join("") || `<div style="color:var(--text-muted); font-size:12px;">No shared facts yet.</div>`;
+      `).join("") || `<div style="color:var(--text-muted); font-size:12px;">${projectKeyOf(getActiveThread()) ? "No shared facts for this project yet." : "This room has no project yet."}</div>`;
     }
     function addSharedFactFromInput() {
       const input = document.getElementById("newSharedFactInput");
       const val = input.value.trim();
       if (!val) return;
-      state.sharedFacts.unshift(val);
+      if (!projectKeyOf(getActiveThread())) return showToast("Choose a project for this room first");
+      projectFactsFor(getActiveThread()).unshift(val);
       input.value = "";
       saveState();
       renderSharedFactsList();
     }
     function removeSharedFact(idx) {
-      state.sharedFacts.splice(idx, 1);
+      projectFactsFor(getActiveThread()).splice(idx, 1);
       saveState();
       renderSharedFactsList();
     }

@@ -1,7 +1,7 @@
 // HTTP routes: /api/projects/check, /api/projects/init — what a room's folder is, and (only when the user
 // agrees) turning it into a git repository agents can branch from.
 import { readJsonBody, sendJson, sendRouteError } from "../http-utils.mjs";
-import { initProject, inspectProject } from "../projects.mjs";
+import { PROJECTS_HOME, createProject, initProject, inspectProject, projectSlug } from "../projects.mjs";
 
 export async function handleProjectsRoutes(req, res) {
   if (req.method === "POST" && req.url === "/api/projects/check") {
@@ -17,6 +17,24 @@ export async function handleProjectsRoutes(req, res) {
       const { path: folder = "", confirmed = false } = await readJsonBody(req);
       if (confirmed !== true) return sendJson(res, 400, { ok: false, error: "Initialising a folder needs the user's confirmation." });
       return sendJson(res, 200, initProject(folder));
+    } catch (e) {
+      return sendRouteError(res, e, 400);
+    }
+  }
+  if (req.method === "POST" && req.url === "/api/projects/create") {
+    try {
+      const { name = "", location = "" } = await readJsonBody(req);
+      return sendJson(res, 200, createProject({ name, location }));
+    } catch (e) {
+      return sendRouteError(res, e, 400);
+    }
+  }
+  // Where a new project with this name would go by default (shown in the New Project form).
+  if (req.method === "POST" && req.url === "/api/projects/suggest") {
+    try {
+      const { name = "" } = await readJsonBody(req);
+      const slug = projectSlug(name);
+      return sendJson(res, 200, { ok: true, home: PROJECTS_HOME, location: slug ? `${PROJECTS_HOME}/${slug}` : "" });
     } catch (e) {
       return sendRouteError(res, e, 400);
     }

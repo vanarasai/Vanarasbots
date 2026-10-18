@@ -14,22 +14,50 @@ export function getAgentMemoryFile(botId) {
   return path.join(dir, "memory.json");
 }
 
-export function loadAgentMemory(botId) {
+// An agent's memory is kept per project (the room's project root), so an agent starts with a clean memory
+// in a new project. `memories` is the pre-project list, kept for compatibility.
+function readMemoryStore(botId) {
   try {
     const file = getAgentMemoryFile(botId);
     if (fs.existsSync(file)) {
       const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-      if (Array.isArray(parsed.memories)) return parsed.memories;
+      return {
+        memories: Array.isArray(parsed.memories) ? parsed.memories : [],
+        projects: parsed.projects && typeof parsed.projects === "object" ? parsed.projects : {}
+      };
     }
   } catch {}
-  return [];
+  return { memories: [], projects: {} };
 }
 
-export function saveAgentMemory(botId, memories) {
+function writeMemoryStore(botId, store) {
   try {
     const file = getAgentMemoryFile(botId);
-    fs.writeFileSync(file, JSON.stringify({ botId, updatedAt: Date.now(), memories }, null, 2), "utf8");
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify({ botId, updatedAt: Date.now(), ...store }, null, 2), "utf8");
+    fs.renameSync(`${file}.tmp`, file);
   } catch {}
+}
+
+export function loadAgentMemory(botId, project = "") {
+  const store = readMemoryStore(botId);
+  return project ? (Array.isArray(store.projects[project]) ? store.projects[project] : []) : store.memories;
+}
+
+export function saveAgentMemory(botId, memories, project = "") {
+  const store = readMemoryStore(botId);
+  if (project) store.projects[project] = Array.isArray(memories) ? memories : [];
+  else store.memories = Array.isArray(memories) ? memories : [];
+  writeMemoryStore(botId, store);
+}
+
+export function loadAgentProjectMemories(botId) {
+  return readMemoryStore(botId).projects;
+}
+
+export function saveAgentProjectMemories(botId, projects = {}) {
+  const store = readMemoryStore(botId);
+  store.projects = Object.fromEntries(Object.entries(projects || {}).filter(([k, v]) => k && Array.isArray(v)));
+  writeMemoryStore(botId, store);
 }
 
 export function getAgentSkillFile(botId) {

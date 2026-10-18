@@ -2,6 +2,7 @@
 // Vanaras itself (unless the user deliberately mounts the Vanaras folder as a room's project).
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ROOT_DIR } from "./config.mjs";
@@ -90,4 +91,40 @@ export function projectFromRequest(req, body = {}) {
 // The response for a missing or invalid project, so the UI can ask the user to choose or initialise one.
 export function projectErrorResponse(err) {
   return { status: 409, body: { ok: false, code: err.code, error: err.message, project: err.details } };
+}
+
+// Where new projects go when the user does not pick a folder.
+export const PROJECTS_HOME = process.env.VANARAS_PROJECTS_HOME ? path.resolve(process.env.VANARAS_PROJECTS_HOME) : path.join(os.homedir(), "VanarasProjects");
+
+export function projectSlug(name) {
+  return String(name || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+}
+
+// One step for a new project: a new (or empty) folder outside Vanaras's source, a git repository with a README
+// and .gitignore, and a first commit agents can branch from.
+export function createProject({ name = "", location = "" } = {}) {
+  const slug = projectSlug(name);
+  if (!slug) throw new ProjectError("BAD_NAME", "Give the project a name (letters or numbers).");
+  const target = path.resolve(location ? String(location) : path.join(PROJECTS_HOME, slug));
+  if (!path.isAbsolute(String(location || target))) throw new ProjectError("NOT_ABSOLUTE", `Project folder must be an absolute path: ${location}`);
+  const vanarasRoot = fs.realpathSync(ROOT_DIR);
+  let probe = target;
+  while (!fs.existsSync(probe) && probe !== path.dirname(probe)) probe = path.dirname(probe);
+  const realProbe = fs.realpathSync(probe);
+  if (realProbe === vanarasRoot || realProbe.startsWith(vanarasRoot + path.sep)) {
+    throw new ProjectError("VANARAS_SOURCE", `${target} is inside Vanaras's own source. Choose a folder outside it.`);
+  }
+  if (fs.existsSync(target)) {
+    if (!fs.statSync(target).isDirectory()) throw new ProjectError("NOT_A_FOLDER", `${target} exists and is not a folder.`);
+    const entries = fs.readdirSync(target).filter(e => e !== ".DS_Store");
+    if (entries.length > 0) throw new ProjectError("EXISTS", `${target} already exists and is not empty. Choose another name or folder.`);
+  }
+  fs.mkdirSync(target, { recursive: true });
+  const title = String(name).trim();
+  fs.writeFileSync(path.join(target, "README.md"), `# ${title}\n\nCreated with Vanaras on ${new Date().toISOString().slice(0, 10)}.\n`);
+  fs.writeFileSync(path.join(target, ".gitignore"), ["node_modules/", ".venv", "__pycache__/", "*.pyc", ".DS_Store", ""].join("\n"));
+  git(target, ["init", "-q", "-b", "main"]);
+  git(target, ["add", "-A"]);
+  git(target, ["-c", "user.name=Vanaras", "-c", "user.email=vanaras@localhost", "commit", "-q", "-m", `Start ${title}`]);
+  return inspectProject(target);
 }

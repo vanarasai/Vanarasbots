@@ -111,3 +111,10 @@ test("worktrees: an agent whose branch is already checked out elsewhere in the p
   git(repo, "worktree", "add", "-q", "-b", "vanara/r4", legacy, "HEAD");
   assert.equal(ensureAgentWorktree("bot_r4", "R4", repo).worktreePath, legacy);
 });
+
+test("worktrees: the default location is outside Vanaras's source", async () => {
+  const { execFileSync: run } = await import("node:child_process");
+  const out = run(process.execPath, ["--input-type=module", "-e", "const c = await import(process.argv[1]); console.log(c.WORKTREES_DIR + '\\n' + c.ROOT_DIR);", new URL("../../ui/src/config.mjs", import.meta.url).href], { env: { ...process.env, VANARAS_WORKTREES_DIR: "", HOME: SANDBOX } }).toString().trim().split("\n");
+  const [worktrees, root] = out;
+  assert.ok(!isPathInside(worktrees, root), `${worktrees} must not be inside ${root}`);
+});

@@ -9,7 +9,7 @@ import { ensureAgentWorktree } from "../worktree.mjs";
 export async function handleCodeSearchRoutes(req, res) {
   if (req.method === "POST" && req.url === "/api/code-search") {
     try {
-      const { query = "", botId = "", root = "", path: scope = "", limit = 8, budgetChars = 7000 } = await readJsonBody(req);
+      const { query = "", botId = "", root = "", path: scope = "", limit = 8, budgetChars = 7000, semantic = true } = await readJsonBody(req);
       let base = ROOT_DIR;
       if (botId) {
         base = ensureAgentWorktree(botId, botId.replace(/^bot_/, "").toUpperCase()).worktreePath;
@@ -19,7 +19,7 @@ export async function handleCodeSearchRoutes(req, res) {
           return sendJson(res, 400, { ok: false, error: "root must be inside the project or an agent worktree" });
         }
       }
-      const r = await codeSearch(base, query, { limit, pathPrefix: scope, budgetChars });
+      const r = await codeSearch(base, query, { limit, pathPrefix: scope, budgetChars, semantic: semantic !== false });
       return sendJson(res, 200, { ok: true, root: base, ...r });
     } catch (e) {
       return sendJson(res, 400, { ok: false, error: e.message });

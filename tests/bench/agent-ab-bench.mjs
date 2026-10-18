@@ -32,9 +32,11 @@ const TASKS = [
     check: a => /resolveVote|tallyVotes/.test(a) && /panel-core/.test(a)
   }
 ];
+// grep: no index. bm25: code_search over the keyword index only (XERJ-style). hybrid: BM25 + EmbeddingGemma 2.
 const ARMS = [
-  { id: "without", botId: "bot_ab_without", disabledTools: ["code_search"] },
-  { id: "with", botId: "bot_ab_with", disabledTools: [] }
+  { id: "grep", botId: "bot_ab_grep", disabledTools: ["code_search"], config: {} },
+  { id: "bm25", botId: "bot_ab_bm25", disabledTools: [], config: { codeSearchMode: "keyword" } },
+  { id: "hybrid", botId: "bot_ab_hybrid", disabledTools: [], config: { codeSearchMode: "hybrid" } }
 ];
 
 const freePort = () => new Promise((resolve, reject) => {
@@ -82,18 +84,22 @@ for (let i = 0; i < 80; i++) {
 }
 
 for (const arm of ARMS) {
-  await api("POST", "/api/agent/skill", { botId: arm.botId, botName: arm.id, action: "set", skillMarkdown: "", agentConfig: { provider: "local", baseUrl: OLLAMA, model: MODEL, permissionPolicy: "auto" } });
+  await api("POST", "/api/agent/skill", { botId: arm.botId, botName: arm.id, action: "set", skillMarkdown: "", agentConfig: { provider: "local", baseUrl: OLLAMA, model: MODEL, permissionPolicy: "auto", ...arm.config } });
 }
 
-// The index is a one-time cost per worktree; build it before the timed runs and report it separately.
-const t0 = Date.now();
-let coverage = 0;
-for (let i = 0; i < 40 && coverage < 1; i++) {
-  const r = await api("POST", "/api/code-search", { botId: "bot_ab_with", query: "warm up the index", limit: 1 }, 180000);
-  coverage = r.semantic?.coverage || 0;
-  if (coverage < 1) await sleep(3000);
+// Indexes are a one-time cost per worktree; build them before the timed runs and report them separately.
+for (const arm of ARMS.filter(a => a.id !== "grep")) {
+  const t0 = Date.now();
+  let coverage = 0;
+  for (let i = 0; i < 40; i++) {
+    const r = await api("POST", "/api/code-search", { botId: arm.botId, query: "warm up the index", limit: 1, semantic: arm.config.codeSearchMode !== "keyword" }, 180000);
+    coverage = r.semantic?.coverage || 0;
+    if (arm.config.codeSearchMode === "keyword" || coverage >= 1) break;
+    await sleep(3000);
+  }
+  console.log(`index for the ${arm.id} arm ready in ${((Date.now() - t0) / 1000).toFixed(1)}s${arm.config.codeSearchMode === "keyword" ? "" : ` (${(coverage * 100).toFixed(0)}% embedded)`}`);
 }
-console.log(`index for the "with" arm: ${(coverage * 100).toFixed(0)}% embedded in ${((Date.now() - t0) / 1000).toFixed(1)}s\n`);
+console.log("");
 
 const prompt = q => `Answer this question about the code in your worktree. Do not modify any files. Investigate with your tools, then give a short answer that names the exact files and functions.\n\nQuestion: ${q}`;
 const results = [];

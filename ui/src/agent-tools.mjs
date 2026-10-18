@@ -461,10 +461,14 @@ export async function executeAgentToolInternal(params = {}) {
       return { status: 400, data: { ok: false, error: `Path outside the worktree blocked: ${scope}` } };
     }
     try {
-      const r = await codeSearch(wt.worktreePath, q, { limit: Number(args.limit) || 8, pathPrefix: scope });
+      // Per-agent: "hybrid" (default) or "keyword" (BM25 only, like XERJ; needs no embedding model).
+      const keywordOnly = String(savedAgentCfg.codeSearchMode || "").toLowerCase() === "keyword";
+      const r = await codeSearch(wt.worktreePath, q, { limit: Number(args.limit) || 8, pathPrefix: scope, semantic: !keywordOnly });
       const mode = r.semantic.enabled
         ? `hybrid (keyword + ${r.semantic.model}, ${Math.round(r.semantic.coverage * 100)}% embedded)`
-        : `keyword only${r.semantic.reason ? ` — semantic search off: ${r.semantic.reason}` : ""}`;
+        : keywordOnly
+          ? "keyword (BM25)"
+          : `keyword only${r.semantic.reason ? ` — semantic search off: ${r.semantic.reason}` : ""}`;
       const output = r.results.length
         ? `${r.results.length} passages for "${q}" · ${mode} · ${r.files} files indexed\n\n${r.text}`
         : `No passages matched "${q}" (${mode}, ${r.files} files indexed). Try other words, or grep_search for an exact string.`;

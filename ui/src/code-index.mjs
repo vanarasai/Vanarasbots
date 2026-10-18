@@ -203,9 +203,10 @@ export async function refreshIndex(root, { embedBudgetMs = 15000 } = {}) {
     const idx = loadIndex(root);
     const changed = refreshFiles(idx);
     const before = idx.chunks.filter(c => !c.vec).length;
-    const remaining = before ? await embedPending(idx, Date.now() + embedBudgetMs) : 0;
+    // A zero budget means keyword-only use: no embedding now and none scheduled in the background.
+    const remaining = before && embedBudgetMs > 0 ? await embedPending(idx, Date.now() + embedBudgetMs) : before;
     if (changed || remaining !== before) saveIndex(idx);
-    if (remaining > 0 && embedderAvailable() && !idx.backgroundRunning) {
+    if (embedBudgetMs > 0 && remaining > 0 && embedderAvailable() && !idx.backgroundRunning) {
       idx.backgroundRunning = true;
       setTimeout(() => {
         refreshIndex(root, { embedBudgetMs: 120000 }).finally(() => { idx.backgroundRunning = false; });
@@ -219,7 +220,7 @@ export async function codeSearch(root, query, { limit = 8, pathPrefix = "", budg
   const t0 = Date.now();
   const q = String(query || "").trim();
   if (!q) throw new Error("query is required");
-  const idx = await refreshIndex(root);
+  const idx = await refreshIndex(root, useSemantic ? {} : { embedBudgetMs: 0 });
   const prefix = String(pathPrefix || "").replace(/^\.?\/+/, "").replace(/\/+$/, "");
   const inScope = id => !prefix || idx.chunks[id].path === prefix || idx.chunks[id].path.startsWith(`${prefix}/`);
 

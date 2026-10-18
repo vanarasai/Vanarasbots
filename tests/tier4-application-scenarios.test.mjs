@@ -367,4 +367,15 @@ export function registerTier4Tests(runner) {
       await requestJson("POST", "/api/agent/tool", { action: "shell_exec", botId: "bot_r1", command: `rm -f agent_workspace/r1/${file} ${file}` });
     }
   });
+
+  // T4.10: an agent configured with codeSearchMode "keyword" gets BM25-only results (no embedding model used).
+  runner.register(4, "M2", "F3", "T4.10_code_search_keyword_mode_is_bm25_only", async () => {
+    const botId = "bot_e2e_bm25";
+    await requestJson("POST", "/api/agent/skill", { botId, botName: "bm25", action: "set", skillMarkdown: "", agentConfig: { codeSearchMode: "keyword" } });
+    const r = await requestJson("POST", "/api/agent/tool", { action: "code_search", botId, args: { query: "tallyVotes" } }, {}, 60000);
+    assertEqual(r.status, 200, `code_search: ${r.raw}`);
+    assertMatch(r.body.output, /keyword \(BM25\)/, "output must say the search was keyword-only");
+    assert(r.body.semantic && r.body.semantic.enabled === false, "semantic search must be off");
+    assert(r.body.results.length > 0 && r.body.results.every(x => x.via.join() === "keyword"), `results must come from the keyword index only: ${JSON.stringify(r.body.results.slice(0, 2))}`);
+  });
 }

@@ -191,6 +191,25 @@ export function vectorSearch(queryVec, vectors, limit = 50) {
   return scored.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
+// Tests repeat the vocabulary of the code they test, so they compete with it for every query, and their
+// literals (timeouts, sample values) then get quoted as if they were the real behaviour. Unless the query is
+// about tests, a test file's fused score is halved.
+export function isTestPath(relPath) {
+  const p = String(relPath || "").toLowerCase();
+  return /(?:^|\/)(?:tests?|__tests__|spec|specs|e2e)\//.test(p) || /(?:^|\/)test_[^/]*$|[._-](?:test|spec)\.[a-z0-9]+$|_test\.(?:go|py|rs)$/.test(p);
+}
+
+export function queryWantsTests(query) {
+  return /\b(?:tests?|testing|tested|spec|specs|e2e|unit test|fixtures?)\b/i.test(String(query || ""));
+}
+
+export function demoteTests(fused, chunks, query, factor = 0.5) {
+  if (queryWantsTests(query)) return fused;
+  return fused
+    .map(f => (isTestPath(chunks[f.id]?.path) ? { ...f, score: f.score * factor } : f))
+    .sort((a, b) => b.score - a.score);
+}
+
 // Reciprocal-rank fusion: robust to the two lists having incomparable score scales.
 export function fuseRankings(lists, k = 60) {
   const fused = new Map();

@@ -1,7 +1,7 @@
 import "./_env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Bm25Index, bestSnippet, chunkFile, formatResults, fuseRankings, normalizeVector, stem, tokenize, vectorSearch } from "../../ui/src/code-index-core.mjs";
+import { Bm25Index, bestSnippet, chunkFile, demoteTests, formatResults, fuseRankings, isTestPath, normalizeVector, queryWantsTests, stem, tokenize, vectorSearch } from "../../ui/src/code-index-core.mjs";
 
 test("tokenize: identifiers match whole and by their parts; stopwords drop", () => {
   const t = tokenize("Where do we call parsePersonaList and MAX_PANELISTS?");
@@ -95,4 +95,14 @@ test("snippets and formatting: the matching window is kept, lines are numbered, 
   const out = formatResults(many, { budgetChars: 5000 });
   assert.ok(out.shown >= 1 && out.shown < 10);
   assert.match(out.text, /── f0\.js:1-40 \(s\) \[keyword\]\n {4}1 {2}x/);
+});
+
+test("test files: recognised by folder and name, ranked below equal source matches unless the query asks about tests", () => {
+  for (const p of ["tests/tier5-platform.test.mjs", "tests/unit/x.mjs", "src/__tests__/a.js", "pkg/foo_test.go", "test_podcast.py", "ui/a.spec.ts"]) assert.ok(isTestPath(p), p);
+  for (const p of ["ui/src/agent-tools.mjs", "latest.mjs", "contest/rules.md", "attestation.py"]) assert.ok(!isTestPath(p), p);
+  const chunks = [{ path: "tests/tier5-platform.test.mjs" }, { path: "ui/src/agent-tools.mjs" }];
+  const fused = [{ id: 0, score: 0.032, via: ["keyword"] }, { id: 1, score: 0.030, via: ["keyword"] }];
+  assert.deepEqual(demoteTests(fused, chunks, "how long does the agent wait for approval").map(f => f.id), [1, 0]);
+  assert.ok(queryWantsTests("which test covers approvals"));
+  assert.deepEqual(demoteTests(fused, chunks, "which test covers approvals").map(f => f.id), [0, 1]);
 });

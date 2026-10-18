@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { STATE_DIR } from "./config.mjs";
-import { Bm25Index, bestSnippet, chunkFile, formatResults, fuseRankings, normalizeVector, vectorSearch } from "./code-index-core.mjs";
+import { Bm25Index, bestSnippet, chunkFile, demoteTests, formatResults, fuseRankings, normalizeVector, vectorSearch } from "./code-index-core.mjs";
 
 export const INDEX_DIR = path.join(STATE_DIR, ".vanaras-index");
 export const EMBED_MODEL = process.env.VANARAS_EMBED_MODEL || "embeddinggemma-2:270m-q8_0-text";
@@ -238,7 +238,7 @@ export async function codeSearch(root, query, { limit = 8, pathPrefix = "", budg
   }
   if (!semantic.enabled) semantic.reason = !useSemantic ? "disabled for this search" : (embedderDownReason || (embedded === 0 ? "no chunks embedded yet" : ""));
 
-  const fused = fuseRankings(lists).slice(0, Math.max(1, Math.min(25, Number(limit) || 8)));
+  const fused = demoteTests(fuseRankings(lists), idx.chunks, q).slice(0, Math.max(1, Math.min(25, Number(limit) || 8)));
   const results = fused.map(f => {
     const c = idx.chunks[f.id];
     const snip = bestSnippet(c, q);

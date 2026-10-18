@@ -373,4 +373,14 @@ export function registerTier4Tests(runner) {
     assert(r.body.semantic && r.body.semantic.enabled === false, "semantic search must be off");
     assert(r.body.results.length > 0 && r.body.results.every(x => x.via.join() === "keyword"), `results must come from the keyword index only: ${JSON.stringify(r.body.results.slice(0, 2))}`);
   });
+
+  // T4.11: POST /api/code-search searches the room's project (and refuses a root outside it).
+  runner.register(4, "M2", "F3", "T4.11_code_search_route_searches_the_project", async () => {
+    const r = await requestJson("POST", "/api/code-search", { query: "multiply two numbers", limit: 3, semantic: false }, {}, 60000);
+    assertEqual(r.status, 200, `code-search: ${r.raw}`);
+    assertEqual(r.body.root, process.env.VANARAS_TEST_PROJECT, "the search root is the room's project");
+    assert(r.body.results.some(x => x.path === "src/math.mjs" && x.symbol === "multiply"), `must find multiply in src/math.mjs: ${JSON.stringify(r.body.results)}`);
+    const outside = await requestJson("POST", "/api/code-search", { query: "x", root: "/etc" });
+    assertEqual(outside.status, 400, `a root outside the project must be refused: ${outside.raw}`);
+  });
 }

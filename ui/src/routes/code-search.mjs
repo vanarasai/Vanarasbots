@@ -3,6 +3,7 @@ import path from "node:path";
 import { WORKTREES_DIR } from "../config.mjs";
 import { codeSearch } from "../code-index.mjs";
 import { readJsonBody, sendJson, sendRouteError } from "../http-utils.mjs";
+import { projectFromRequest, projectKey } from "../projects.mjs";
 import { isPathInside } from "../util.mjs";
 import { ensureAgentWorktree } from "../worktree.mjs";
 

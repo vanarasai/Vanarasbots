@@ -90,7 +90,8 @@ export async function executeServerSessionTurn({
   maxSteps = 30,
   turnId = "",
   disabledTools = [],
-  projectPath = ""
+  projectPath = "",
+  extraGuidance = ""
 }) {
   // Tools withheld from this turn: not offered to the model, and refused if it asks for them anyway.
   const withheld = new Set((Array.isArray(disabledTools) ? disabledTools : []).map(String));
@@ -197,7 +198,9 @@ export async function executeServerSessionTurn({
 
   const baseSysPrompt = systemPrompt || botDef.systemPrompt || agentCfg.systemPrompt ||
     `You are ${botName}, an expert autonomous software engineer working in your isolated git worktree.\nYour mission is to plan, inspect files, edit code surgically, run tests/verifications, and fix all errors until working end-to-end.\nAlways verify your changes before declaring completion.`;
-    const effectiveSysPrompt = baseSysPrompt + EVIDENCE_RULES;
+    // Extra harness guidance for this turn (used by tests/bench/harness-refine.mjs to probe candidates).
+    const guidance = String(extraGuidance || "").trim().slice(0, 4000);
+    const effectiveSysPrompt = baseSysPrompt + EVIDENCE_RULES + (guidance ? `\n\nADDITIONAL GUIDANCE:\n${guidance}` : "");
 
   const conversationMessages = [
     { role: "system", content: effectiveSysPrompt },

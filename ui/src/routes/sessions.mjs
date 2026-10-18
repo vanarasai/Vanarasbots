@@ -23,7 +23,7 @@ export async function handleSessionsRoutes(req, res) {
   if (req.method === "POST" && req.url === "/api/sessions/turn") {
     try {
       const body = await readJsonBody(req);
-      const { threadId, botId = "bot_r1", botName = "R1", prompt = "", systemPrompt = "", verifyCommand = "", maxSteps = 30, turnId = "", disabledTools = [] } = body;
+      const { threadId, botId = "bot_r1", botName = "R1", prompt = "", systemPrompt = "", verifyCommand = "", maxSteps = 30, turnId = "", disabledTools = [], extraGuidance = "" } = body;
       // Refuse up front when the room has no usable project, so the UI can ask the user to choose one.
       let projectPath;
       try {
@@ -58,7 +58,8 @@ export async function handleSessionsRoutes(req, res) {
         maxSteps: Number(maxSteps) || 30,
         turnId: String(turnId || ""),
         disabledTools,
-        projectPath
+        projectPath,
+        extraGuidance
       }).catch(err => {
         console.error("Unhandled error in executeServerSessionTurn:", err);
       });

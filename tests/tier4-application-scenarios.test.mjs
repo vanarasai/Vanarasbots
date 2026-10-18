@@ -61,24 +61,19 @@ export function registerTier4Tests(runner) {
     const wsRes = await requestJson("GET", "/api/workspace");
     assertEqual(wsRes.status, 200, "Workspace endpoint must return 200");
 
-    // Check worktrees directory exists
-    const worktreesDir = path.join(VANARAS_ROOT, ".worktrees");
-    assert(fs.existsSync(worktreesDir), `.worktrees directory must exist at ${worktreesDir}`);
-
-    // Validate active worktree entries have assigned ports and branch structures
-    const entries = fs.readdirSync(worktreesDir, { withFileTypes: true });
-    const botWorktrees = entries.filter(e => e.isDirectory() && e.name.startsWith("bot_"));
-    assert(botWorktrees.length > 0, "There should be at least one bot worktree provisioned");
-
-    for (const wt of botWorktrees) {
-      const wtPath = path.join(worktreesDir, wt.name);
-      assert(fs.existsSync(path.join(wtPath, ".git")), `Worktree ${wt.name} must contain a .git link file`);
-    }
+    // An agent's worktree is a branch of the room's project (the fixture repo), not of Vanaras.
+    const wtRes = await requestJson("POST", "/api/agent/worktree", { botId: "bot_r1", botName: "R1", action: "ensure" });
+    assertEqual(wtRes.status, 200, `worktree: ${wtRes.raw}`);
+    assertEqual(wtRes.body.projectRoot, process.env.VANARAS_TEST_PROJECT, "the worktree must belong to the room's project");
+    assertEqual(wtRes.body.branch, "vanara/r1");
+    assert(fs.existsSync(path.join(wtRes.body.worktreePath, ".git")), "the worktree must be a git checkout");
+    assert(fs.existsSync(path.join(wtRes.body.worktreePath, "src", "math.mjs")), "the worktree must contain the project's files");
+    assert(!fs.existsSync(path.join(wtRes.body.worktreePath, "ui", "server.mjs")), "the worktree must not contain Vanaras's code");
   });
 
   // T4.3: Real-World Fast Codebase Symbol Navigation Grounding
   runner.register(4, "M2", "F2", "T4.3_fast_codebase_symbol_navigation", async () => {
-    const symbolToFind = "ensureAgentWorktree";
+    const symbolToFind = "multiply";
 
     const res = await requestJson("POST", "/api/agent/tool", {
       action: "grep_search",
@@ -89,9 +84,9 @@ export function registerTier4Tests(runner) {
     assertEqual(res.status, 200, `grep_search failed: ${JSON.stringify(res.body)}`);
     assert(Array.isArray(res.body?.matches), "Matches must be an array");
 
-    // Locate a match from server.mjs
-    const serverMatch = res.body.matches.find(m => m.file?.includes("server.mjs"));
-    assert(serverMatch, "Must find symbol occurrence in server.mjs");
+    // Locate the definition in the project's src/math.mjs
+    const serverMatch = res.body.matches.find(m => m.file?.includes("math.mjs"));
+    assert(serverMatch, "Must find symbol occurrence in src/math.mjs");
 
     // Verify file and line grounding against the tree that was actually searched. Paths are relative to
     // the agent's worktree (searchRoot), which can legitimately lag the main checkout.
@@ -372,7 +367,7 @@ export function registerTier4Tests(runner) {
   runner.register(4, "M2", "F3", "T4.10_code_search_keyword_mode_is_bm25_only", async () => {
     const botId = "bot_e2e_bm25";
     await requestJson("POST", "/api/agent/skill", { botId, botName: "bm25", action: "set", skillMarkdown: "", agentConfig: { codeSearchMode: "keyword" } });
-    const r = await requestJson("POST", "/api/agent/tool", { action: "code_search", botId, args: { query: "tallyVotes" } }, {}, 60000);
+    const r = await requestJson("POST", "/api/agent/tool", { action: "code_search", botId, args: { query: "multiply numbers" } }, {}, 60000);
     assertEqual(r.status, 200, `code_search: ${r.raw}`);
     assertMatch(r.body.output, /keyword \(BM25\)/, "output must say the search was keyword-only");
     assert(r.body.semantic && r.body.semantic.enabled === false, "semantic search must be off");

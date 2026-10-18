@@ -1,6 +1,7 @@
 // HTTP routes: /api/panels/personas, /api/panels/run, /api/panels/status, /api/panels/stop
 import { readJsonBody, sendJson } from "../http-utils.mjs";
 import { generatePersonas, listPanelRuns, startPanelRun, stopPanels } from "../panels.mjs";
+import { projectFromRequest } from "../projects.mjs";
 
 export async function handlePanelsRoutes(req, res) {
   if (req.method === "POST" && req.url === "/api/panels/personas") {
@@ -17,7 +18,10 @@ export async function handlePanelsRoutes(req, res) {
   if (req.method === "POST" && req.url === "/api/panels/run") {
     try {
       const body = await readJsonBody(req);
-      const run = startPanelRun(body);
+      // A panel's file material comes from its room's project; without one, text and pages still work.
+      let projectPath = "";
+      try { projectPath = projectFromRequest(req, body); } catch {}
+      const run = startPanelRun({ ...body, projectPath });
       return sendJson(res, 200, { ok: true, runId: run.runId, threadId: run.threadId, status: run.status });
     } catch (e) {
       return sendJson(res, 400, { ok: false, error: e.message });

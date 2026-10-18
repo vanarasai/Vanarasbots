@@ -7,7 +7,7 @@ import { stopTrackedProcess } from "../process.mjs";
 import { executeServerSessionTurn, summarizeToolStep } from "../session-runner.mjs";
 import { activeApprovals, activeServerTurns, serverTurnKey, sessionCheckpoints } from "../state.mjs";
 import { loadWorkspaceDiskState, saveWorkspaceDiskState } from "../workspace-state.mjs";
-import { ensureAgentWorktree } from "../worktree.mjs";
+import { ProjectError, projectErrorResponse, projectFromRequest } from "../projects.mjs";
 
 // Liveness for the UI: a running turn with no progress for this long is reported as stalled, and a finished
 // turn whose last message asks the user something is reported as waiting for them.
@@ -24,6 +24,17 @@ export async function handleSessionsRoutes(req, res) {
     try {
       const body = await readJsonBody(req);
       const { threadId, botId = "bot_r1", botName = "R1", prompt = "", systemPrompt = "", verifyCommand = "", maxSteps = 30, turnId = "", disabledTools = [] } = body;
+      // Refuse up front when the room has no usable project, so the UI can ask the user to choose one.
+      let projectPath;
+      try {
+        projectPath = projectFromRequest(req, body);
+      } catch (err) {
+        if (err instanceof ProjectError) {
+          const r = projectErrorResponse(err);
+          return sendJson(res, r.status, r.body);
+        }
+        throw err;
+      }
       if (!prompt && !verifyCommand) {
         return sendJson(res, 400, { error: "prompt or verifyCommand required" });
       }
@@ -46,7 +57,8 @@ export async function handleSessionsRoutes(req, res) {
         verifyCommand,
         maxSteps: Number(maxSteps) || 30,
         turnId: String(turnId || ""),
-        disabledTools
+        disabledTools,
+        projectPath
       }).catch(err => {
         console.error("Unhandled error in executeServerSessionTurn:", err);
       });
@@ -150,7 +162,8 @@ export async function handleSessionsRoutes(req, res) {
         return sendJson(res, 404, { error: `Checkpoint not found: ${checkpointId}` });
       }
 
-      const wt = ensureAgentWorktree(targetChk.botId || botId, targetChk.botName || botName);
+      // Rewind exactly the worktree the checkpoint was taken in.
+      const wt = { worktreePath: targetChk.worktreePath };
       let gitResetOut = "";
       if (targetChk.preTurnSha) {
         try {

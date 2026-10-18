@@ -72,12 +72,25 @@ async function main() {
     if (fs.existsSync(src) && fs.statSync(src).isFile()) {
       fs.mkdirSync(path.dirname(dst), { recursive: true });
       fs.copyFileSync(src, dst);
+    } else if (!fs.existsSync(src) && fs.existsSync(dst)) {
+      // Deleted in the working tree: the snapshot must not keep it (e.g. a removed test file).
+      fs.rmSync(dst, { force: true });
     }
   }
   execFileSync("git", ["add", "-A"], { cwd: tempRepoDir, stdio: "pipe" });
   try {
     execFileSync("git", ["-c", "user.name=CI", "-c", "user.email=ci@test", "commit", "-m", "chore: hermetic working tree snapshot"], { cwd: tempRepoDir, stdio: "pipe" });
   } catch {}
+
+  // The project the tests' rooms work on: a small git repository, never Vanaras's own checkout.
+  const tempProjectDir = path.join(tempBase, "project");
+  fs.mkdirSync(path.join(tempProjectDir, "src"), { recursive: true });
+  fs.writeFileSync(path.join(tempProjectDir, "README.md"), "# Fixture project\n\nA small app used by the Vanaras end-to-end tests.\n");
+  fs.writeFileSync(path.join(tempProjectDir, "package.json"), JSON.stringify({ name: "fixture-project", version: "1.0.0", type: "module", scripts: { test: "node --test" } }, null, 2) + "\n");
+  fs.writeFileSync(path.join(tempProjectDir, "src", "math.mjs"), "// Adds two numbers.\nexport function add(a, b) {\n  return a + b;\n}\n\n// Multiplies two numbers.\nexport function multiply(a, b) {\n  return a * b;\n}\n");
+  execFileSync("git", ["init", "-q"], { cwd: tempProjectDir });
+  execFileSync("git", ["add", "-A"], { cwd: tempProjectDir });
+  execFileSync("git", ["-c", "user.name=CI", "-c", "user.email=ci@test", "commit", "-qm", "fixture project"], { cwd: tempProjectDir });
 
   const tempStateDir = path.join(tempBase, "state");
   const tempWorktreesDir = path.join(tempRepoDir, ".worktrees");
@@ -155,6 +168,8 @@ async function main() {
   console.log("\n--- 2. Running E2E Test Suite ---");
   const e2eCode = await runCommand(process.execPath, ["tests/e2e-suite.mjs"], {
     VANARAS_TEST_URL: testUrl,
+    VANARAS_TEST_PROJECT: fs.realpathSync(tempProjectDir),
+    VANARAS_PROJECT: fs.realpathSync(tempProjectDir),
     VANARAS_PORT: String(port),
     VANARAS_STATE_DIR: tempStateDir,
     VANARAS_WORKTREES_DIR: tempWorktreesDir

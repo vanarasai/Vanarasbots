@@ -75,8 +75,9 @@ const cleanup = () => { try { server.kill("SIGTERM"); } catch {} };
 process.on("exit", cleanup);
 process.on("SIGINT", () => { cleanup(); process.exit(130); });
 
+// The tasks are about this repository, so the clone is the rooms' project.
 async function api(method, p, body, timeoutMs = 60000) {
-  const res = await fetch(`${url}${p}`, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs) });
+  const res = await fetch(`${url}${p}`, { method, headers: { "Content-Type": "application/json", "X-Vanaras-Project": encodeURIComponent(repo) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs) });
   return res.json();
 }
 for (let i = 0; i < 80; i++) {
@@ -84,7 +85,8 @@ for (let i = 0; i < 80; i++) {
   await sleep(250);
 }
 
-const worktreeOf = arm => path.join(repo, ".worktrees", arm.botId);
+const worktrees = {};
+const worktreeOf = arm => worktrees[arm.id];
 // Each run starts from the snapshot: earlier edits (and their index entries) must not leak into the next run.
 function resetWorktree(arm) {
   const wt = worktreeOf(arm);
@@ -95,6 +97,9 @@ function resetWorktree(arm) {
 
 for (const arm of ARMS) {
   await api("POST", "/api/agent/skill", { botId: arm.botId, botName: arm.id, action: "set", skillMarkdown: "", agentConfig: { provider: "local", baseUrl: OLLAMA, model: MODEL, permissionPolicy: "auto", ...arm.config } });
+  const wt = await api("POST", "/api/agent/worktree", { botId: arm.botId, botName: arm.id, action: "ensure" });
+  if (!wt.worktreePath) throw new Error(`could not create a worktree for ${arm.id}: ${JSON.stringify(wt)}`);
+  worktrees[arm.id] = wt.worktreePath;
 }
 // Indexes are a one-time cost per worktree; build them before the timed runs and report them separately.
 const indexTimes = {};
@@ -135,7 +140,7 @@ for (let rep = 1; rep <= REPEATS; rep++) {
       let solved;
       let detail = "";
       if (task.kind === "edit") {
-        const v = task.verify([worktreeOf(arm), path.join(worktreeOf(arm), "agent_workspace", arm.id)]);
+        const v = task.verify([worktreeOf(arm)]);
         solved = v.ok;
         detail = v.detail;
       } else {

@@ -16,13 +16,15 @@ export async function spawnSubagentAsync({
   prompt = "",
   leadBotId = "bot_r1",
   leadBotName = "R1",
-  maxSteps = null
+  maxSteps = null,
+  projectPath = ""
 }) {
   const cleanType = ["explore", "plan", "general"].includes(String(type).toLowerCase()) ? String(type).toLowerCase() : "general";
   const subagentId = `sub_${cleanType}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
   const effectiveRole = role || (cleanType === "explore" ? "Codebase Explorer" : cleanType === "plan" ? "Architecture Planner" : "General Implementer");
 
-  const wt = ensureAgentWorktree(subagentId, effectiveRole);
+  // A subagent works on its own branch of the same project as the agent that spawned it.
+  const wt = ensureAgentWorktree(subagentId, effectiveRole, projectPath);
   const effectiveMaxSteps = Number(maxSteps) || (cleanType === "explore" ? 10 : cleanType === "plan" ? 8 : 20);
 
   const subRecord = {
@@ -179,7 +181,8 @@ export async function spawnSubagentAsync({
             botName: effectiveRole,
             tool: fnName,
             args: fnArgs,
-            ...fnArgs
+            ...fnArgs,
+            projectPath: wt.projectRoot
           });
 
           const outStr = tRes.data?.output !== undefined ? String(tRes.data.output) : JSON.stringify(tRes.data || tRes);

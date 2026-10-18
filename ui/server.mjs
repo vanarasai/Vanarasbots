@@ -2,12 +2,9 @@
 // Vanaras Desktop Engine entrypoint: loopback HTTP server, route dispatch, and process lifecycle.
 import http from "node:http";
 import { PORT } from "./src/config.mjs";
-import { ensureAgentPortServerRunning } from "./src/port-supervisor.mjs";
 import { signalProcessTree } from "./src/process.mjs";
 import { enforceLocalRequestBoundary } from "./src/security.mjs";
 import { activeRunProcs, activeServerTurns, activeSubagents, agentBackgroundProcesses, agentDevServers } from "./src/state.mjs";
-import { ensureAgentWorktree, syncAllWorktreesToMainRoot } from "./src/worktree.mjs";
-export { ensureAgentWorktree };
 import { handleCoreRoutes } from "./src/routes/core.mjs";
 import { handleAgentWorkspaceRoutes } from "./src/routes/agent-workspace.mjs";
 import { handleAgentConfigRoutes } from "./src/routes/agent-config.mjs";
@@ -19,6 +16,7 @@ import { handleSessionsRoutes } from "./src/routes/sessions.mjs";
 import { handleSubagentsRoutes } from "./src/routes/subagents.mjs";
 import { handlePanelsRoutes } from "./src/routes/panels.mjs";
 import { handleCodeSearchRoutes } from "./src/routes/code-search.mjs";
+import { handleProjectsRoutes } from "./src/routes/projects.mjs";
 import { handleFilesRoutes } from "./src/routes/files.mjs";
 import { handleStaticRoutes } from "./src/routes/static.mjs";
 
@@ -34,6 +32,7 @@ const ROUTE_HANDLERS = [
   handleSubagentsRoutes,
   handlePanelsRoutes,
   handleCodeSearchRoutes,
+  handleProjectsRoutes,
   handleFilesRoutes,
   handleStaticRoutes
 ];
@@ -110,7 +109,5 @@ function listenOnIpv6Loopback() {
 
 server.listen(PORT, LOOPBACK_V4, () => {
   listenOnIpv6Loopback();
-  const promoted = syncAllWorktreesToMainRoot();
-  ensureAgentPortServerRunning(3847, "bot_r1").catch(() => {});
-  console.log(`Vanaras Desktop Engine listening at http://localhost:${PORT}${promoted.length > 0 ? ` (synced ${promoted.length} deliverables to main root)` : ""}`);
+  console.log(`Vanaras Desktop Engine listening at http://localhost:${PORT}`);
 });

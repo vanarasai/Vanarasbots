@@ -91,7 +91,9 @@ export function requestJson(method, urlPath, body = null, headers = {}, timeoutM
     const parsedUrl = new URL(urlPath, BASE_URL);
     const serializedBody = body !== null && typeof body === "object" ? JSON.stringify(body) : (body || null);
 
+    // Every request names the room's project, as the UI does; tests run against a fixture project.
     const reqHeaders = {
+      ...(process.env.VANARAS_TEST_PROJECT ? { "X-Vanaras-Project": encodeURIComponent(process.env.VANARAS_TEST_PROJECT) } : {}),
       ...headers
     };
     if (serializedBody !== null && !reqHeaders["Content-Type"]) {

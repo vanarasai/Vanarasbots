@@ -83,6 +83,8 @@ async function requestJson(url, options = {}, timeoutMs = 4000) {
       signal: ctrl.signal,
       headers: {
         "Content-Type": "application/json",
+        // The project the CLI works on: VANARAS_PROJECT, else the folder it is run from.
+        "X-Vanaras-Project": encodeURIComponent(process.env.VANARAS_PROJECT || process.cwd()),
         ...(options.headers || {})
       }
     });

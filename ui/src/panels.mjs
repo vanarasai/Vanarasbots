@@ -2,7 +2,8 @@
 // concurrency, then a moderator summary. Runs survive window reloads and are saved to disk as they go.
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT_DIR, STATE_DIR, WORKTREES_DIR } from "./config.mjs";
+import { STATE_DIR, WORKTREES_DIR } from "./config.mjs";
+import { inspectProject, projectKey } from "./projects.mjs";
 import { broadcastEvent } from "./events.mjs";
 import {
   MAX_PANELISTS,
@@ -72,16 +73,17 @@ export async function generatePersonas({ brief, count, modelBotId = "bot_r1" }) 
 }
 
 // Material is read once per run so every panelist judges exactly the same input.
-async function readMaterial(item) {
+async function readMaterial(item, projectRoot) {
   const kind = item?.type;
   if (kind === "text") {
     return `### ${item.label || "Text"}\n${String(item.text || "").slice(0, MATERIAL_CHARS)}`;
   }
   if (kind === "file") {
     const raw = String(item.path || "").trim();
-    const abs = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(ROOT_DIR, raw);
-    if (!isPathInside(abs, ROOT_DIR) && !isPathInside(abs, WORKTREES_DIR)) {
-      return `### ${raw}\n(skipped: outside the project and agent worktrees)`;
+    if (!projectRoot) return `### ${raw}\n(skipped: this panel's room has no project folder)`;
+    const abs = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(projectRoot, raw);
+    if (!isPathInside(abs, projectRoot) && !isPathInside(abs, path.join(WORKTREES_DIR, projectKey(projectRoot)))) {
+      return `### ${raw}\n(skipped: outside this room's project and its agents' worktrees)`;
     }
     if (!fs.existsSync(abs)) return `### ${raw}\n(not found)`;
     const st = fs.statSync(abs);
@@ -125,11 +127,11 @@ async function readMaterial(item) {
   return "";
 }
 
-async function gatherMaterials(materials = []) {
+async function gatherMaterials(materials = [], projectRoot = "") {
   const parts = [];
   let total = 0;
   for (const item of materials) {
-    const block = await readMaterial(item);
+    const block = await readMaterial(item, projectRoot);
     if (!block) continue;
     if (total + block.length > MATERIALS_TOTAL_CHARS) {
       parts.push(`### ${item.path || item.url || item.label || "material"}\n(omitted: the shared material limit was reached)`);
@@ -177,7 +179,7 @@ function addMessage(run, message) {
   writeRunFile(run);
 }
 
-export function startPanelRun({ threadId, topic, mode = "debate", rounds = 1, panelists = [], options = [], materials = [], modelBotId = "bot_r1", concurrency = 3 }) {
+export function startPanelRun({ threadId, topic, mode = "debate", rounds = 1, panelists = [], options = [], materials = [], modelBotId = "bot_r1", concurrency = 3, projectPath = "" }) {
   if (!threadId) throw new Error("threadId is required");
   if (!String(topic || "").trim()) throw new Error("A topic or question is required");
   if (!PANEL_MODES.includes(mode)) throw new Error(`mode must be one of ${PANEL_MODES.join(", ")}`);
@@ -212,6 +214,8 @@ export function startPanelRun({ threadId, topic, mode = "debate", rounds = 1, pa
     rounds: Math.max(1, Math.min(MAX_ROUNDS, Number(rounds) || 1)),
     concurrency: Math.max(1, Math.min(8, Number(concurrency) || 3)),
     modelBotId,
+    // Review material is read from this folder only; a panel without a project can still use text and pages.
+    projectRoot: inspectProject(projectPath).root || "",
     panelists: seated,
     options: cleanOptions,
     materials,
@@ -249,7 +253,7 @@ export function startPanelRun({ threadId, topic, mode = "debate", rounds = 1, pa
 async function executePanel(run) {
   const signal = run.abortController.signal;
   emitStatus(run);
-  const materialsText = await gatherMaterials(run.materials);
+  const materialsText = await gatherMaterials(run.materials, run.projectRoot);
   run.materialsChars = materialsText.length;
   const panelModel = modelFor(run.modelBotId);
   let latest = [];

@@ -1,0 +1,89 @@
+// A project is the git repository a room works on. Agent worktrees are branches of the project, never of
+// Vanaras itself (unless the user deliberately mounts the Vanaras folder as a room's project).
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { ROOT_DIR } from "./config.mjs";
+import { loadWorkspaceDiskState } from "./workspace-state.mjs";
+
+export class ProjectError extends Error {
+  constructor(code, message, details = {}) {
+    super(message);
+    this.code = code;
+    this.details = details;
+    // Routes answer 409 with the code, so the UI can ask the user to choose or initialise a project.
+    this.status = 409;
+  }
+}
+
+function git(cwd, args, timeout = 10000) {
+  return execFileSync("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"], timeout }).toString().trim();
+}
+
+// What a folder is, without changing it: exists, is a git repo (its top level), has a first commit.
+export function inspectProject(rawPath) {
+  const requested = String(rawPath || "").trim();
+  if (!requested) return { ok: false, code: "NO_PROJECT", error: "This room has no project folder. Choose one first." };
+  if (!path.isAbsolute(requested)) return { ok: false, code: "NOT_ABSOLUTE", error: `Project folder must be an absolute path: ${requested}` };
+  const abs = path.resolve(requested);
+  let st;
+  try { st = fs.statSync(abs); } catch { return { ok: false, code: "NOT_FOUND", error: `Project folder not found: ${abs}`, path: abs }; }
+  if (!st.isDirectory()) return { ok: false, code: "NOT_A_FOLDER", error: `Not a folder: ${abs}`, path: abs };
+  let root = "";
+  try { root = fs.realpathSync(git(abs, ["rev-parse", "--show-toplevel"])); } catch {}
+  const real = fs.realpathSync(abs);
+  const isVanaras = real === fs.realpathSync(ROOT_DIR);
+  if (!root) return { ok: false, code: "NOT_GIT", error: `${abs} is not a git repository.`, path: abs, isVanaras };
+  let hasCommits = true;
+  try { git(root, ["rev-parse", "--verify", "HEAD"]); } catch { hasCommits = false; }
+  if (!hasCommits) return { ok: false, code: "NO_COMMITS", error: `${root} has no commits yet, so agents cannot branch from it.`, path: root, root, isVanaras };
+  return { ok: true, root, path: real, isVanaras: root === fs.realpathSync(ROOT_DIR), branch: safeBranch(root) };
+}
+
+function safeBranch(root) {
+  try { return git(root, ["rev-parse", "--abbrev-ref", "HEAD"]); } catch { return ""; }
+}
+
+// Only called after the user agreed: make the folder a repository and commit what is in it, so agents have
+// a first commit to branch from. An existing repo with no commits gets the same first commit.
+export function initProject(rawPath) {
+  const info = inspectProject(rawPath);
+  if (info.ok) return info;
+  if (info.code !== "NOT_GIT" && info.code !== "NO_COMMITS") throw new ProjectError(info.code, info.error);
+  const dir = info.root || info.path;
+  if (info.code === "NOT_GIT") git(dir, ["init", "-q"]);
+  git(dir, ["add", "-A"]);
+  git(dir, ["-c", "user.name=Vanaras", "-c", "user.email=vanaras@localhost", "commit", "-q", "--allow-empty", "-m", "Initial commit (prepared for Vanaras agents)"], 60000);
+  return inspectProject(dir);
+}
+
+export function requireProject(rawPath) {
+  const info = inspectProject(rawPath);
+  if (!info.ok) throw new ProjectError(info.code, info.error, info);
+  return info.root;
+}
+
+export function projectKey(root) {
+  const base = path.basename(root).replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 40) || "project";
+  return `${base}-${crypto.createHash("sha1").update(root).digest("hex").slice(0, 8)}`;
+}
+
+function threadMountPath(threadId) {
+  if (!threadId) return "";
+  const state = loadWorkspaceDiskState();
+  return (state?.threads || []).find(t => t.id === threadId)?.mountPath || "";
+}
+
+// Which project a request is for: an explicit projectPath, else the room (threadId) it belongs to, else the
+// X-Vanaras-Project header the UI sends for the room in view. Throws ProjectError if none or invalid.
+export function projectFromRequest(req, body = {}) {
+  const explicit = body.projectPath || body.project || "";
+  const header = req?.headers?.["x-vanaras-project"] ? decodeURIComponent(String(req.headers["x-vanaras-project"])) : "";
+  return requireProject(explicit || threadMountPath(body.threadId) || header);
+}
+
+// The response for a missing or invalid project, so the UI can ask the user to choose or initialise one.
+export function projectErrorResponse(err) {
+  return { status: 409, body: { ok: false, code: err.code, error: err.message, project: err.details } };
+}

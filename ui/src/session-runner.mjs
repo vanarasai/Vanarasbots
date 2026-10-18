@@ -89,7 +89,8 @@ export async function executeServerSessionTurn({
   verifyCommand = "",
   maxSteps = 30,
   turnId = "",
-  disabledTools = []
+  disabledTools = [],
+  projectPath = ""
 }) {
   // Tools withheld from this turn: not offered to the model, and refused if it asks for them anyway.
   const withheld = new Set((Array.isArray(disabledTools) ? disabledTools : []).map(String));
@@ -145,8 +146,21 @@ export async function executeServerSessionTurn({
   }
   saveWorkspaceDiskState(state);
 
+  // The turn works on the room's project: the explicit projectPath, else the room's folder.
+  let wt;
+  try {
+    wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1", projectPath || thread.mountPath || "");
+  } catch (err) {
+    turnRecord.status = "error";
+    turnRecord.error = err.message;
+    turnRecord.message = `Turn error: ${err.message}`;
+    turnRecord.finalContent = `This room has no usable project folder: ${err.message}`;
+    turnRecord.updatedAt = new Date().toISOString();
+    broadcastEvent("turn_complete", { turnId, threadId, botId, botName, status: "error", finalContent: turnRecord.finalContent, reasoning: "", toolCallsCount: 0, toolCalls: [], remembered: [] });
+    return turnRecord;
+  }
+
   // P3: Session Checkpoint before turn execution
-  const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
   let preTurnSha = "";
   try {
     preTurnSha = execSync("git rev-parse HEAD", { cwd: wt.worktreePath, stdio: "pipe", timeout: 4000 }).toString().trim();
@@ -159,6 +173,8 @@ export async function executeServerSessionTurn({
     botId,
     botName,
     preTurnSha,
+    worktreePath: wt.worktreePath,
+    projectRoot: wt.projectRoot,
     messagesCount: (thread?.messages || []).length,
     timestamp: new Date().toISOString()
   };
@@ -335,7 +351,8 @@ export async function executeServerSessionTurn({
             botName,
             tool: "verify_project",
             command: verifyCommand,
-            threadId
+            threadId,
+            projectPath: wt.projectRoot
           });
           const vOut = vResult.data || vResult;
           if (!vOut.ok) {
@@ -385,7 +402,9 @@ export async function executeServerSessionTurn({
             tool: fnName,
             args: fnArgs,
             ...fnArgs,
-            threadId
+            threadId,
+            // After the model's arguments, so a tool call cannot point the agent at another folder.
+            projectPath: wt.projectRoot
           });
 
         const outputStr = toolRes.data?.output !== undefined ? String(toolRes.data.output) : JSON.stringify(toolRes.data || toolRes);

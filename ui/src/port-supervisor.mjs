@@ -2,10 +2,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { PORT } from "./config.mjs";
+import { PORT, WORKTREES_DIR } from "./config.mjs";
 import { buildAgentExecEnv } from "./env.mjs";
 import { managedAgentPortProcesses } from "./state.mjs";
-import { ensureAgentWorktree } from "./worktree.mjs";
+import { projectKey } from "./projects.mjs";
+import { agentWorktreePath } from "./worktree.mjs";
 
 export async function isLocalPortListening(port) {
   try {
@@ -19,19 +20,23 @@ export async function isLocalPortListening(port) {
   }
 }
 
-export async function ensureAgentPortServerRunning(port, preferredBotId = "bot_r1") {
+// Starts the dev server a room's agents wrote for `port`, if one exists and nothing is listening yet. Only the
+// room's project and its agents' worktrees are searched, and only a script that mentions the port (or reads
+// PORT from the environment) is started.
+export async function ensureAgentPortServerRunning(port, preferredBotId = "", projectRoot = "") {
   if (!port || Number(port) === Number(PORT)) return false;
   if (await isLocalPortListening(port)) return true;
+  if (!projectRoot) return false;
 
   const candidateScripts = [];
   const checkDirForServer = (dir) => {
     if (!dir || !fs.existsSync(dir)) return;
-    for (const rel of ["ui/server.mjs", "ui/server.js", "server.mjs", "server.js"]) {
+    for (const rel of ["server.mjs", "server.js", "ui/server.mjs", "ui/server.js", "app.mjs", "app.js"]) {
       const p = path.join(dir, rel);
       if (fs.existsSync(p) && fs.statSync(p).isFile()) {
         try {
           const src = fs.readFileSync(p, "utf8");
-          if (src.includes(String(port)) || rel.startsWith("ui/")) {
+          if (src.includes(String(port)) || /process\.env\.PORT/.test(src)) {
             candidateScripts.push({ scriptPath: p, cwd: path.dirname(p) });
           }
         } catch {}
@@ -39,20 +44,14 @@ export async function ensureAgentPortServerRunning(port, preferredBotId = "bot_r
     }
   };
 
-  if (preferredBotId) {
-    try {
-      const wt = ensureAgentWorktree(preferredBotId, preferredBotId.replace(/^bot_/, "").toUpperCase());
-      checkDirForServer(wt.codeDir);
-      checkDirForServer(wt.worktreePath);
-    } catch {}
-  }
-  for (const bId of ["bot_r1", "bot_r2", "bot_r3"]) {
-    try {
-      const wt = ensureAgentWorktree(bId, bId.replace(/^bot_/, "").toUpperCase());
-      checkDirForServer(wt.codeDir);
-      checkDirForServer(wt.worktreePath);
-    } catch {}
-  }
+  const worktreesOfProject = path.join(WORKTREES_DIR, projectKey(projectRoot));
+  if (preferredBotId) checkDirForServer(agentWorktreePath(projectRoot, preferredBotId));
+  checkDirForServer(projectRoot);
+  try {
+    for (const ent of fs.readdirSync(worktreesOfProject, { withFileTypes: true })) {
+      if (ent.isDirectory()) checkDirForServer(path.join(worktreesOfProject, ent.name));
+    }
+  } catch {}
 
   if (candidateScripts.length === 0) return false;
   const chosen = candidateScripts[0];

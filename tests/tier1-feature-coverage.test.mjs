@@ -61,13 +61,13 @@ export function registerTier1Tests(runner) {
       action: "grep_search",
       botId: "bot_r1",
       botName: "R1",
-      content: "ensureAgentWorktree"
+      content: "multiply"
     });
 
     assertEqual(res.status, 200, `Expected HTTP 200 for grep_search, got ${res.status} body=${JSON.stringify(res.body)}`);
     assertEqual(res.body?.ok, true, `Expected ok: true in grep_search response, got ${JSON.stringify(res.body)}`);
     assert(Array.isArray(res.body?.matches), "grep_search response must contain 'matches' array");
-    assert(res.body.matches.length > 0, "grep_search for 'ensureAgentWorktree' must find at least one match in server code");
+    assert(res.body.matches.some(m => m.file === "src/math.mjs"), `grep_search for 'multiply' must find it in the project's src/math.mjs: ${JSON.stringify(res.body.matches)}`);
 
     const firstMatch = res.body.matches[0];
     assert(firstMatch.file, "Match item must include 'file' property");
@@ -80,14 +80,14 @@ export function registerTier1Tests(runner) {
       action: "find_files",
       botId: "bot_r1",
       botName: "R1",
-      content: "server.mjs"
+      content: "math"
     });
 
     assertEqual(res.status, 200, `Expected HTTP 200 for find_files, got ${res.status} body=${JSON.stringify(res.body)}`);
     assertEqual(res.body?.ok, true, `Expected ok: true in find_files response, got ${JSON.stringify(res.body)}`);
     assert(Array.isArray(res.body?.files), "find_files response must contain 'files' array");
-    const hasServerMjs = res.body.files.some(f => f.includes("server.mjs"));
-    assert(hasServerMjs, `find_files for 'server.mjs' should find server.mjs in files list: ${JSON.stringify(res.body.files)}`);
+    assert(res.body.files.includes("src/math.mjs"), `find_files for 'math' should find the project's src/math.mjs: ${JSON.stringify(res.body.files)}`);
+    assert(!res.body.files.some(f => f.includes("server.mjs")), "an agent's file search must not see Vanaras's own files");
   });
 
   // T1.4: F4 - Client ReAct Search Tool Dispatch

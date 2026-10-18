@@ -1,24 +1,23 @@
 // HTTP routes: /api/save-project, /api/workspace/media, /api/workspace/web-preview
 import fs from "node:fs";
 import path from "node:path";
-import { PORT, ROOT_DIR, WORKTREES_DIR } from "../config.mjs";
-import { readJsonBody, sendJson } from "../http-utils.mjs";
+import { PORT, WORKTREES_DIR } from "../config.mjs";
+import { readJsonBody, sendJson, sendRouteError } from "../http-utils.mjs";
+import { projectFromRequest, projectKey } from "../projects.mjs";
 import { ensureAgentPortServerRunning } from "../port-supervisor.mjs";
 import { isPathInside } from "../util.mjs";
-import { ensureAgentWorktree } from "../worktree.mjs";
 
 export async function handleFilesRoutes(req, res) {
   // 8. Multi-File Project / Deliverable Save (Supports saving into Mounted Folder or vanaras/projects/)
   if (req.method === "POST" && req.url === "/api/save-project") {
     try {
-      const { projectName, mountPath, files = [] } = await readJsonBody(req);
+      const reqBody = await readJsonBody(req);
+      const { files = [] } = reqBody;
       if (!Array.isArray(files) || files.length === 0) {
         return sendJson(res, 400, { error: "Missing files array" });
       }
-      const slug = (projectName || "workspace-output").replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
-      const baseTarget = mountPath && fs.existsSync(mountPath)
-        ? path.resolve(mountPath)
-        : path.resolve(ROOT_DIR, "projects", slug);
+      // Deliverables are saved into the room's project, nowhere else.
+      const baseTarget = projectFromRequest(req, { ...reqBody, projectPath: reqBody.projectPath || reqBody.mountPath });
 
       const savedPaths = [];
       for (const file of files) {
@@ -35,7 +34,7 @@ export async function handleFilesRoutes(req, res) {
         savedPaths
       });
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
@@ -52,56 +51,32 @@ export async function handleFilesRoutes(req, res) {
         return sendJson(res, 400, { ok: false, error: "Invalid media path" });
       }
 
+      // Media is served only from the room's project and its agents' worktrees. <audio>/<video> cannot send
+      // headers, so the project also comes as a ?project= parameter.
+      const projectRoot = projectFromRequest(req, { projectPath: parsedUrl.searchParams.get("project") || "" });
+      const projectWorktrees = path.join(WORKTREES_DIR, projectKey(projectRoot));
+      const bases = [projectRoot];
+      try {
+        for (const ent of fs.readdirSync(projectWorktrees, { withFileTypes: true })) {
+          if (ent.isDirectory()) bases.push(path.join(projectWorktrees, ent.name));
+        }
+      } catch {}
       const candidateFiles = [];
       const addCandidate = (p) => {
         try {
           const resolved = path.resolve(p);
-          if ((isPathInside(resolved, ROOT_DIR) || isPathInside(resolved, WORKTREES_DIR)) && fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+          if (bases.some(b => isPathInside(resolved, b)) && fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
             candidateFiles.push({ path: resolved, mtimeMs: fs.statSync(resolved).mtimeMs });
           }
         } catch {}
       };
-
-      if (path.isAbsolute(rawPath)) {
-        addCandidate(rawPath);
-      }
-
+      if (path.isAbsolute(rawPath)) addCandidate(rawPath);
       const cleanRel = rawPath.replace(/^\/+/, "");
-      addCandidate(path.join(ROOT_DIR, cleanRel));
-      addCandidate(path.join(ROOT_DIR, "output", path.basename(cleanRel)));
-      addCandidate(path.join(ROOT_DIR, "output_test", path.basename(cleanRel)));
-
-      if (botId) {
-        try {
-          const wt = ensureAgentWorktree(botId, botId.replace(/^bot_/, "").toUpperCase());
-          addCandidate(path.join(wt.codeDir, cleanRel));
-          addCandidate(path.join(wt.worktreePath, cleanRel));
-          addCandidate(path.join(wt.codeDir, "output", path.basename(cleanRel)));
-          addCandidate(path.join(wt.worktreePath, "output", path.basename(cleanRel)));
-        } catch {}
-      }
-
-      if (fs.existsSync(WORKTREES_DIR)) {
-        try {
-          for (const ent of fs.readdirSync(WORKTREES_DIR, { withFileTypes: true })) {
-            if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
-            const sibWt = path.join(WORKTREES_DIR, ent.name);
-            addCandidate(path.join(sibWt, cleanRel));
-            addCandidate(path.join(sibWt, "output", path.basename(cleanRel)));
-            addCandidate(path.join(sibWt, "output_test", path.basename(cleanRel)));
-            const awDir = path.join(sibWt, "agent_workspace");
-            if (fs.existsSync(awDir)) {
-              for (const sub of fs.readdirSync(awDir, { withFileTypes: true })) {
-                if (sub.isDirectory() && !sub.name.startsWith(".")) {
-                  const subDir = path.join(awDir, sub.name);
-                  addCandidate(path.join(subDir, cleanRel));
-                  addCandidate(path.join(subDir, "output", path.basename(cleanRel)));
-                  addCandidate(path.join(subDir, "output_test", path.basename(cleanRel)));
-                }
-              }
-            }
-          }
-        } catch {}
+      // The asking agent's own worktree first, then the project, then teammates' worktrees.
+      const ordered = botId ? [...bases.filter(b => path.basename(b) === botId), ...bases.filter(b => path.basename(b) !== botId)] : bases;
+      for (const base of ordered) {
+        addCandidate(path.join(base, cleanRel));
+        addCandidate(path.join(base, "output", path.basename(cleanRel)));
       }
 
       if (candidateFiles.length === 0) {
@@ -179,7 +154,7 @@ export async function handleFilesRoutes(req, res) {
       fs.createReadStream(chosenPath).pipe(res);
       return;
     } catch (e) {
-      return sendJson(res, 500, { ok: false, error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
@@ -197,7 +172,10 @@ export async function handleFilesRoutes(req, res) {
       }
       const targetPort = Number(targetUrlObj.port || 80);
       if (targetPort && targetPort !== Number(PORT)) {
-        await ensureAgentPortServerRunning(targetPort, botId);
+        // Auto-start only a server from this room's project (iframes cannot send headers: ?project=).
+        let projectRoot = "";
+        try { projectRoot = projectFromRequest(req, { projectPath: parsedUrl.searchParams.get("project") || "" }); } catch {}
+        await ensureAgentPortServerRunning(targetPort, botId, projectRoot);
       }
 
       const backendPath = `${targetUrlObj.pathname || "/"}${targetUrlObj.search || ""}`;
@@ -259,7 +237,7 @@ export async function handleFilesRoutes(req, res) {
         return;
       }
     } catch (e) {
-      return sendJson(res, 500, { ok: false, error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 

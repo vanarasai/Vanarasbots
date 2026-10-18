@@ -3,8 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { loadAgentConfig } from "./agent-store.mjs";
-import { REPO_ROOT, ROOT_DIR } from "./config.mjs";
-import { buildAgentExecEnv, ensureSharedVenvSymlinks, resolveSharedVenvDir } from "./env.mjs";
+import { buildAgentExecEnv, resolveSharedVenvDir } from "./env.mjs";
 import { broadcastEvent } from "./events.mjs";
 import { codeSearch } from "./code-index.mjs";
 import { callStdioMcpServer } from "./mcp-client.mjs";
@@ -13,7 +12,25 @@ import { checkCommandPermission, checkToolAllowed } from "./security.mjs";
 import { activeApprovals, activeSubagents, agentBackgroundProcesses } from "./state.mjs";
 import { spawnSubagentAsync } from "./subagents.mjs";
 import { execFileAsync, isPathInside, safeGitCommitAsync } from "./util.mjs";
-import { RESERVED_ROOT_ENTRIES, ensureAgentWorktree, listAgentCodeFiles, syncWorktreeDeliverablesToMainRoot } from "./worktree.mjs";
+import { ensureAgentWorktree, listAgentCodeFiles } from "./worktree.mjs";
+
+// Every file tool resolves its path here: relative to the agent's checkout of the project, and only inside
+// it, also after following symlinks. There are no fallbacks to other folders, so a tool cannot read or
+// change files outside the room's project. (Shell commands start in the worktree but are not sandboxed.)
+export function resolveInWorktree(wt, raw) {
+  const input = String(raw ?? "").trim().replace(/^file:\/\//i, "") || ".";
+  const root = wt.worktreePath;
+  const abs = path.resolve(root, input);
+  if (!isPathInside(abs, root)) return { error: `Path outside this agent's worktree blocked: ${input}` };
+  let probe = abs;
+  while (!fs.existsSync(probe) && probe !== root && probe !== path.dirname(probe)) probe = path.dirname(probe);
+  try {
+    if (!isPathInside(fs.realpathSync(probe), fs.realpathSync(root))) {
+      return { error: `Path leaves this agent's worktree through a symlink: ${input}` };
+    }
+  } catch {}
+  return { abs, rel: path.relative(root, abs) || "." };
+}
 
 // Every tool that launches a process funnels through here, so the DENY/ASK policy cannot be skipped by
 // choosing a different tool. Nothing the model supplies can pre-approve a command: approval only ever
@@ -100,7 +117,8 @@ export async function executeAgentToolInternal(params = {}) {
     name,
     lines,
     timeout,
-    maxOutput
+    maxOutput,
+    projectPath = ""
   } = params;
   const toolName = tool || action;
 
@@ -110,7 +128,7 @@ export async function executeAgentToolInternal(params = {}) {
     return { status: 200, data: { ok: false, error: toolCheck.reason } };
   }
 
-  const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1");
+  const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1", projectPath);
   const savedAgentCfg = loadAgentConfig(botId || "bot_r1") || {};
   // The approval policy comes only from the saved agent configuration, never from tool arguments.
   const permissionPolicy = savedAgentCfg.permissionPolicy || "auto";
@@ -165,31 +183,11 @@ export async function executeAgentToolInternal(params = {}) {
   // 3. FS READ
   if (toolName === "fs_read") {
     const rawInput = String(filePath || pathParam || args.filePath || args.path || ".").trim();
-    if (rawInput.includes("..")) {
-      const probe = path.resolve(wt.codeDir, rawInput);
-      if (!isPathInside(probe, wt.codeDir) && !isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
-        return { status: 200, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
-      }
-    }
-
-    const candidatePaths = [];
-    if (path.isAbsolute(rawInput)) {
-      if (isPathInside(rawInput, wt.codeDir) || isPathInside(rawInput, wt.worktreePath) || isPathInside(rawInput, ROOT_DIR)) {
-        candidatePaths.push(path.resolve(rawInput));
-      } else {
-        return { status: 200, data: { ok: false, error: `Path outside workspace blocked: ${rawInput}` } };
-      }
-    } else {
-      const cleanRel = rawInput.replace(/^\/+/, "");
-      for (const base of [wt.codeDir, wt.worktreePath, ROOT_DIR, REPO_ROOT]) {
-        const p = path.resolve(base, cleanRel);
-        if (isPathInside(p, base)) candidatePaths.push(p);
-      }
-    }
-
-    const existingTarget = candidatePaths.find(p => fs.existsSync(p));
-    if (!existingTarget) {
-      return { status: 200, data: { ok: false, error: `File not found in ${wt.branch} or mounted repository: ${rawInput}` } };
+    const resolved = resolveInWorktree(wt, rawInput);
+    if (resolved.error) return { status: 200, data: { ok: false, error: resolved.error } };
+    const existingTarget = resolved.abs;
+    if (!fs.existsSync(existingTarget)) {
+      return { status: 200, data: { ok: false, error: `File not found in ${wt.branch}: ${rawInput}` } };
     }
 
     const stat = fs.statSync(existingTarget);
@@ -201,7 +199,7 @@ export async function executeAgentToolInternal(params = {}) {
         .map(e => (e.isDirectory() ? `${e.name}/` : e.name));
       const listing = [
         `Directory: ${existingTarget} (branch ${wt.branch})`,
-        codeFiles.length > 0 ? `Agent Workspace Files (${wt.codeDir}): ${codeFiles.join(", ")}` : "",
+        codeFiles.length > 0 ? `Files: ${codeFiles.join(", ")}` : "",
         `Entries: ${dirEntries.join(", ") || "(empty)"}`
       ].filter(Boolean).join("\n");
       return {
@@ -224,37 +222,11 @@ export async function executeAgentToolInternal(params = {}) {
   // 4. FS WRITE
   if (toolName === "fs_write") {
     const rawInput = String(filePath || pathParam || args.filePath || args.path || "notes.md").trim();
-    let rel = rawInput;
-    if (path.isAbsolute(rawInput)) {
-      if (isPathInside(rawInput, wt.codeDir)) {
-        rel = path.relative(wt.codeDir, rawInput);
-      } else if (isPathInside(rawInput, wt.worktreePath)) {
-        rel = path.relative(wt.worktreePath, rawInput);
-      } else if (isPathInside(rawInput, ROOT_DIR)) {
-        rel = path.relative(ROOT_DIR, rawInput);
-      } else {
-        return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
-      }
-    }
-    const target = path.resolve(wt.codeDir, rel.replace(/^\/+/, ""));
-    if (rawInput.includes("..") || !isPathInside(target, wt.codeDir)) {
-      return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
-    }
+    const resolved = resolveInWorktree(wt, rawInput);
+    if (resolved.error) return { status: 400, data: { ok: false, error: resolved.error } };
     const bodyContent = String(content ?? args.content ?? "");
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, bodyContent, "utf8");
-    const cleanRel = path.relative(wt.codeDir, target);
-    const topSegment = cleanRel.split("/")[0];
-    if (topSegment && !RESERVED_ROOT_ENTRIES.has(topSegment)) {
-      const wtDest = path.resolve(wt.worktreePath, cleanRel);
-      if (isPathInside(wtDest, wt.worktreePath)) {
-        try {
-          fs.mkdirSync(path.dirname(wtDest), { recursive: true });
-          fs.writeFileSync(wtDest, bodyContent, "utf8");
-        } catch {}
-      }
-    }
-    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+    fs.mkdirSync(path.dirname(resolved.abs), { recursive: true });
+    fs.writeFileSync(resolved.abs, bodyContent, "utf8");
     return {
       status: 200,
       data: {
@@ -263,8 +235,7 @@ export async function executeAgentToolInternal(params = {}) {
         worktreePath: wt.worktreePath,
         codeDir: wt.codeDir,
         branch: wt.branch,
-        promotedToRoot,
-        output: `Wrote ${bodyContent.length} bytes to ${cleanRel} & synced to main root folder`
+        output: `Wrote ${bodyContent.length} bytes to ${resolved.rel} on ${wt.branch}`
       }
     };
   }
@@ -275,32 +246,9 @@ export async function executeAgentToolInternal(params = {}) {
     if (!rawInput) {
       return { status: 400, data: { ok: false, error: "Missing filePath for exact_edit" } };
     }
-    let target = null;
-    if (path.isAbsolute(rawInput)) {
-      if (isPathInside(rawInput, wt.codeDir) || isPathInside(rawInput, wt.worktreePath) || isPathInside(rawInput, ROOT_DIR)) {
-        target = path.resolve(rawInput);
-      } else {
-        return { status: 400, data: { ok: false, error: `Path outside workspace blocked: ${rawInput}` } };
-      }
-    } else {
-      if (rawInput.includes("..")) {
-        const probe = path.resolve(wt.codeDir, rawInput);
-        if (!isPathInside(probe, wt.codeDir) && !isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
-          return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawInput}` } };
-        }
-      }
-      const cleanRel = rawInput.replace(/^\/+/, "");
-      for (const base of [wt.codeDir, wt.worktreePath, ROOT_DIR, REPO_ROOT]) {
-        const p = path.resolve(base, cleanRel);
-        if (isPathInside(p, base) && fs.existsSync(p)) {
-          target = p;
-          break;
-        }
-      }
-      if (!target) {
-        target = path.resolve(wt.codeDir, cleanRel);
-      }
-    }
+    const resolved = resolveInWorktree(wt, rawInput);
+    if (resolved.error) return { status: 400, data: { ok: false, error: resolved.error } };
+    const target = resolved.abs;
 
     if (!fs.existsSync(target)) {
       return { status: 200, data: { ok: false, error: `File not found: ${rawInput}` } };
@@ -324,27 +272,13 @@ export async function executeAgentToolInternal(params = {}) {
 
     const updatedContent = originalContent.replace(targetOld, targetNew);
     fs.writeFileSync(target, updatedContent, "utf8");
-
-    const cleanRel = path.relative(wt.codeDir, target);
-    const topSegment = cleanRel.split("/")[0];
-    if (topSegment && !RESERVED_ROOT_ENTRIES.has(topSegment)) {
-      const wtDest = path.resolve(wt.worktreePath, cleanRel);
-      if (isPathInside(wtDest, wt.worktreePath)) {
-        try {
-          fs.mkdirSync(path.dirname(wtDest), { recursive: true });
-          fs.writeFileSync(wtDest, updatedContent, "utf8");
-        } catch {}
-      }
-    }
-    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
     return {
       status: 200,
       data: {
         ok: true,
         tool: "exact_edit",
-        file: rawInput,
-        promotedToRoot,
-        output: `Successfully edited ${rawInput} (1 exact replacement applied)`
+        file: resolved.rel,
+        output: `Successfully edited ${resolved.rel} (1 exact replacement applied)`
       }
     };
   }
@@ -364,8 +298,7 @@ export async function executeAgentToolInternal(params = {}) {
     } catch (err) {
       out = err.message;
     }
-    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
-    return { status: 200, data: { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, promotedToRoot, output: out } };
+    return { status: 200, data: { ok: true, worktreePath: wt.worktreePath, branch: wt.branch, output: out } };
   }
 
   // 7. GIT STATUS & GIT DIFF
@@ -394,7 +327,7 @@ export async function executeAgentToolInternal(params = {}) {
   // 8. SHELL EXEC (P2: configurable timeout up to 300s, maxOutput up to 50k)
   if (toolName === "shell_exec" || toolName === "shell") {
     const rawCmd = String(content || filePath || command || args.command || "").trim();
-    const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
+    const execCwd = wt.worktreePath;
     const sharedVenv = resolveSharedVenvDir(execCwd, wt.worktreePath);
     let cmdStr = rawCmd
       .replace(/\\\\\(/g, "\\(")
@@ -437,8 +370,6 @@ export async function executeAgentToolInternal(params = {}) {
         }
       }
     });
-    ensureSharedVenvSymlinks(wt.worktreePath, wt.codeDir);
-    const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
     return {
       status: 200,
       data: {
@@ -446,7 +377,6 @@ export async function executeAgentToolInternal(params = {}) {
         exitCode: execRes.exitCode,
         cwd: execCwd,
         branch: wt.branch,
-        promotedToRoot,
         output: (execRes.output || `(exit ${execRes.exitCode})`).slice(-effectiveMaxOutput)
       }
     };
@@ -457,8 +387,9 @@ export async function executeAgentToolInternal(params = {}) {
     const q = String(query ?? args.query ?? pattern ?? args.pattern ?? content ?? args.content ?? "").trim();
     if (!q) return { status: 400, data: { ok: false, error: "code_search needs a query" } };
     const scope = String(pathParam || dir || directory || args.path || args.dir || "").trim();
-    if (scope && !isPathInside(path.resolve(wt.worktreePath, scope), wt.worktreePath)) {
-      return { status: 400, data: { ok: false, error: `Path outside the worktree blocked: ${scope}` } };
+    if (scope) {
+      const resolved = resolveInWorktree(wt, scope);
+      if (resolved.error) return { status: 400, data: { ok: false, error: resolved.error } };
     }
     try {
       // Per-agent: "hybrid" (default) or "keyword" (BM25 only, like XERJ; needs no embedding model).
@@ -497,19 +428,9 @@ export async function executeAgentToolInternal(params = {}) {
     const rawSearchPath = String(pathParam || dir || directory || args.path || args.dir || filePath || "").trim();
     let targetSearchDir = wt.worktreePath;
     if (rawSearchPath) {
-      if (rawSearchPath.includes("..")) {
-        const probe = path.resolve(wt.worktreePath, rawSearchPath);
-        if (!isPathInside(probe, wt.worktreePath) && !isPathInside(probe, ROOT_DIR)) {
-          return { status: 400, data: { ok: false, error: `Path traversal outside workspace blocked: ${rawSearchPath}` } };
-        }
-      }
-      const resolvedSub = path.resolve(wt.worktreePath, rawSearchPath);
-      if (!isPathInside(resolvedSub, wt.worktreePath) && !isPathInside(resolvedSub, ROOT_DIR)) {
-        return { status: 400, data: { ok: false, error: `Path outside workspace blocked: ${rawSearchPath}` } };
-      }
-      if (fs.existsSync(resolvedSub)) {
-        targetSearchDir = resolvedSub;
-      }
+      const resolved = resolveInWorktree(wt, rawSearchPath);
+      if (resolved.error) return { status: 400, data: { ok: false, error: resolved.error } };
+      if (fs.existsSync(resolved.abs)) targetSearchDir = resolved.abs;
     }
 
     const matches = [];
@@ -632,15 +553,6 @@ export async function executeAgentToolInternal(params = {}) {
       walk(wt.worktreePath);
     }
 
-    if (fs.existsSync(wt.codeDir)) {
-      for (const cf of listAgentCodeFiles(wt.codeDir)) {
-        const relInWt = path.relative(wt.worktreePath, path.join(wt.codeDir, cf.name));
-        if (!allFiles.includes(cf.name) && !allFiles.includes(relInWt)) {
-          allFiles.push(cf.name);
-        }
-      }
-    }
-
     let filtered = [];
     if (!fileQuery.trim()) {
       filtered = allFiles;
@@ -682,7 +594,7 @@ export async function executeAgentToolInternal(params = {}) {
     if (gated) return gated;
     const procId = "proc_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
     const procName = String(name || args.name || rawCmd.slice(0, 30));
-    const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
+    const execCwd = wt.worktreePath;
     const child = spawnShellProcessGroup(rawCmd, {
       cwd: execCwd,
       env: buildAgentExecEnv(execCwd, wt.worktreePath)
@@ -795,10 +707,9 @@ export async function executeAgentToolInternal(params = {}) {
   // 14. VERIFY PROJECT (P2)
   if (toolName === "verify_project") {
     let verifyCmd = String(command || content || args.command || "").trim();
-    const execCwd = fs.existsSync(wt.codeDir) ? wt.codeDir : wt.worktreePath;
+    const execCwd = wt.worktreePath;
     if (!verifyCmd) {
       if (fs.existsSync(path.join(execCwd, "run.sh"))) verifyCmd = "./run.sh";
-      else if (fs.existsSync(path.join(wt.worktreePath, "run.sh"))) verifyCmd = "./run.sh";
       else if (fs.existsSync(path.join(execCwd, "package.json"))) verifyCmd = "npm test";
       else if (fs.existsSync(path.join(execCwd, "pytest.ini")) || fs.existsSync(path.join(execCwd, "tests"))) verifyCmd = "pytest";
       else verifyCmd = "git status";
@@ -848,7 +759,8 @@ export async function executeAgentToolInternal(params = {}) {
       role: subRole,
       prompt: subPrompt,
       leadBotId: botId || "bot_r1",
-      leadBotName: botName || "R1"
+      leadBotName: botName || "R1",
+      projectPath: wt.projectRoot
     });
     return {
       status: 200,

@@ -1,8 +1,10 @@
 // HTTP routes: /api/workspace/context, /api/workspace/kill, /api/workspace/exec, /api/room/post, /api/events/publish
 import fs from "node:fs";
-import { ROOT_DIR } from "../config.mjs";
+import path from "node:path";
+import { isPathInside } from "../util.mjs";
 import { broadcastEvent } from "../events.mjs";
-import { readJsonBody, sendJson } from "../http-utils.mjs";
+import { readJsonBody, sendJson, sendRouteError } from "../http-utils.mjs";
+import { projectFromRequest } from "../projects.mjs";
 import { spawnCommandAsync, stopTrackedProcess } from "../process.mjs";
 import { inspectMountedDirectory } from "../repo-inspect.mjs";
 import { activeRunProcs, backgroundJobs } from "../state.mjs";
@@ -12,12 +14,13 @@ export async function handleWorkspaceRunnerRoutes(req, res) {
   // 3. Grounded Folder Inspection Endpoint (POST /api/workspace/context)
   if (req.method === "POST" && req.url === "/api/workspace/context") {
     try {
-      const { mountPath, folderPath, botId, botName } = await readJsonBody(req);
-      let targetDir = mountPath || folderPath || ROOT_DIR;
+      const reqBody = await readJsonBody(req);
+      const { mountPath, folderPath, botId, botName } = reqBody;
+      let targetDir = mountPath || folderPath || projectFromRequest(req, reqBody);
       let codeDir = "";
       let worktreeInfo = null;
       if (botId) {
-        const wt = ensureAgentWorktree(botId, botName);
+        const wt = ensureAgentWorktree(botId, botName, projectFromRequest(req, reqBody));
         targetDir = wt.worktreePath;
         codeDir = wt.codeDir;
         worktreeInfo = wt;
@@ -26,14 +29,15 @@ export async function handleWorkspaceRunnerRoutes(req, res) {
       if (worktreeInfo) info.worktree = worktreeInfo;
       return sendJson(res, 200, info);
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
   // 4. Asynchronous Background Command / Tool Runner (POST /api/workspace/exec & /api/workspace/kill)
   if (req.method === "POST" && req.url === "/api/workspace/kill") {
     try {
-      const { threadId, botId, botIds } = await readJsonBody(req);
+      const reqBody = await readJsonBody(req);
+      const { threadId, botId, botIds } = reqBody;
       const targetBotIds = new Set([
         ...(Array.isArray(botIds) ? botIds : []),
         ...(botId ? [botId] : [])
@@ -59,19 +63,22 @@ export async function handleWorkspaceRunnerRoutes(req, res) {
       }
       return sendJson(res, 200, { ok: true, killedCount: killedJobs.length, killedJobs });
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
   if (req.method === "POST" && req.url === "/api/workspace/exec") {
     try {
-      const { command, cwd, threadId, botId, botName } = await readJsonBody(req);
+      const reqBody = await readJsonBody(req);
+      const { command, cwd, threadId, botId, botName } = reqBody;
       if (!command) return sendJson(res, 400, { error: "Missing command" });
 
-      let targetCwd = cwd && fs.existsSync(cwd) ? cwd : ROOT_DIR;
-      let branch = "main";
+      // Commands run in the room's project (or the agent's worktree of it), never elsewhere.
+      const projectRoot = projectFromRequest(req, reqBody);
+      let targetCwd = cwd && fs.existsSync(cwd) && isPathInside(path.resolve(cwd), projectRoot) ? path.resolve(cwd) : projectRoot;
+      let branch = "";
       if (botId) {
-        const wt = ensureAgentWorktree(botId, botName || botId);
+        const wt = ensureAgentWorktree(botId, botName || botId, projectFromRequest(req, reqBody));
         targetCwd = wt.worktreePath;
         branch = wt.branch;
       }
@@ -108,7 +115,7 @@ export async function handleWorkspaceRunnerRoutes(req, res) {
 
       return sendJson(res, 200, { jobId, status: "started", cwd: targetCwd, branch });
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
@@ -119,7 +126,7 @@ export async function handleWorkspaceRunnerRoutes(req, res) {
       broadcastEvent("room_message", msg);
       return sendJson(res, 200, { ok: true });
     } catch (e) {
-      return sendJson(res, 400, { error: e.message });
+      return sendRouteError(res, e, 400);
     }
   }
 

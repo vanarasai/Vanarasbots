@@ -2080,7 +2080,7 @@ Auto-save: enabled</pre>
         </div>
         <div>
           <label class="field-label">Mounted Project Folder</label>
-          <input id="groupMountPathInput" type="text" placeholder="/Users/lakshmipriyasridharan/AI/REA/vanaras" class="field-input mono">
+          <input id="groupMountPathInput" type="text" placeholder="/path/to/your/project" class="field-input mono">
         </div>
         <div>
           <label class="field-label">Vanara Bots in Room</label>
@@ -2248,13 +2248,10 @@ Auto-save: enabled</pre>
       </div>
       <div class="modal-body">
         <div style="display:flex; gap:8px;">
-          <input id="mountPathInput" type="text" class="field-input mono" placeholder="/Users/lakshmipriyasridharan/AI/REA/vanaras">
+          <input id="mountPathInput" type="text" class="field-input mono" placeholder="/path/to/your/project">
           <button onclick="saveAndInspectMountPath()" class="btn-primary" style="flex-shrink:0;">Mount</button>
         </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button onclick="setQuickMount('DEFAULT')" class="btn-secondary" style="height:28px; font-size:11px;">Workspace Root</button>
-          <button onclick="setQuickMount('PARENT')" class="btn-secondary" style="height:28px; font-size:11px;">Parent Repo</button>
-        </div>
+        <div style="font-size:11.5px; color:var(--text-muted);">The room's project: a git repository (Vanaras offers to initialise one). Each agent works on its own branch of it; work reaches the project only when you merge it.</div>
         <pre id="mountedFolderPreview" class="code-block mono" style="max-height:200px; color:var(--text-primary);">Click Mount to inspect directory...</pre>
       </div>
     </div>
@@ -2351,7 +2348,7 @@ Auto-save: enabled</pre>
           </div>
           <div>
             <label class="field-label">Mounted Local Repository Path</label>
-            <input id="onboardMountPathInput" type="text" placeholder="/Users/lakshmipriyasridharan/AI/REA/vanaras" class="field-input mono" style="font-size:11.5px;">
+            <input id="onboardMountPathInput" type="text" placeholder="/path/to/your/project" class="field-input mono" style="font-size:11.5px;">
           </div>
         </div>
 
@@ -2517,7 +2514,7 @@ Auto-save: enabled</pre>
       { id: "handoff", label: "Bot Handoff" }
     ];
 
-    function buildCleanEngineeringThreads(mountPath = "/Users/lakshmipriyasridharan/AI/REA/vanaras") {
+    function buildCleanEngineeringThreads(mountPath = "") {
       return [
         {
           id: "thread_squad",
@@ -2699,6 +2696,24 @@ Auto-save: enabled</pre>
     ];
 
     let state = JSON.parse(localStorage.getItem("vanaras_v6_app") || "null") || JSON.parse(JSON.stringify(DEFAULT_STATE));
+
+    // The server resolves a request's project from an explicit projectPath, else the room (threadId), else this
+    // header: the project of the room in view. It never falls back to Vanaras's own folder.
+    {
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = (input, init = {}) => {
+        try {
+          const url = typeof input === "string" ? input : input.url;
+          const project = url && url.startsWith("/api/") ? getActiveThread()?.mountPath : "";
+          if (project) {
+            const headers = new Headers(init.headers || {});
+            if (!headers.has("X-Vanaras-Project")) headers.set("X-Vanaras-Project", encodeURIComponent(project));
+            init = { ...init, headers };
+          }
+        } catch {}
+        return nativeFetch(input, init);
+      };
+    }
     if (!Array.isArray(state.sharedFacts)) state.sharedFacts = [...DEFAULT_STATE.sharedFacts];
     if (typeof state.autoTriggerEnabled !== "boolean") state.autoTriggerEnabled = true;
 
@@ -3011,8 +3026,10 @@ Auto-save: enabled</pre>
       updateHeaderPills();
     }
 
-    let serverDefaultMountPath = "/Users/lakshmipriyasridharan/AI/REA/vanaras";
-    let serverRepoRoot = "/Users/lakshmipriyasridharan/AI/REA";
+    // Rooms have no default project: each one chooses its own folder. vanarasRoot is only used to recognise
+    // (and confirm) a room that deliberately mounts Vanaras's own code.
+    let serverDefaultMountPath = "";
+    let vanarasRoot = "";
 
     async function ensureAgentWorktreeOnServer(bot) {
       if (!bot) return null;
@@ -3124,8 +3141,8 @@ Auto-save: enabled</pre>
         if (res.ok) {
           const data = await res.json();
           workspaceLoadedFromServer = true;
-          if (data.defaultMountPath) serverDefaultMountPath = data.defaultMountPath;
-          if (data.repoRoot) serverRepoRoot = data.repoRoot;
+          serverDefaultMountPath = data.defaultMountPath || "";
+          vanarasRoot = data.vanarasRoot || "";
           // Only restore disk state if it was already onboarded (skip legacy screenshot Project Maaya state)
           const isLegacyScreenshotState = data.state?.threads?.some(t => t.id === "thread_maaya" || t.name === "Project Maaya");
           if (data.state && !isLegacyScreenshotState && Array.isArray(data.state.threads) && data.state.threads.length >= 1) {
@@ -3395,7 +3412,7 @@ Auto-save: enabled</pre>
     function updateHeaderPills() {
       const thread = getActiveThread();
       const mountPath = thread?.mountPath || serverDefaultMountPath;
-      const baseName = mountPath.split(/[\\/]/).filter(Boolean).pop() || "vanaras";
+      const baseName = mountPath.split(/[\\/]/).filter(Boolean).pop() || "Choose project";
       const mountEl = document.getElementById("mountFolderLabel");
       if (mountEl) mountEl.innerText = baseName;
 
@@ -4277,6 +4294,7 @@ Auto-save: enabled</pre>
     async function executeBackgroundCommand(command, botOverride = null) {
       const thread = getActiveThread();
       if (!thread || !command) return;
+      if (!(await ensureRoomProject(thread))) return;
       const threadId = thread.id;
       const actingBot = botOverride || getActiveLeadBot();
       const cwd = thread.mountPath || serverDefaultMountPath;
@@ -5237,6 +5255,7 @@ ${handoffRule}
             botName: targetBot.name,
             prompt: triggerText,
             turnId: turnCtx.turnId,
+            projectPath: targetThread.mountPath || "",
             systemPrompt: targetBot.systemPrompt || buildGroundedSystemPrompt(targetBot, targetThread, folderSummary),
             maxSteps: Math.min(SERVER_TURN_STEP_CEILING, Math.max(SERVER_TURN_MAX_STEPS, Number(targetBot.maxReactSteps) || 0))
           })
@@ -5469,9 +5488,68 @@ ${handoffRule}
       }, 1100);
     }
 
+    // Agents only run in a room whose project is a git repository with a commit. Asks the user to choose a folder,
+    // to initialise git (never silently), or to confirm a room that mounts Vanaras's own code.
+    async function ensureRoomProject(thread, { interactive = true } = {}) {
+      if (!thread) return false;
+      const folder = String(thread.mountPath || "").trim();
+      if (!folder) {
+        if (interactive) {
+          showToast("Choose a project folder for this room first");
+          if (thread.id === activeThreadId) openMountModal();
+        }
+        return false;
+      }
+      let info;
+      try {
+        info = await (await fetch("/api/projects/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: folder }) })).json();
+      } catch (err) {
+        if (interactive) showToast(`Could not check the project folder: ${err.message}`);
+        return false;
+      }
+      if (info.ok) {
+        if (info.isVanaras && !thread.vanarasConfirmed) {
+          const yes = interactive && confirm(`This room's project is Vanaras's own code:\n${info.root}\n\nAgents here would work on branches of Vanaras itself. Continue with this folder?`);
+          if (!yes) {
+            if (interactive && thread.id === activeThreadId) openMountModal();
+            return false;
+          }
+          thread.vanarasConfirmed = true;
+          saveState();
+        }
+        if (info.root && info.root !== thread.mountPath) {
+          thread.mountPath = info.root;
+          saveState();
+        }
+        return true;
+      }
+      if ((info.code === "NOT_GIT" || info.code === "NO_COMMITS") && interactive) {
+        const what = info.code === "NOT_GIT" ? "isn't a git repository yet" : "is a git repository with no commits yet";
+        const yes = confirm(`${folder} ${what}.\n\nInitialise it so each agent works on its own branch? Vanaras will ${info.code === "NOT_GIT" ? "run \"git init\" and " : ""}commit the folder's current files as the first commit.`);
+        if (!yes) return false;
+        try {
+          const r = await (await fetch("/api/projects/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: folder, confirmed: true }) })).json();
+          if (!r.ok) throw new Error(r.error || "initialisation failed");
+          thread.mountPath = r.root;
+          saveState();
+          showToast(`Initialised ${r.root.split(/[\\/]/).filter(Boolean).pop()} as a git repository`);
+          return true;
+        } catch (err) {
+          showToast(`Could not initialise: ${err.message}`);
+          return false;
+        }
+      }
+      if (interactive) {
+        showToast(info.error || "This room's project folder is not usable");
+        if (thread.id === activeThreadId) openMountModal();
+      }
+      return false;
+    }
+
     async function runBotTurnInThread(threadId, targetBot, triggerText, chainDepth = 0, options = {}) {
       const targetThread = state.threads.find(t => t.id === threadId);
       if (!targetThread || !targetBot) return;
+      if (!(await ensureRoomProject(targetThread, { interactive: chainDepth === 0 }))) return;
 
       // Every agent runs on the server runner (native tools, evidence rules, verify-and-retry, survives
       // reloads). The browser loop below remains only for an explicit useServerRunner === false setting.
@@ -6511,6 +6589,7 @@ ${handoffRule}
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             threadId: thread.id,
+            projectPath: thread.mountPath || "",
             topic,
             mode: cfg.mode,
             rounds: cfg.rounds,
@@ -7387,7 +7466,7 @@ ${handoffRule}
           document.getElementById("groupModalTitle").innerText = `Manage ${thread.name}`;
           document.getElementById("groupEditId").value = thread.id;
           document.getElementById("groupNameInput").value = thread.name;
-          document.getElementById("groupMountPathInput").value = thread.mountPath || "/Users/lakshmipriyasridharan/AI/REA/vanaras";
+          document.getElementById("groupMountPathInput").value = thread.mountPath || "";
           selectedBots = thread.botIds || [];
           selectedHumans = thread.humanIds || [];
           deleteBtn.classList.remove("hidden");
@@ -7396,7 +7475,7 @@ ${handoffRule}
         document.getElementById("groupModalTitle").innerText = "New Engineering Squad";
         document.getElementById("groupEditId").value = "";
         document.getElementById("groupNameInput").value = "";
-        document.getElementById("groupMountPathInput").value = "/Users/lakshmipriyasridharan/AI/REA/vanaras";
+        document.getElementById("groupMountPathInput").value = "";
         deleteBtn.classList.add("hidden");
       }
 
@@ -7461,7 +7540,7 @@ ${handoffRule}
       const editId = document.getElementById("groupEditId").value;
       const botIds = Array.from(document.querySelectorAll(".group-bot-cb:checked")).map(cb => cb.value);
       const humanIds = Array.from(document.querySelectorAll(".group-human-cb:checked")).map(cb => cb.value);
-      const mountPath = document.getElementById("groupMountPathInput").value.trim() || "/Users/lakshmipriyasridharan/AI/REA/vanaras";
+      const mountPath = document.getElementById("groupMountPathInput").value.trim();
       if (botIds.length === 0) botIds.push(state.bots[0].id);
 
       const defaultName = botIds.map(id => getBot(id)?.name).filter(Boolean).join(", ");
@@ -7546,11 +7625,6 @@ ${handoffRule}
     function closeMountModal() {
       document.getElementById("mountModal").classList.add("hidden");
     }
-    function setQuickMount(p) {
-      const resolved = p === "DEFAULT" ? serverDefaultMountPath : (p === "PARENT" ? serverRepoRoot : p);
-      document.getElementById("mountPathInput").value = resolved;
-      saveAndInspectMountPath();
-    }
     async function previewMountedFolder(folderPath) {
       const box = document.getElementById("mountedFolderPreview");
       box.innerText = "Inspecting directory...";
@@ -7577,10 +7651,14 @@ ${handoffRule}
       const thread = getActiveThread();
       if (thread) {
         thread.mountPath = p;
+        delete thread.vanarasConfirmed;
         saveState();
+        // Check now (and offer to initialise git), so problems show when the folder is chosen, not mid-task.
+        if (!(await ensureRoomProject(thread))) return;
       }
-      await previewMountedFolder(p);
-      showToast(`Mounted: ${p.split(/[\\/]/).filter(Boolean).pop()}`);
+      await previewMountedFolder(thread?.mountPath || p);
+      updateHeaderPills();
+      showToast(`Project: ${(thread?.mountPath || p).split(/[\\/]/).filter(Boolean).pop()}`);
     }
 
     function openConnectAppsModal() {
@@ -8965,7 +9043,7 @@ ${handoffRule}
         const baseName = cleanRel.split("/").pop().toLowerCase();
         if (!cleanRel || baseName.startsWith(".") || isTestOrScratchMediaPath(cleanRel) || seenKeys.has(`audio:${baseName}`)) continue;
         seenKeys.add(`audio:${baseName}`);
-        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}`;
         const dlUrl = `${mediaUrl}&download=1`;
         cards.push(`
           <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
@@ -8990,7 +9068,7 @@ ${handoffRule}
         const baseName = cleanRel.split("/").pop().toLowerCase();
         if (!cleanRel || baseName.startsWith(".") || isTestOrScratchMediaPath(cleanRel) || seenKeys.has(`video:${baseName}`)) continue;
         seenKeys.add(`video:${baseName}`);
-        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}`;
         const dlUrl = `${mediaUrl}&download=1`;
         cards.push(`
           <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
@@ -9013,7 +9091,7 @@ ${handoffRule}
         const baseName = cleanRel.split("/").pop().toLowerCase();
         if (!cleanRel || baseName.startsWith(".") || cleanRel.startsWith("ui/") || isTestOrScratchMediaPath(cleanRel) || seenKeys.has(`img:${baseName}`)) continue;
         seenKeys.add(`img:${baseName}`);
-        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}`;
         const dlUrl = `${mediaUrl}&download=1`;
         cards.push(`
           <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
@@ -9071,11 +9149,11 @@ ${handoffRule}
               </div>
               <div style="display:flex; align-items:center; gap:6px;">
                 <button onclick="toggleInlineWebPreview(this)" style="font-size:11px; font-weight:600; color:var(--text-secondary); padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface); cursor:pointer;">Hide Preview</button>
-                <a href="/api/workspace/web-preview?url=${encodeURIComponent(fullUrl)}&botId=${encodeURIComponent(botId || "")}" target="_blank" style="font-size:11px; font-weight:600; color:var(--text-secondary); text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface);">Open</a>
+                <a href="/api/workspace/web-preview?url=${encodeURIComponent(fullUrl)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}" target="_blank" style="font-size:11px; font-weight:600; color:var(--text-secondary); text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface);">Open</a>
               </div>
             </div>
             <div class="inline-webpage-body">
-              <iframe src="/api/workspace/web-preview?url=${encodeURIComponent(fullUrl)}&botId=${encodeURIComponent(botId || "")}" allow="autoplay; clipboard-write" style="width:100%; height:420px; border:1px solid var(--border-subtle); border-radius:8px; background:#ffffff; display:block;"></iframe>
+              <iframe src="/api/workspace/web-preview?url=${encodeURIComponent(fullUrl)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}" allow="autoplay; clipboard-write" style="width:100%; height:420px; border:1px solid var(--border-subtle); border-radius:8px; background:#ffffff; display:block;"></iframe>
             </div>
           </div>
         `);
@@ -9087,7 +9165,7 @@ ${handoffRule}
         const baseName = cleanRel.split("/").pop().toLowerCase();
         if (!cleanRel || cleanRel === "ui/index.html" || cleanRel === "ui/canvas.html" || baseName === "index.html" || baseName === "canvas.html" || seenKeys.has(`html:${baseName}`)) continue;
         seenKeys.add(`html:${baseName}`);
-        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}`;
         cards.push(`
           <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
             <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">

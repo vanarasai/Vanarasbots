@@ -3,18 +3,19 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { executeAgentToolInternal } from "../agent-tools.mjs";
-import { ROOT_DIR } from "../config.mjs";
-import { readJsonBody, sendJson } from "../http-utils.mjs";
+import { readJsonBody, sendJson, sendRouteError } from "../http-utils.mjs";
+import { inspectProject, projectFromRequest } from "../projects.mjs";
 
 export async function handleAgentToolsRoutes(req, res) {
   // 2D. Per-Agent Tool & MCP Server Executor (/api/agent/tool)
   if (req.method === "POST" && req.url === "/api/agent/tool") {
     try {
       const body = await readJsonBody(req);
-      const resObj = await executeAgentToolInternal(body);
+      // The project comes from the room, not from the tool arguments.
+      const resObj = await executeAgentToolInternal({ ...body, projectPath: projectFromRequest(req, body) });
       return sendJson(res, resObj.status || 200, resObj.data || resObj);
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
@@ -133,14 +134,18 @@ export async function handleAgentToolsRoutes(req, res) {
 
       // Fallback default options if none found
       if (discovered.length === 0) {
-        discovered.push(
-          sanitizeServer({
+        // A filesystem server is only suggested for the room's own project folder.
+        const project = inspectProject(req.headers["x-vanaras-project"] ? decodeURIComponent(String(req.headers["x-vanaras-project"])) : "");
+        if (project.ok) {
+          discovered.push(sanitizeServer({
             name: "filesystem",
             source: "Default MCP",
             command: "npx",
-            args: ["-y", "@modelcontextprotocol/server-filesystem", ROOT_DIR],
+            args: ["-y", "@modelcontextprotocol/server-filesystem", project.root],
             env: {}
-          }),
+          }));
+        }
+        discovered.push(
           sanitizeServer({
             name: "fetch",
             source: "Default MCP",
@@ -153,7 +158,7 @@ export async function handleAgentToolsRoutes(req, res) {
 
       return sendJson(res, 200, { ok: true, servers: discovered });
     } catch (e) {
-      return sendJson(res, 500, { ok: false, error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 

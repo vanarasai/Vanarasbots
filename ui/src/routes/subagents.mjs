@@ -1,6 +1,7 @@
 // HTTP routes: /api/subagents/spawn, /api/subagents/list, /api/subagents/status, /api/subagents/stop
-import { readJsonBody, sendJson } from "../http-utils.mjs";
+import { readJsonBody, sendJson, sendRouteError } from "../http-utils.mjs";
 import { activeSubagents } from "../state.mjs";
+import { projectFromRequest } from "../projects.mjs";
 import { spawnSubagentAsync } from "../subagents.mjs";
 
 export async function handleSubagentsRoutes(req, res) {
@@ -10,7 +11,7 @@ export async function handleSubagentsRoutes(req, res) {
       const body = await readJsonBody(req);
       const { type = "general", role = "Subagent", prompt = "", leadBotId = "bot_r1", leadBotName = "R1", maxSteps } = body;
       if (!prompt) return sendJson(res, 400, { error: "prompt is required" });
-      const sub = await spawnSubagentAsync({ type, role, prompt, leadBotId, leadBotName, maxSteps });
+      const sub = await spawnSubagentAsync({ type, role, prompt, leadBotId, leadBotName, maxSteps, projectPath: projectFromRequest(req, body) });
       return sendJson(res, 200, {
         ok: true,
         subagentId: sub.id,
@@ -20,7 +21,7 @@ export async function handleSubagentsRoutes(req, res) {
         status: sub.status
       });
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
@@ -71,7 +72,8 @@ export async function handleSubagentsRoutes(req, res) {
 
   if (req.method === "POST" && req.url === "/api/subagents/stop") {
     try {
-      const { subagentId } = await readJsonBody(req);
+      const reqBody = await readJsonBody(req);
+      const { subagentId } = reqBody;
       if (!subagentId) return sendJson(res, 400, { error: "subagentId required" });
       const sub = activeSubagents.get(subagentId);
       if (!sub) return sendJson(res, 404, { error: `Subagent not found: ${subagentId}` });
@@ -81,7 +83,7 @@ export async function handleSubagentsRoutes(req, res) {
       }
       return sendJson(res, 200, { ok: true, subagentId, status: sub.status });
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 

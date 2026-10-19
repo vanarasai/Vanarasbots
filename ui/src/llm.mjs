@@ -77,6 +77,8 @@ export async function resolveOpenRouterModelSlug(requestedModel, cleanBase, head
 }
 
 // 6B-2. Unified LLM Query Function (OpenAI, Grok, Anthropic, Gemini, Local)
+const LOCAL_COMPLETION_TIMEOUT_MS = 10 * 60 * 1000;
+
 export async function queryLLMInternal(params = {}) {
   const {
     provider = "local",
@@ -295,8 +297,12 @@ export async function queryLLMInternal(params = {}) {
     body: JSON.stringify(payload),
     signal
   };
+  // A non-streaming completion sends its response headers only when generation finishes, so this timeout
+  // bounds the whole generation, not the connection. A local model writing a long reply routinely needs
+  // minutes; 25s cut those replies off and ended the agent's turn. Unreachable servers still fail fast
+  // (connection refused) and fall through to the other local candidates.
   let upstream = provider === "local"
-    ? await fetchWithLocalFallback(cleanBase, "/chat/completions", reqInit, 25000)
+    ? await fetchWithLocalFallback(cleanBase, "/chat/completions", reqInit, LOCAL_COMPLETION_TIMEOUT_MS)
     : await fetch(chatUrl, reqInit);
 
   let raw = await upstream.text();
@@ -325,6 +331,15 @@ export async function queryLLMInternal(params = {}) {
   if (!upstream.ok) {
     return { ok: false, status: upstream.status, error: `Upstream HTTP ${upstream.status}: ${raw}` };
   }
+  // OpenRouter reports provider failures (overloaded free models, upstream 5xx) as HTTP 200 with an
+  // {"error": {...}} body and no choices. Read as a reply, that became an empty answer with no reason.
+  try {
+    const peek = JSON.parse(raw);
+    if (peek && peek.error && !Array.isArray(peek.choices)) {
+      const code = Number(peek.error.code) || 502;
+      return { ok: false, status: code, error: `Upstream error ${code}: ${peek.error.message || JSON.stringify(peek.error)}` };
+    }
+  } catch {}
 
   let parsedChat = null;
   let msg = null;
@@ -385,6 +400,10 @@ export async function queryLLMInternal(params = {}) {
     reasoning: rawReason,
     tool_calls,
     model: parsedChat?.model || model,
+    // Token counts as the provider reports them (OpenAI-compatible APIs, OpenRouter, Ollama); null if absent.
+    usage: parsedChat?.usage
+      ? { prompt: Number(parsedChat.usage.prompt_tokens) || 0, completion: Number(parsedChat.usage.completion_tokens) || 0 }
+      : null,
     raw
   };
 }

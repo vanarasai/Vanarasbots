@@ -1,8 +1,10 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 
-@interface AppDelegate : NSObject <NSApplicationDelegate, WKUIDelegate>
+@interface AppDelegate : NSObject <NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, WKDownloadDelegate>
 @property (strong, nonatomic) NSWindow *window;
+// Where each in-flight download is being written, so it can be shown in Finder when it finishes.
+@property (strong, nonatomic) NSMapTable<WKDownload *, NSURL *> *downloadDestinations API_AVAILABLE(macos(11.3));
 @property (strong, nonatomic) WKWebView *webView;
 @property (strong, nonatomic) NSTask *serverTask;
 @end
@@ -37,6 +39,7 @@
     self.webView = [[WKWebView alloc] initWithFrame:self.window.contentView.bounds configuration:config];
     [self.webView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
     [self.webView setUIDelegate:self];
+    [self.webView setNavigationDelegate:self];
 
     [self.window.contentView addSubview:self.webView];
     [self.window makeKeyAndOrderFront:nil];
@@ -271,6 +274,99 @@
             [self.serverTask terminate];
         }
     }
+}
+
+#pragma mark - Links, new windows and downloads
+// WKWebView does none of this by itself: without these handlers "Download" links, target=_blank links and
+// window.open() silently did nothing in the app, although the same page worked in a browser.
+
+- (BOOL)isAppURL:(NSURL *)url {
+    NSString *host = url.host.lowercaseString ?: @"";
+    BOOL loopback = [host isEqualToString:@"localhost"] || [host isEqualToString:@"127.0.0.1"] || [host isEqualToString:@"::1"];
+    return loopback && url.port.integerValue == 3000;
+}
+
+// window.open() and target=_blank: open in the user's default browser instead of a new in-app window.
+- (WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures {
+    NSURL *url = navigationAction.request.URL;
+    if (url && url.scheme.length > 0 && ![url.absoluteString isEqualToString:@"about:blank"]) {
+        [[NSWorkspace sharedWorkspace] openURL:url];
+    }
+    return nil;
+}
+
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+    if (@available(macOS 11.3, *)) {
+        if (navigationAction.shouldPerformDownload) {
+            decisionHandler(WKNavigationActionPolicyDownload);
+            return;
+        }
+    }
+    // A link that would replace the app itself with another site opens in the browser instead.
+    NSURL *url = navigationAction.request.URL;
+    BOOL mainFrame = navigationAction.targetFrame == nil || navigationAction.targetFrame.isMainFrame;
+    if (mainFrame && navigationAction.navigationType == WKNavigationTypeLinkActivated && url && ![self isAppURL:url]
+        && ([url.scheme isEqualToString:@"http"] || [url.scheme isEqualToString:@"https"])) {
+        [[NSWorkspace sharedWorkspace] openURL:url];
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    decisionHandler(WKNavigationActionPolicyAllow);
+}
+
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
+    if (@available(macOS 11.3, *)) {
+        BOOL attachment = NO;
+        if ([navigationResponse.response isKindOfClass:[NSHTTPURLResponse class]]) {
+            NSString *disposition = [(NSHTTPURLResponse *)navigationResponse.response valueForHTTPHeaderField:@"Content-Disposition"];
+            attachment = [disposition.lowercaseString hasPrefix:@"attachment"];
+        }
+        if (attachment || !navigationResponse.canShowMIMEType) {
+            decisionHandler(WKNavigationResponsePolicyDownload);
+            return;
+        }
+    }
+    decisionHandler(WKNavigationResponsePolicyAllow);
+}
+
+- (void)webView:(WKWebView *)webView navigationAction:(WKNavigationAction *)navigationAction didBecomeDownload:(WKDownload *)download API_AVAILABLE(macos(11.3)) {
+    download.delegate = self;
+}
+
+- (void)webView:(WKWebView *)webView navigationResponse:(WKNavigationResponse *)navigationResponse didBecomeDownload:(WKDownload *)download API_AVAILABLE(macos(11.3)) {
+    download.delegate = self;
+}
+
+// Save into ~/Downloads without overwriting: "song.wav", then "song 2.wav", "song 3.wav", ...
+- (void)download:(WKDownload *)download decideDestinationUsingResponse:(NSURLResponse *)response suggestedFilename:(NSString *)suggestedFilename completionHandler:(void (^)(NSURL *))completionHandler API_AVAILABLE(macos(11.3)) {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSURL *dir = [[fm URLsForDirectory:NSDownloadsDirectory inDomains:NSUserDomainMask] firstObject];
+    NSString *name = suggestedFilename.length > 0 ? suggestedFilename.lastPathComponent : @"download";
+    NSString *stem = [name stringByDeletingPathExtension];
+    NSString *ext = [name pathExtension];
+    NSURL *dest = [dir URLByAppendingPathComponent:name];
+    for (NSInteger n = 2; [fm fileExistsAtPath:dest.path] && n < 1000; n++) {
+        NSString *candidate = ext.length > 0 ? [NSString stringWithFormat:@"%@ %ld.%@", stem, (long)n, ext] : [NSString stringWithFormat:@"%@ %ld", stem, (long)n];
+        dest = [dir URLByAppendingPathComponent:candidate];
+    }
+    if (!self.downloadDestinations) self.downloadDestinations = [NSMapTable weakToStrongObjectsMapTable];
+    [self.downloadDestinations setObject:dest forKey:download];
+    completionHandler(dest);
+}
+
+- (void)downloadDidFinish:(WKDownload *)download API_AVAILABLE(macos(11.3)) {
+    NSURL *dest = [self.downloadDestinations objectForKey:download];
+    [self.downloadDestinations removeObjectForKey:download];
+    if (dest) [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[dest]];
+}
+
+- (void)download:(WKDownload *)download didFailWithError:(NSError *)error resumeData:(NSData *)resumeData API_AVAILABLE(macos(11.3)) {
+    [self.downloadDestinations removeObjectForKey:download];
+    NSAlert *alert = [[NSAlert alloc] init];
+    [alert setMessageText:@"Download failed"];
+    [alert setInformativeText:error.localizedDescription ?: @"Unknown error"];
+    [alert addButtonWithTitle:@"OK"];
+    [alert beginSheetModalForWindow:self.window completionHandler:nil];
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {

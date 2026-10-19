@@ -1,0 +1,22 @@
+{
+  "name": "vanaras",
+  "version": "1.0.0",
+  "description": "Multi-agent autonomous coding studio with isolated git worktrees",
+  "type": "module",
+  "main": "ui/server.mjs",
+  "bin": {
+    "vanaras": "./vanaras-cli.mjs"
+  },
+  "scripts": {
+    "start": "node ui/server.mjs",
+    "test": "node tests/run-hermetic.mjs",
+    "test:unit": "node --test tests/unit/*.test.mjs",
+    "test:e2e": "node tests/e2e-suite.mjs",
+    "test:hermetic": "node tests/run-hermetic.mjs",
+    "check": "node --check ui/server.mjs && node --check vanaras-cli.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

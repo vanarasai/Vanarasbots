@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ROOT_DIR } from "./config.mjs";
-import { LEGACY_TEMPLATE_FILES, listAgentCodeFiles } from "./worktree.mjs";
+import { listAgentCodeFiles } from "./worktree.mjs";
 
 // Extract a compact architectural Symbol & Route Map from source files in a directory
 export function extractRepositorySymbolMap(rootDir) {
@@ -54,7 +54,7 @@ export function inspectMountedDirectory(targetPath, codeDir = "") {
 
   try {
     const entries = fs.readdirSync(resolved, { withFileTypes: true })
-      .filter(e => !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "target" && !LEGACY_TEMPLATE_FILES.has(e.name))
+      .filter(e => !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "target")
       .slice(0, 35)
       .map(e => (e.isDirectory() ? `${e.name}/` : e.name));
 

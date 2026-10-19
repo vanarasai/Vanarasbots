@@ -4,24 +4,48 @@ import { compactMessagesList } from "../context.mjs";
 import { broadcastEvent } from "../events.mjs";
 import { readJsonBody, sendJson } from "../http-utils.mjs";
 import { stopTrackedProcess } from "../process.mjs";
-import { executeServerSessionTurn } from "../session-runner.mjs";
-import { activeApprovals, activeServerTurns, sessionCheckpoints } from "../state.mjs";
+import { executeServerSessionTurn, summarizeToolStep } from "../session-runner.mjs";
+import { activeApprovals, activeServerTurns, serverTurnKey, sessionCheckpoints } from "../state.mjs";
 import { loadWorkspaceDiskState, saveWorkspaceDiskState } from "../workspace-state.mjs";
-import { ensureAgentWorktree } from "../worktree.mjs";
+import { ProjectError, projectErrorResponse, projectFromRequest } from "../projects.mjs";
+
+// Liveness for the UI: a running turn with no progress for this long is reported as stalled, and a finished
+// turn whose last message asks the user something is reported as waiting for them.
+const STALL_AFTER_MS = 120000;
+function turnLiveness(t) {
+  const idleMs = t.status === "running" ? Math.max(0, Date.now() - Date.parse(t.updatedAt || t.startedAt)) : 0;
+  const awaitingUser = t.status === "completed" && /\?\s*$/.test(String(t.finalContent || "").trim());
+  return { idleMs, stalled: t.status === "running" && idleMs > STALL_AFTER_MS, awaitingUser };
+}
 
 export async function handleSessionsRoutes(req, res) {
   // 6C. Server-Side Autonomous Session Runner (POST /api/sessions/turn, GET /api/sessions/status, POST /api/sessions/stop)
   if (req.method === "POST" && req.url === "/api/sessions/turn") {
     try {
       const body = await readJsonBody(req);
-      const { threadId, botId = "bot_r1", botName = "R1", prompt = "", systemPrompt = "", verifyCommand = "", maxSteps = 30 } = body;
+      const { threadId, botId = "bot_r1", botName = "R1", prompt = "", systemPrompt = "", verifyCommand = "", maxSteps = 30, turnId = "", disabledTools = [], extraGuidance = "" } = body;
+      // Refuse up front when the room has no usable project, so the UI can ask the user to choose one.
+      let projectPath;
+      try {
+        projectPath = projectFromRequest(req, body);
+      } catch (err) {
+        if (err instanceof ProjectError) {
+          const r = projectErrorResponse(err);
+          return sendJson(res, r.status, r.body);
+        }
+        throw err;
+      }
       if (!prompt && !verifyCommand) {
         return sendJson(res, 400, { error: "prompt or verifyCommand required" });
       }
       const effectiveThreadId = threadId || `thread_${Date.now()}`;
-      const existing = activeServerTurns.get(effectiveThreadId);
+      // A new message to an agent that is still working supersedes its running turn (the user moved on),
+      // rather than being refused while the old turn keeps going unseen.
+      const existing = activeServerTurns.get(serverTurnKey(effectiveThreadId, botId));
       if (existing && existing.status === "running") {
-        return sendJson(res, 409, { error: "A turn is already running for this thread", turn: existing });
+        existing.abortController?.abort();
+        existing.status = "stopped";
+        existing.message = "Superseded by a newer message";
       }
 
       executeServerSessionTurn({
@@ -31,7 +55,11 @@ export async function handleSessionsRoutes(req, res) {
         prompt,
         systemPrompt,
         verifyCommand,
-        maxSteps: Number(maxSteps) || 30
+        maxSteps: Number(maxSteps) || 30,
+        turnId: String(turnId || ""),
+        disabledTools,
+        projectPath,
+        extraGuidance
       }).catch(err => {
         console.error("Unhandled error in executeServerSessionTurn:", err);
       });
@@ -40,6 +68,7 @@ export async function handleSessionsRoutes(req, res) {
         ok: true,
         threadId: effectiveThreadId,
         botId,
+        turnId,
         status: "started"
       });
     } catch (e) {
@@ -52,47 +81,54 @@ export async function handleSessionsRoutes(req, res) {
     const qParams = new URLSearchParams(qIndex >= 0 ? req.url.slice(qIndex) : "");
     const threadId = qParams.get("threadId");
     if (threadId) {
-      const turn = activeServerTurns.get(threadId);
+      const inThread = Array.from(activeServerTurns.values()).filter(t => t.threadId === threadId);
+      const turn = inThread.find(t => t.status === "running") || inThread[inThread.length - 1];
       return sendJson(res, 200, {
         ok: true,
         active: turn ? turn.status === "running" : false,
-        turn: turn || null
+        turn: turn ? { ...turn, ...turnLiveness(turn) } : null
       });
     }
+    // Enough for a window that missed live events (suspended, reloaded, reconnecting) to catch up: the
+    // current progress line while running, and the result once finished.
     const all = Array.from(activeServerTurns.values()).map(t => ({
+      turnId: t.turnId,
       threadId: t.threadId,
       botId: t.botId,
       botName: t.botName,
       status: t.status,
       step: t.step,
       maxSteps: t.maxSteps,
+      message: t.message,
+      // Shorter output tails here: this list is polled every few seconds by every open window.
+      toolCalls: (t.toolCalls || []).map((c, i) => summarizeToolStep(c, i, 600)),
+      usage: t.usage,
       startedAt: t.startedAt,
-      updatedAt: t.updatedAt
+      updatedAt: t.updatedAt,
+      ...(t.status === "running" ? {} : {
+        finalContent: t.finalContent,
+        reasoning: t.reasoning,
+        remembered: t.remembered || []
+      }),
+      ...turnLiveness(t)
     }));
     return sendJson(res, 200, { ok: true, activeCount: all.filter(t => t.status === "running").length, turns: all });
   }
 
   if (req.method === "POST" && req.url === "/api/sessions/stop") {
     try {
-      const { threadId, botId } = await readJsonBody(req);
+      const { threadId, botId, turnId } = await readJsonBody(req);
       let stoppedCount = 0;
-      if (threadId && activeServerTurns.has(threadId)) {
-        const turn = activeServerTurns.get(threadId);
-        if (turn.status === "running") {
-          turn.abortController?.abort();
-          turn.status = "stopped";
-          stoppedCount++;
-        }
-      } else {
-        for (const turn of activeServerTurns.values()) {
-          if (turn.status === "running" && (!botId || turn.botId === botId)) {
-            turn.abortController?.abort();
-            turn.status = "stopped";
-            stoppedCount++;
-          }
-        }
+      for (const turn of activeServerTurns.values()) {
+        if (turn.status !== "running") continue;
+        if (turnId && turn.turnId !== turnId) continue;
+        if (threadId && turn.threadId !== threadId) continue;
+        if (botId && turn.botId !== botId) continue;
+        turn.abortController?.abort();
+        turn.status = "stopped";
+        stoppedCount++;
       }
-      if (botId) stopTrackedProcess(botId);
+      if (botId && !turnId) stopTrackedProcess(botId);
       return sendJson(res, 200, { ok: true, stopped: stoppedCount > 0, count: stoppedCount });
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
@@ -127,7 +163,8 @@ export async function handleSessionsRoutes(req, res) {
         return sendJson(res, 404, { error: `Checkpoint not found: ${checkpointId}` });
       }
 
-      const wt = ensureAgentWorktree(targetChk.botId || botId, targetChk.botName || botName);
+      // Rewind exactly the worktree the checkpoint was taken in.
+      const wt = { worktreePath: targetChk.worktreePath };
       let gitResetOut = "";
       if (targetChk.preTurnSha) {
         try {

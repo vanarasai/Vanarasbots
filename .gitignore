@@ -9,6 +9,8 @@
 /ui/.vanaras-workspace.json
 /ui/.vanaras-keys.json
 /ui/.vanaras-agents/
+/ui/.vanaras-panels/
+/ui/.vanaras-index/
 /.vanaras-runtime/
 /.worktrees/
 /.venv/

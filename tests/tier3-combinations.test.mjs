@@ -119,53 +119,32 @@ export function registerTier3Tests(runner) {
     assert(cliSearchOut.includes("PORT") || cliSearchOut.includes("server"), "CLI search must return matches");
   });
 
-  // T3.4: Deliverable sync must never overwrite a newer edit in the main checkout with a stale replica.
-  // Regression: copyFileSync stamped replicas with "now", so the 2nd sync pass promoted a stale replica
-  // over the user's real edit.
-  runner.register(3, "M7", "F14", "T3.4_sync_preserves_newer_main_edit", async () => {
-    const fileName = `vx_citest_sync_canary_${process.pid}.txt`;
-    const rootFile = path.join(VANARAS_ROOT, fileName);
-    const replicaDirs = [];
-    const worktreesDir = path.join(VANARAS_ROOT, ".worktrees");
-    if (fs.existsSync(worktreesDir)) {
-      for (const wt of fs.readdirSync(worktreesDir, { withFileTypes: true })) {
-        if (!wt.isDirectory() || wt.name.startsWith(".")) continue;
-        replicaDirs.push(path.join(worktreesDir, wt.name));
-        const aw = path.join(worktreesDir, wt.name, "agent_workspace");
-        if (fs.existsSync(aw)) {
-          for (const sub of fs.readdirSync(aw, { withFileTypes: true })) {
-            if (sub.isDirectory() && !sub.name.startsWith(".")) replicaDirs.push(path.join(aw, sub.name));
-          }
-        }
-      }
-    }
+  // T3.4: An agent's work stays on its own branch of the room's project and reaches the project only when the
+  // user merges it; nothing is copied into the project or Vanaras behind the user's back.
+  runner.register(3, "M7", "F14", "T3.4_agent_work_reaches_project_only_by_merge", async () => {
+    const project = process.env.VANARAS_TEST_PROJECT;
+    assert(project, "VANARAS_TEST_PROJECT must name the fixture project");
+    const fileName = `feature_${process.pid}_${Date.now()}.mjs`;
+    const botId = "bot_e2e_merge";
 
-    try {
-      // 1. An agent produces the file; the server replicates it to the main root and sibling workspaces.
-      const created = await requestJson("POST", "/api/agent/tool", {
-        tool: "fs_write", botId: "bot_r1", filePath: fileName, content: "v1 agent version\n"
-      });
-      assertEqual(created.status, 200, `fs_write failed: ${JSON.stringify(created.body)}`);
-      assert(fs.existsSync(rootFile), "agent deliverable must be promoted to the main root");
+    const wrote = await requestJson("POST", "/api/agent/tool", { tool: "fs_write", botId, botName: "merger", filePath: `src/${fileName}`, content: "export const answer = 42;\n" });
+    assertEqual(wrote.status, 200, `fs_write: ${wrote.raw}`);
+    assert(!fs.existsSync(path.join(project, "src", fileName)), "an agent's write must not appear in the project before a merge");
+    assert(!fs.existsSync(path.join(VANARAS_ROOT, fileName)) && !fs.existsSync(path.join(VANARAS_ROOT, "src", fileName)), "nor anywhere in Vanaras");
 
-      // 2. The user edits the main copy afterwards.
-      await new Promise(r => setTimeout(r, 1200));
-      fs.appendFileSync(rootFile, "v2 USER EDIT\n", "utf8");
+    const outside = await requestJson("POST", "/api/agent/tool", { tool: "fs_read", botId, filePath: "../../../../etc/hosts" });
+    assert(outside.body?.ok === false && /outside this agent's worktree/.test(outside.body.error), `reads outside the worktree must be refused: ${outside.raw}`);
 
-      // 3. Several unrelated tool calls trigger repeated sync passes.
-      for (let i = 0; i < 4; i++) {
-        await new Promise(r => setTimeout(r, 1100));
-        const res = await requestJson("POST", "/api/agent/tool", {
-          tool: "shell_exec", botId: "bot_r1", command: "echo sync-pass"
-        });
-        assertEqual(res.status, 200, `shell_exec #${i} failed`);
-        const current = fs.readFileSync(rootFile, "utf8");
-        assertIncludes(current, "v2 USER EDIT", `user edit was overwritten after tool call #${i + 1}`);
-      }
-    } finally {
-      for (const dir of [VANARAS_ROOT, ...replicaDirs]) {
-        fs.rmSync(path.join(dir, fileName), { force: true });
-      }
-    }
+    const merged = await requestJson("POST", "/api/agent/workspace", { botId, botName: "merger", action: "merge_to_main" }, {}, 30000);
+    assertEqual(merged.status, 200, `merge: ${merged.raw}`);
+    assert(merged.body.merged === true, `merge must succeed: ${merged.body.output}`);
+    assert(fs.existsSync(path.join(project, "src", fileName)), "after the merge the file is in the project");
+
+    const again = await requestJson("POST", "/api/agent/workspace", { botId, botName: "merger", action: "merge_to_main" }, {}, 30000);
+    assert(again.body.merged === false && /Nothing to merge/.test(again.body.output), `a second merge has nothing to bring in: ${again.body.output}`);
+
+    const noProject = await requestJson("POST", "/api/agent/tool", { tool: "fs_read", botId, filePath: "README.md" }, { "X-Vanaras-Project": "" });
+    assertEqual(noProject.status, 409, `a request with no project must be refused: ${noProject.raw}`);
+    assertEqual(noProject.body?.code, "NO_PROJECT");
   });
 }

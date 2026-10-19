@@ -64,6 +64,22 @@ export const VANARAS_NATIVE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "code_search",
+      description: "Ranked search over the worktree's code and docs by meaning and by keyword. Returns the most relevant passages with file paths and line numbers, not whole files. Prefer it for questions like 'where do we handle X' or for finding a symbol's definition and uses; use grep_search for exact-string checks of fresh edits.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "What you are looking for: a question, a description, or identifiers" },
+          path: { type: "string", description: "Optional subfolder to limit the search to" },
+          limit: { type: "number", description: "Maximum passages to return (default 8)" }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "grep_search",
       description: "Fast regex or literal code search across files with line number matches.",
       parameters: {
@@ -295,6 +311,8 @@ export function parseTextToolCalls(text) {
       }
     } else if (name === "grep_search") {
       args = { pattern: rawArg };
+    } else if (name === "code_search") {
+      args = { query: rawArg };
     } else if (name === "find_files") {
       args = { query: rawArg };
     } else if (name === "verify_project") {
@@ -344,4 +362,36 @@ export function parseDeliverableBlocksText(rawText) {
     }
   }
   return files;
+}
+
+// ===PATCH: <file>=== blocks hold one or more SEARCH/REPLACE hunks. Each hunk becomes one exact_edit, so a
+// stale SEARCH text fails visibly with the tool's own error instead of being skipped.
+export function parseSurgicalPatchesText(rawText) {
+  if (!rawText) return [];
+  const edits = [];
+  const blockRx = /===PATCH:\s*([^\n=]+)===\s*\n([\s\S]*?)(?:===END_PATCH===|(?====PATCH:|===FILE:)|$)/gi;
+  const hunkRx = /<<<<<<<\s*SEARCH\r?\n([\s\S]*?)\r?\n=======\r?\n([\s\S]*?)\r?\n>>>>>>>\s*REPLACE/g;
+  let b;
+  while ((b = blockRx.exec(rawText)) !== null) {
+    const filePath = (b[1] || "").trim();
+    if (!filePath) continue;
+    let h;
+    hunkRx.lastIndex = 0;
+    while ((h = hunkRx.exec(b[2] || "")) !== null) {
+      if (h[1]) edits.push({ filePath, oldString: h[1], newString: h[2] });
+    }
+  }
+  return edits;
+}
+
+// [REMEMBER: <fact>] directives an agent uses to persist a convention into its private memory.
+export function parseRememberDirectives(rawText) {
+  const facts = [];
+  const rx = /\[REMEMBER:\s*([^\]]+)\]/gi;
+  let m;
+  while ((m = rx.exec(String(rawText || ""))) !== null) {
+    const fact = m[1].trim();
+    if (fact && !facts.includes(fact)) facts.push(fact);
+  }
+  return facts;
 }

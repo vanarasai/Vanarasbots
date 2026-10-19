@@ -4,11 +4,12 @@ import path from "node:path";
 import { AGENTS_STATE_DIR } from "../config.mjs";
 import { splitReasoningAndVisibleOutput } from "../context.mjs";
 import { broadcastEvent } from "../events.mjs";
-import { readJsonBody, sendJson } from "../http-utils.mjs";
+import { readJsonBody, sendJson, sendRouteError } from "../http-utils.mjs";
+import { projectFromRequest } from "../projects.mjs";
 import { killProcessTree } from "../process.mjs";
 import { agentDevServers, agentHeartbeats, agentWatchers } from "../state.mjs";
 import { getAgentAssignedPort, getHeadSha, sanitizeSlug } from "../util.mjs";
-import { ensureAgentWorktree, listAgentCodeFiles, syncWorktreeDeliverablesToMainRoot } from "../worktree.mjs";
+import { ensureAgentWorktree, listAgentCodeFiles } from "../worktree.mjs";
 
 export async function handleAgentLifecycleRoutes(req, res) {
   // 2E. Vanaras Local-Exec-Daemon Lifecycle Hooks & PreCompact Engine (/api/agent/hooks)
@@ -29,7 +30,7 @@ export async function handleAgentLifecycleRoutes(req, res) {
       const rawOutput = bodyObj.rawOutput !== undefined ? bodyObj.rawOutput : (bodyObj.content || "");
       const priorReasoning = bodyObj.reasoning || "";
 
-      const wt = ensureAgentWorktree(botId, botName);
+      const wt = ensureAgentWorktree(botId, botName, projectFromRequest(req, reqBody));
       const timestamp = new Date().toISOString();
 
       // 1. BeforeSubmitPromptRequest: records worktree & AgentStore manifest metadata and applies optional MCP custom instructions
@@ -158,7 +159,7 @@ export async function handleAgentLifecycleRoutes(req, res) {
       broadcastEvent("agent_hook", { hook, botId, botName, branch: wt.branch, timestamp });
       return sendJson(res, 200, { ok: true, hook, botId, branch: wt.branch, timestamp });
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
@@ -195,8 +196,7 @@ export async function handleAgentLifecycleRoutes(req, res) {
       }
 
       if (action === "CommitSandBoxStoreManifest") {
-        const wt = ensureAgentWorktree(botId, botName);
-        const promotedToRoot = syncWorktreeDeliverablesToMainRoot(wt);
+        const wt = ensureAgentWorktree(botId, botName, projectFromRequest(req, reqBody));
         const files = listAgentCodeFiles(wt.codeDir).map(f => ({
           name: f.name,
           size: f.size,
@@ -209,24 +209,23 @@ export async function handleAgentLifecycleRoutes(req, res) {
           branch: wt.branch,
           codeDir: wt.codeDir,
           committedAt: new Date().toISOString(),
-          promotedToRoot,
           objects: files,
           locks
         };
         const manifestFile = path.join(storeDir, `${sanitizeSlug(botId)}-manifest.json`);
         fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2), "utf8");
-        return sendJson(res, 200, { ok: true, action, promotedToRoot, manifest });
+        return sendJson(res, 200, { ok: true, action, manifest });
       }
 
       if (action === "StatSandBoxStoreObject") {
-        const wt = ensureAgentWorktree(botId, botName);
+        const wt = ensureAgentWorktree(botId, botName, projectFromRequest(req, reqBody));
         const files = listAgentCodeFiles(wt.codeDir).map(f => ({ name: f.name, size: f.size, updatedAt: f.updatedAt }));
         return sendJson(res, 200, { ok: true, action, branch: wt.branch, objects: files, locks });
       }
 
       return sendJson(res, 200, { ok: true, action, locks });
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
@@ -241,7 +240,7 @@ export async function handleAgentLifecycleRoutes(req, res) {
         intervalSec = 0
       } = await readJsonBody(req);
 
-      const wt = ensureAgentWorktree(botId, botName);
+      const wt = ensureAgentWorktree(botId, botName, projectFromRequest(req, reqBody));
 
       if (action === "start_watch") {
         if (agentWatchers.has(botId)) {
@@ -318,7 +317,7 @@ export async function handleAgentLifecycleRoutes(req, res) {
         botId
       });
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
@@ -332,7 +331,7 @@ export async function handleAgentLifecycleRoutes(req, res) {
         url = ""
       } = await readJsonBody(req);
 
-      const wt = ensureAgentWorktree(botId, botName);
+      const wt = ensureAgentWorktree(botId, botName, projectFromRequest(req, reqBody));
 
       if (action === "EnsureSandBox") {
         const snapshotRef = getHeadSha(wt.worktreePath);
@@ -379,7 +378,7 @@ export async function handleAgentLifecycleRoutes(req, res) {
         }
         agentDevServers.delete(botId);
         fs.rmSync(wt.codeDir, { recursive: true, force: true });
-        const freshWt = ensureAgentWorktree(botId, botName);
+        const freshWt = ensureAgentWorktree(botId, botName, projectFromRequest(req, reqBody));
         const snapshotRef = getHeadSha(freshWt.worktreePath);
         return sendJson(res, 200, {
           ok: true,
@@ -417,7 +416,7 @@ export async function handleAgentLifecycleRoutes(req, res) {
 
       return sendJson(res, 400, { error: `Unknown sandbox action: ${action}` });
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 

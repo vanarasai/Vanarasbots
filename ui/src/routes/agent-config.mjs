@@ -1,33 +1,33 @@
 // HTTP routes: /api/agent/worktree, /api/agent/memory, /api/agent/skill
 import fs from "node:fs";
 import path from "node:path";
-import { discoverWorkspaceSkillFiles, getAgentConfigFile, getAgentSkillFile, loadAgentConfig, loadAgentMemory, loadAgentSkill, saveAgentConfig, saveAgentMemory, saveAgentSkill } from "../agent-store.mjs";
-import { readJsonBody, sendJson } from "../http-utils.mjs";
+import { discoverWorkspaceSkillFiles, getAgentConfigFile, getAgentSkillFile, loadAgentConfig, loadAgentMemory, loadAgentProjectMemories, loadAgentSkill, saveAgentConfig, saveAgentMemory, saveAgentSkill } from "../agent-store.mjs";
+import { readJsonBody, sendJson, sendRouteError } from "../http-utils.mjs";
+import { projectFromRequest } from "../projects.mjs";
 import { execFileAsync, isPathInside, safeGitCommitAsync } from "../util.mjs";
-import { ensureAgentWorktree, syncWorktreeDeliverablesToMainRoot } from "../worktree.mjs";
+import { resolveInWorktree } from "../agent-tools.mjs";
+import { ensureAgentWorktree } from "../worktree.mjs";
 
 export async function handleAgentConfigRoutes(req, res) {
   // 2B. Per-Agent Isolated Git Worktree Endpoint (/api/agent/worktree)
   if (req.method === "POST" && req.url === "/api/agent/worktree") {
     try {
-      const { botId, botName, customWorkspacePath = "", action = "ensure", filePath, content, commitMessage, message } = await readJsonBody(req);
-      const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1", customWorkspacePath);
+      const reqBody = await readJsonBody(req);
+      const { botId, botName, action = "ensure", filePath, content, commitMessage, message } = reqBody;
+      const wt = ensureAgentWorktree(botId || "bot_r1", botName || "R1", projectFromRequest(req, reqBody));
 
       if (action === "write_file" && filePath) {
-        const cleanRel = filePath.replace(/^\/+/, "").replace(/\.\./g, "");
-        const absTarget = path.resolve(wt.codeDir, cleanRel);
-        if (isPathInside(absTarget, wt.codeDir)) {
-          fs.mkdirSync(path.dirname(absTarget), { recursive: true });
-          fs.writeFileSync(absTarget, content || "", "utf8");
-          syncWorktreeDeliverablesToMainRoot(wt);
-        }
-        return sendJson(res, 200, { ...ensureAgentWorktree(botId, botName, customWorkspacePath), writtenFile: cleanRel });
+        const resolved = resolveInWorktree(wt, filePath);
+        if (resolved.error) return sendJson(res, 400, { ok: false, error: resolved.error });
+        fs.mkdirSync(path.dirname(resolved.abs), { recursive: true });
+        fs.writeFileSync(resolved.abs, content || "", "utf8");
+        return sendJson(res, 200, { ...ensureAgentWorktree(botId, botName, projectFromRequest(req, reqBody)), writtenFile: resolved.rel });
       }
 
       if (action === "commit") {
         const msg = String(commitMessage || message || `feat(${wt.botName}): autonomous worktree update`);
         await safeGitCommitAsync(wt.worktreePath, msg, 5000);
-        return sendJson(res, 200, ensureAgentWorktree(botId, botName, customWorkspacePath));
+        return sendJson(res, 200, ensureAgentWorktree(botId, botName, projectFromRequest(req, reqBody)));
       }
 
       if (action === "diff") {
@@ -41,36 +41,39 @@ export async function handleAgentConfigRoutes(req, res) {
 
       return sendJson(res, 200, wt);
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
   // 2C. Per-Agent Persistent Memory Endpoint (/api/agent/memory)
   if (req.method === "POST" && req.url === "/api/agent/memory") {
     try {
-      const { botId, action = "get", fact, item, index, memories } = await readJsonBody(req);
+      const reqBody = await readJsonBody(req);
+      // `project` (the room's project root) selects that project's memory; without it, the legacy list.
+      const { botId, action = "get", fact, item, index, memories, project = "" } = reqBody;
       const memoryItem = fact || item;
-      let current = loadAgentMemory(botId);
+      let current = loadAgentMemory(botId, project);
       if (action === "add" && memoryItem) {
         if (!current.includes(memoryItem)) current.unshift(memoryItem);
-        saveAgentMemory(botId, current);
+        saveAgentMemory(botId, current, project);
       } else if (action === "remove" && typeof index === "number") {
         current.splice(index, 1);
-        saveAgentMemory(botId, current);
+        saveAgentMemory(botId, current, project);
       } else if (action === "set" && Array.isArray(memories)) {
         current = memories;
-        saveAgentMemory(botId, current);
+        saveAgentMemory(botId, current, project);
       }
-      return sendJson(res, 200, { botId, memories: current });
+      return sendJson(res, 200, { botId, project, memories: current, projects: loadAgentProjectMemories(botId) });
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 
   // 2C-bis. Per-Agent SKILL.md, MCP & Harness Configuration Store (/api/agent/skill)
   if (req.method === "POST" && req.url === "/api/agent/skill") {
     try {
-      const { botId = "bot_r1", botName = "R1", botRole = "", role = "", action = "get", skillMarkdown = "", agentConfig = null } = await readJsonBody(req);
+      const reqBody = await readJsonBody(req);
+      const { botId = "bot_r1", botName = "R1", botRole = "", role = "", action = "get", skillMarkdown = "", agentConfig = null } = reqBody;
       const effectiveRole = botRole || role;
       const templates = discoverWorkspaceSkillFiles();
       if (action === "set") {
@@ -98,7 +101,7 @@ export async function handleAgentConfigRoutes(req, res) {
         templates
       });
     } catch (e) {
-      return sendJson(res, 500, { error: e.message });
+      return sendRouteError(res, e, 500);
     }
   }
 

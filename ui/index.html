@@ -1332,6 +1332,18 @@
 
           <!-- (+) Popover Menu -->
           <div id="plusMenuDropdown" class="popover-menu hidden" style="top: 32px; left: -170px; width: 232px;">
+            <button onclick="openNewProjectModal(); hidePlusMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:var(--accent-blue);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg>
+              </div>
+              <div>
+                <div class="popover-title">New Project</div>
+                <div class="popover-sub">Folder, git repo, room and agents with clean memory</div>
+              </div>
+            </button>
+
+            <div class="popover-divider"></div>
+
             <button onclick="openBotModal(null); hidePlusMenu();" class="popover-item">
               <div class="popover-item-icon" style="color:var(--accent-blue);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
@@ -1349,6 +1361,16 @@
               <div>
                 <div class="popover-title">New Engineering Squad</div>
                 <div class="popover-sub">Multi-agent collaborative room</div>
+              </div>
+            </button>
+
+            <button onclick="openPanelModal(null); hidePlusMenu();" class="popover-item">
+              <div class="popover-item-icon" style="color:var(--accent-blue);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="8" r="2.5"/><circle cx="12" cy="6" r="2.5"/><circle cx="19" cy="8" r="2.5"/><path d="M1.5 19c.5-3 2-5 3.5-5s3 2 3.5 5M8.5 18c.5-3.5 2-6 3.5-6s3 2.5 3.5 6M15.5 19c.5-3 2-5 3.5-5s3 2 3.5 5"/></svg>
+              </div>
+              <div>
+                <div class="popover-title">New Panel / Audience</div>
+                <div class="popover-sub">Any number of agents debate, vote A/B or review</div>
               </div>
             </button>
 
@@ -1392,7 +1414,7 @@
 
       <!-- Mounted Repository Pill Card: [ 📁 vanaras  › ] -->
       <div class="sidebar-repo-card">
-        <button onclick="openMountModal()" class="sidebar-repo-btn" title="Switch Mounted Repository or Inspect Symbol Map">
+        <button onclick="openProjectSwitcher(event)" class="sidebar-repo-btn" title="Switch project">
           <span style="display:flex; align-items:center; gap:9px; min-width:0;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d7dfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -2070,7 +2092,7 @@ Auto-save: enabled</pre>
         </div>
         <div>
           <label class="field-label">Mounted Project Folder</label>
-          <input id="groupMountPathInput" type="text" placeholder="/Users/lakshmipriyasridharan/AI/REA/vanaras" class="field-input mono">
+          <input id="groupMountPathInput" type="text" placeholder="/path/to/your/project" class="field-input mono">
         </div>
         <div>
           <label class="field-label">Vanara Bots in Room</label>
@@ -2090,6 +2112,148 @@ Auto-save: enabled</pre>
         <div style="display:flex; gap:8px; margin-left:auto;">
           <button onclick="closeGroupModal()" class="btn-secondary">Cancel</button>
           <button onclick="saveGroupFromModal()" class="btn-primary">Save Squad</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="newProjectModal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width:620px; width:min(620px, 94vw);">
+      <div class="modal-header">
+        <div>
+          <div style="font-size:15px; font-weight:600;">New Project</div>
+          <div style="font-size:11.5px; color:var(--text-muted);">Creates the folder and its git repository, a room, and agents that start with clean memory in this project</div>
+        </div>
+        <button onclick="closeNewProjectModal()" class="side-icon-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" style="max-height:70vh; overflow-y:auto;">
+        <div>
+          <label class="field-label">Project name</label>
+          <input id="newProjectNameInput" type="text" class="field-input" placeholder="e.g. Invoice Tracker" oninput="suggestNewProjectLocation()">
+        </div>
+        <div>
+          <label class="field-label">Folder</label>
+          <input id="newProjectLocationInput" type="text" class="field-input mono" placeholder="~/VanarasProjects/invoice-tracker" oninput="this.dataset.edited = '1'">
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">A new or empty folder outside Vanaras's source. Vanaras makes it a git repository with a first commit.</div>
+        </div>
+        <div>
+          <label class="field-label">Agents</label>
+          <div style="display:flex; flex-direction:column; gap:6px; font-size:12.5px; margin-bottom:8px;">
+            <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="newProjectAgentMode" value="fresh" checked> <span><strong>Fresh agents</strong> — new copies of the ones you pick (same role and model, default playbook, no memory or history)</span></label>
+            <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="newProjectAgentMode" value="existing"> <span><strong>Existing agents</strong> — the same agents; they start with no memory in this project</span></label>
+          </div>
+          <div id="newProjectAgentsChecklist" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div style="display:flex; gap:8px; margin-left:auto;">
+          <button onclick="closeNewProjectModal()" class="btn-secondary">Cancel</button>
+          <button id="newProjectCreateBtn" onclick="createNewProjectFromModal()" class="btn-primary">Create Project</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="panelModal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width:760px; width:min(760px, 94vw);">
+      <div class="modal-header">
+        <div>
+          <div id="panelModalTitle" style="font-size:15px; font-weight:600;">New Panel / Audience</div>
+          <div style="font-size:11.5px; color:var(--text-muted);">Seat any number of agents to debate a topic, vote between options, or review a UI, file or page</div>
+        </div>
+        <button onclick="closePanelModal()" class="side-icon-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" style="max-height:72vh; overflow-y:auto;">
+        <input type="hidden" id="panelEditId">
+        <div style="display:grid; grid-template-columns:2fr 1fr; gap:10px;">
+          <div>
+            <label class="field-label">Panel Name</label>
+            <input id="panelNameInput" type="text" placeholder="e.g. Podcast intro test" class="field-input">
+          </div>
+          <div>
+            <label class="field-label">Mode</label>
+            <select id="panelModeInput" class="field-input" onchange="onPanelModeChange()">
+              <option value="debate">Debate → final answer</option>
+              <option value="vote">A/B vote</option>
+              <option value="review">Review (UI, code, page)</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="field-label" id="panelTopicLabel">Topic or question</label>
+          <textarea id="panelTopicInput" rows="2" class="field-input" placeholder="e.g. Should our podcast episodes be 10 or 25 minutes long?"></textarea>
+        </div>
+        <div id="panelOptionsBlock" class="hidden">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="field-label" style="margin-bottom:0;">Options to vote on</label>
+            <button onclick="addPanelOptionRow()" style="font-size:11px; color:var(--accent-blue); font-weight:600;">+ Add option</button>
+          </div>
+          <div id="panelOptionsList" style="display:flex; flex-direction:column; gap:8px;"></div>
+        </div>
+        <div>
+          <label class="field-label">Material to share with the panel (optional, one per line)</label>
+          <textarea id="panelMaterialsInput" rows="2" class="field-input mono" placeholder="output/index.html&#10;http://localhost:3847/&#10;.worktrees/bot_r1/podcast_engine.py"></textarea>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Project or worktree file paths, or pages served on this machine. Every panelist sees the same copy.</div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;">
+          <div>
+            <label class="field-label">Rounds</label>
+            <select id="panelRoundsInput" class="field-input" onchange="updatePanelCostNote()">
+              <option value="1">1 — independent answers</option>
+              <option value="2">2 — one rebuttal round</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label">Model (from agent)</label>
+            <select id="panelModelInput" class="field-input" onchange="updatePanelCostNote()"></select>
+          </div>
+          <div>
+            <label class="field-label">Answer in parallel</label>
+            <select id="panelConcurrencyInput" class="field-input">
+              <option value="1">1 at a time</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="5">5</option>
+              <option value="8">8</option>
+            </select>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--border-subtle); padding-top:10px;">
+          <label class="field-label">Generate panelists from an audience brief</label>
+          <div style="display:flex; gap:8px;">
+            <input id="panelBriefInput" type="text" class="field-input" placeholder="e.g. first-time podcast listeners, 25-40, commuting" style="flex:1;">
+            <input id="panelCountInput" type="number" min="1" max="100" value="8" class="field-input" style="width:72px;" title="How many">
+            <button id="panelGenerateBtn" onclick="generatePanelistsFromBrief()" class="btn-secondary" style="white-space:nowrap;">Generate</button>
+          </div>
+        </div>
+        <div>
+          <label class="field-label">Seat existing agents</label>
+          <div id="panelBotsChecklist" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+        </div>
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="field-label" style="margin-bottom:0;">Panelists <span id="panelCountBadge" style="color:var(--text-muted); font-weight:500;"></span></label>
+            <div style="display:flex; gap:12px;">
+              <button onclick="clearPanelists()" style="font-size:11px; color:var(--text-muted); font-weight:600;">Clear</button>
+              <button onclick="addPanelistRow()" style="font-size:11px; color:var(--accent-blue); font-weight:600;">+ Add panelist</button>
+            </div>
+          </div>
+          <div id="panelPanelistsList" style="display:flex; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto;"></div>
+          <div id="panelCostNote" style="font-size:11.5px; color:var(--text-muted); margin-top:8px;"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="deletePanelBtn" onclick="deletePanelFromModal()" style="color:var(--accent-red); font-size:12px; font-weight:600;" class="hidden">Delete Panel</button>
+        <div style="display:flex; gap:8px; margin-left:auto;">
+          <button onclick="closePanelModal()" class="btn-secondary">Cancel</button>
+          <button onclick="savePanelFromModal(false)" class="btn-secondary">Save</button>
+          <button onclick="savePanelFromModal(true)" class="btn-primary">Save &amp; Run</button>
         </div>
       </div>
     </div>
@@ -2135,13 +2299,10 @@ Auto-save: enabled</pre>
       </div>
       <div class="modal-body">
         <div style="display:flex; gap:8px;">
-          <input id="mountPathInput" type="text" class="field-input mono" placeholder="/Users/lakshmipriyasridharan/AI/REA/vanaras">
+          <input id="mountPathInput" type="text" class="field-input mono" placeholder="/path/to/your/project">
           <button onclick="saveAndInspectMountPath()" class="btn-primary" style="flex-shrink:0;">Mount</button>
         </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button onclick="setQuickMount('DEFAULT')" class="btn-secondary" style="height:28px; font-size:11px;">Workspace Root</button>
-          <button onclick="setQuickMount('PARENT')" class="btn-secondary" style="height:28px; font-size:11px;">Parent Repo</button>
-        </div>
+        <div style="font-size:11.5px; color:var(--text-muted);">The room's project: a git repository (Vanaras offers to initialise one). Each agent works on its own branch of it; work reaches the project only when you merge it.</div>
         <pre id="mountedFolderPreview" class="code-block mono" style="max-height:200px; color:var(--text-primary);">Click Mount to inspect directory...</pre>
       </div>
     </div>
@@ -2238,7 +2399,7 @@ Auto-save: enabled</pre>
           </div>
           <div>
             <label class="field-label">Mounted Local Repository Path</label>
-            <input id="onboardMountPathInput" type="text" placeholder="/Users/lakshmipriyasridharan/AI/REA/vanaras" class="field-input mono" style="font-size:11.5px;">
+            <input id="onboardMountPathInput" type="text" placeholder="/path/to/your/project" class="field-input mono" style="font-size:11.5px;">
           </div>
         </div>
 
@@ -2404,7 +2565,7 @@ Auto-save: enabled</pre>
       { id: "handoff", label: "Bot Handoff" }
     ];
 
-    function buildCleanEngineeringThreads(mountPath = "/Users/lakshmipriyasridharan/AI/REA/vanaras") {
+    function buildCleanEngineeringThreads(mountPath = "") {
       return [
         {
           id: "thread_squad",
@@ -2586,10 +2747,42 @@ Auto-save: enabled</pre>
     ];
 
     let state = JSON.parse(localStorage.getItem("vanaras_v6_app") || "null") || JSON.parse(JSON.stringify(DEFAULT_STATE));
+
+    // The server resolves a request's project from an explicit projectPath, else the room (threadId), else this
+    // header: the project of the room in view. It never falls back to Vanaras's own folder.
+    {
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = (input, init = {}) => {
+        try {
+          const url = typeof input === "string" ? input : input.url;
+          const project = url && url.startsWith("/api/") ? getActiveThread()?.mountPath : "";
+          if (project) {
+            const headers = new Headers(init.headers || {});
+            if (!headers.has("X-Vanaras-Project")) headers.set("X-Vanaras-Project", encodeURIComponent(project));
+            init = { ...init, headers };
+          }
+        } catch {}
+        return nativeFetch(input, init);
+      };
+    }
     if (!Array.isArray(state.sharedFacts)) state.sharedFacts = [...DEFAULT_STATE.sharedFacts];
     if (typeof state.autoTriggerEnabled !== "boolean") state.autoTriggerEnabled = true;
 
+    // The server runner and API tests store messages as {role, content}; the renderer reads {senderType, text}
+    // and threw on a message without text, leaving the whole thread blank. Normalise once when state loads.
+    function normalizeThreadMessages() {
+      for (const t of state.threads || []) {
+        if (!Array.isArray(t.messages)) { t.messages = []; continue; }
+        t.messages = t.messages.filter(Boolean);
+        for (const m of t.messages) {
+          if (typeof m.text !== "string") m.text = typeof m.content === "string" ? m.content : String(m.text ?? m.content ?? "");
+          if (!m.senderType) m.senderType = m.role === "assistant" ? "bot" : "user";
+        }
+      }
+    }
+
     function hydrateBotAgentFields() {
+      migrateMemoryToProjects();
       (state.bots || []).forEach(b => {
         const def = DEFAULT_STATE.bots.find(d => d.id === b.id);
         if (!Array.isArray(b.memories)) b.memories = def?.memories ? [...def.memories] : [];
@@ -2704,6 +2897,7 @@ Auto-save: enabled</pre>
     let activeTurnState = {};
     let allActiveTurnContexts = {};
     hydrateBotAgentFields();
+    normalizeThreadMessages();
 
     let activeThreadId = state.threads?.[0]?.id || "thread_r1";
     let detectedLocalModel = "qwen/qwen3.5-9b";
@@ -2771,6 +2965,14 @@ Auto-save: enabled</pre>
 
     let pendingBatchQueue = {};
     let pendingMentionQueue = {};
+    // Server-run turns started by this window, keyed `${threadId}_${botId}`: their relay depth, so the squad
+    // chain can continue when the server reports turn_complete.
+    let serverTurnChains = {};
+    // Default step budget for one server-run turn. A diagnose-repair-verify task (R1 rebuilding a broken
+    // venv, reinstalling, then running the tests) used all of 30; 60 leaves room to finish and verify.
+    const SERVER_TURN_MAX_STEPS = 60;
+    // The server runner's own hard cap (session-runner.mjs clamps to 100).
+    const SERVER_TURN_STEP_CEILING = 100;
 
     function saveApiKeysToLocalStore() {
       try {
@@ -2843,6 +3045,8 @@ Auto-save: enabled</pre>
       } catch {}
     }
 
+    var workspaceLoadedFromServer = false; // var: saveState may run before this line during boot
+
     function saveState() {
       saveApiKeysToLocalStore();
       try {
@@ -2862,16 +3066,22 @@ Auto-save: enabled</pre>
           localStorage.setItem("vanaras_v6_app", JSON.stringify(compactCopy));
         } catch {}
       }
-      fetch("/api/workspace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state })
-      }).catch(() => {});
+      // Until this page has read the server's workspace, `state` may be this browser's defaults (a fresh
+      // profile, a new window, the browser pane). Saving that would replace every thread on disk.
+      if (workspaceLoadedFromServer) {
+        fetch("/api/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state })
+        }).catch(() => {});
+      }
       updateHeaderPills();
     }
 
-    let serverDefaultMountPath = "/Users/lakshmipriyasridharan/AI/REA/vanaras";
-    let serverRepoRoot = "/Users/lakshmipriyasridharan/AI/REA";
+    // Rooms have no default project: each one chooses its own folder. vanarasRoot is only used to recognise
+    // (and confirm) a room that deliberately mounts Vanaras's own code.
+    let serverDefaultMountPath = "";
+    let vanarasRoot = "";
 
     async function ensureAgentWorktreeOnServer(bot) {
       if (!bot) return null;
@@ -2902,7 +3112,10 @@ Auto-save: enabled</pre>
         });
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data.memories)) {
+          if (extra.project && Array.isArray(data.memories)) {
+            if (!bot.projectMemories || typeof bot.projectMemories !== "object") bot.projectMemories = {};
+            bot.projectMemories[extra.project] = data.memories;
+          } else if (Array.isArray(data.memories)) {
             if (data.memories.length === 0 && Array.isArray(bot.memories) && bot.memories.length > 0 && action === "get") {
               await fetch("/api/agent/memory", {
                 method: "POST",
@@ -2974,14 +3187,17 @@ Auto-save: enabled</pre>
       return { skillMarkdown: bot.skillMarkdown || "", templates: discoveredSkillTemplates };
     }
 
+    var serverTurnSyncStarted = false;
+
     async function loadDiskWorkspaceOnBoot() {
       restoreApiKeysFromLocalStore();
       try {
         const res = await fetch("/api/workspace");
         if (res.ok) {
           const data = await res.json();
-          if (data.defaultMountPath) serverDefaultMountPath = data.defaultMountPath;
-          if (data.repoRoot) serverRepoRoot = data.repoRoot;
+          workspaceLoadedFromServer = true;
+          serverDefaultMountPath = data.defaultMountPath || "";
+          vanarasRoot = data.vanarasRoot || "";
           // Only restore disk state if it was already onboarded (skip legacy screenshot Project Maaya state)
           const isLegacyScreenshotState = data.state?.threads?.some(t => t.id === "thread_maaya" || t.name === "Project Maaya");
           if (data.state && !isLegacyScreenshotState && Array.isArray(data.state.threads) && data.state.threads.length >= 1) {
@@ -2990,6 +3206,7 @@ Auto-save: enabled</pre>
             if (typeof state.autoTriggerEnabled !== "boolean") state.autoTriggerEnabled = true;
             restoreApiKeysFromLocalStore();
             hydrateBotAgentFields();
+            normalizeThreadMessages();
             localStorage.setItem("vanaras_v6_app", JSON.stringify(state));
           } else {
             restoreApiKeysFromLocalStore();
@@ -3019,7 +3236,23 @@ Auto-save: enabled</pre>
         openOnboardingModal();
       }
       checkActiveServerTurnsOnBoot();
+      // This loader also runs again after a rewind; start the poll and listeners only once.
+      if (serverTurnSyncStarted) return;
+      serverTurnSyncStarted = true;
+      setInterval(checkActiveServerTurnsOnBoot, 6000);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          ensureMultiplayerStream();
+          checkActiveServerTurnsOnBoot();
+        }
+      });
+      window.addEventListener("focus", () => {
+        ensureMultiplayerStream();
+        checkActiveServerTurnsOnBoot();
+      });
     }
+
+    const threadLivenessState = {};
 
     async function checkActiveServerTurnsOnBoot() {
       try {
@@ -3028,13 +3261,51 @@ Auto-save: enabled</pre>
           const data = await res.json();
           if (Array.isArray(data.turns)) {
             for (const t of data.turns) {
+              threadLivenessState[t.threadId] = {
+                stalled: Boolean(t.stalled),
+                awaitingUser: Boolean(t.awaitingUser),
+                idleMs: t.idleMs || 0
+              };
               if (t.status === "running") {
-                activeWorkingThreads[t.threadId] = `Running on server (Step ${t.step}/${t.maxSteps})...`;
+                applyServerTurnProgress({ ...t, message: t.message || `Running on server (Step ${t.step}/${t.maxSteps})...` });
+                if (t.stalled) {
+                  activeWorkingThreads[t.threadId] = `[STALLED] No progress for ${Math.round((t.idleMs || 0) / 1000)}s`;
+                }
+              } else {
+                // Finishes a turn whose turn_complete event this window never received. Only a turn this
+                // window is still showing as streaming is applied, so old turns in the list are ignored.
+                const thread = state.threads.find(th => th.id === t.threadId);
+                const waiting = thread && thread.messages.some(m => m && m.isStreaming && m.serverTurnId && m.serverTurnId === t.turnId);
+                if (waiting) applyServerTurnComplete(t);
+                else if (t.status === "completed" && t.awaitingUser) delete activeWorkingThreads[t.threadId];
               }
             }
             renderThreadList();
-            renderActiveThread();
+            if (activeThreadId) {
+              renderActiveThread();
+            }
           }
+        }
+      } catch {}
+      await syncPendingApprovals();
+      await syncPanelRuns();
+    }
+
+    // An approval request shown only by its live event is lost if the window missed it, and the agent's
+    // command then times out as if the user had ignored it. Show whatever is pending; drop a banner whose
+    // request is no longer pending (answered elsewhere or timed out).
+    async function syncPendingApprovals() {
+      try {
+        const res = await fetch("/api/approvals/list");
+        if (!res.ok) return;
+        const data = await res.json();
+        const pending = (data.approvals || []).filter(a => a && a.status === "pending");
+        if (pending.length > 0) {
+          if (!pending.some(a => a.approvalId === currentPendingApprovalId)) handleApprovalRequested(pending[0]);
+        } else if (currentPendingApprovalId) {
+          currentPendingApprovalId = null;
+          const banner = document.getElementById("vanarasApprovalBanner");
+          if (banner) banner.style.display = "none";
         }
       } catch {}
     }
@@ -3196,7 +3467,7 @@ Auto-save: enabled</pre>
     function updateHeaderPills() {
       const thread = getActiveThread();
       const mountPath = thread?.mountPath || serverDefaultMountPath;
-      const baseName = mountPath.split(/[\\/]/).filter(Boolean).pop() || "vanaras";
+      const baseName = mountPath.split(/[\\/]/).filter(Boolean).pop() || "Choose project";
       const mountEl = document.getElementById("mountFolderLabel");
       if (mountEl) mountEl.innerText = baseName;
 
@@ -3206,7 +3477,7 @@ Auto-save: enabled</pre>
         wtEl.innerText = leadBot.worktreeBranch || `vanara/${leadBot.name.toLowerCase()}`;
       }
 
-      const factsCount = (state.sharedFacts || []).length;
+      const factsCount = projectFactsFor(getActiveThread()).length;
       const factsEl = document.getElementById("sharedFactsCountPill");
       if (factsEl) factsEl.innerText = `${factsCount}`;
 
@@ -3335,11 +3606,19 @@ Auto-save: enabled</pre>
         renderActiveThread();
       };
 
+      const liveness = threadLivenessState[thread.id];
+      let livenessBadge = "";
+      if (liveness?.stalled) {
+        livenessBadge = `<span style="display:inline-block; font-size:9px; font-weight:700; padding:1px 5px; border-radius:6px; background:rgba(239,68,68,0.18); color:#ef4444; border:1px solid rgba(239,68,68,0.4); margin-left:6px; vertical-align:middle;">STALLED</span>`;
+      } else if (liveness?.awaitingUser) {
+        livenessBadge = `<span style="display:inline-block; font-size:9px; font-weight:700; padding:1px 5px; border-radius:6px; background:rgba(234,179,8,0.18); color:#eab308; border:1px solid rgba(234,179,8,0.4); margin-left:6px; vertical-align:middle;">WAITING</span>`;
+      }
+
       btn.innerHTML = `
         ${avatarHtml}
         <div class="thread-meta">
           <div class="thread-title-row">
-            <span class="thread-title">${escapeHtml(title)}</span>
+            <span class="thread-title">${escapeHtml(title)}${livenessBadge}</span>
             ${rightDotHtml}
           </div>
           <div class="thread-preview">${escapeHtml(subtitle)}</div>
@@ -3353,7 +3632,10 @@ Auto-save: enabled</pre>
       const query = (document.getElementById("threadSearchInput")?.value || "").trim().toLowerCase();
       container.innerHTML = "";
 
+      // One project at a time: the sidebar shows the rooms and agents of the current room's project.
+      const currentProject = projectKeyOf(getActiveThread());
       const filtered = state.threads.filter(thread => {
+        if (projectKeyOf(thread) !== currentProject) return false;
         const bot = thread.type === "dm" ? getBot(thread.botId) : null;
         const title = (thread.type === "dm" ? getAgentShortTitle(bot) : thread.name) || "";
         const role = bot?.role || "";
@@ -3677,6 +3959,8 @@ Auto-save: enabled</pre>
     function renderActiveThread() {
       const thread = getActiveThread();
       if (!thread) return;
+      if (!state.lastThreadByProject || typeof state.lastThreadByProject !== "object") state.lastThreadByProject = {};
+      state.lastThreadByProject[projectKeyOf(thread)] = thread.id;
       unreadCounts[thread.id] = 0;
       updateHeaderPills();
       updateComposerStopButton();
@@ -3684,12 +3968,20 @@ Auto-save: enabled</pre>
       const pill = document.getElementById("activeThreadPill");
       const input = document.getElementById("chatComposerInput");
 
+      const liveness = threadLivenessState[thread.id];
+      let headerLivenessBadge = "";
+      if (liveness?.stalled) {
+        headerLivenessBadge = `<span style="display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; background:rgba(239,68,68,0.18); color:#ef4444; border:1px solid rgba(239,68,68,0.4); margin-left:8px; vertical-align:middle;"><span style="width:6px; height:6px; border-radius:50%; background:#ef4444; display:inline-block;"></span>STALLED</span>`;
+      } else if (liveness?.awaitingUser) {
+        headerLivenessBadge = `<span style="display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; background:rgba(234,179,8,0.18); color:#eab308; border:1px solid rgba(234,179,8,0.4); margin-left:8px; vertical-align:middle;"><span style="width:6px; height:6px; border-radius:50%; background:#eab308; display:inline-block;"></span>WAITING FOR YOU</span>`;
+      }
+
       if (thread.type === "dm") {
         const bot = getBot(thread.botId);
         pill.innerHTML = `
           ${renderCleanAgentCircle(bot, 32)}
           <div>
-            <div class="identity-pill-name">${escapeHtml(getAgentShortTitle(bot))}</div>
+            <div class="identity-pill-name">${escapeHtml(getAgentShortTitle(bot))}${headerLivenessBadge}</div>
             <div class="identity-pill-sub">${escapeHtml(bot.role || "")}</div>
           </div>
         `;
@@ -3701,7 +3993,7 @@ Auto-save: enabled</pre>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
           <div>
-            <div class="identity-pill-name">${escapeHtml(thread.name || "Engineering Squad")}</div>
+            <div class="identity-pill-name">${escapeHtml(thread.name || "Engineering Squad")}${headerLivenessBadge}</div>
             <div class="identity-pill-sub">${agentCount} agents · Ready to build</div>
           </div>
         `;
@@ -3709,6 +4001,20 @@ Auto-save: enabled</pre>
       }
 
       const msgInner = document.getElementById("messagesInner");
+      const scrollBox = document.getElementById("messagesContainer");
+      // This runs on every poll and progress event. Rebuilding rows used to recreate each audio/video player
+      // and web preview (stopping playback mid-click) and jump to the bottom (moving whatever the user was
+      // about to click). Keep the existing media cards and the scroll position unless the user is at the end.
+      const sameThread = lastRenderedThreadId === thread.id;
+      const wasNearBottom = !sameThread || !scrollBox || (scrollBox.scrollHeight - scrollBox.scrollTop - scrollBox.clientHeight) < 120;
+      const prevScrollTop = scrollBox ? scrollBox.scrollTop : 0;
+      const liveMediaCards = new Map();
+      if (sameThread) {
+        msgInner.querySelectorAll(".inline-media-card").forEach(card => {
+          liveMediaCards.set(mediaCardKey(card), card);
+        });
+      }
+      lastRenderedThreadId = thread.id;
       msgInner.innerHTML = "";
 
       thread.messages.forEach((m, idx) => {
@@ -3742,13 +4048,15 @@ Auto-save: enabled</pre>
           `;
           msgInner.appendChild(row);
         } else {
-          const bot = getBot(m.botId);
+          const bot = m.panelist ? panelistPseudoBot(m) : getBot(m.botId);
           const row = document.createElement("div");
           row.className = "msg-bot-row";
           row.setAttribute("data-msg-id", m.id);
 
           const isWelcomeSquadMsg = idx === 0 && (m.text.includes("Welcome to") || m.text.includes("Your squad is ready"));
-          const roleShort = bot?.role || "Agent";
+          const roleShort = m.panelist
+            ? (m.panelist.id === "moderator" ? "Moderator" : `Panelist${m.round ? ` · round ${m.round}` : ""}`)
+            : (bot?.role || "Agent");
           const isMsgStreaming = Boolean(m.isStreaming || m.streaming);
 
           let bodyHtml = "";
@@ -3836,6 +4144,8 @@ Auto-save: enabled</pre>
             </button>
           `;
           actionBarHtml += `</div>`;
+          // Panelists are personas, not agents with worktrees: hand-off and file actions do not apply.
+          if (m.panelist) actionBarHtml = "";
 
           const stopPillHtml = isMsgStreaming
             ? `<button onclick="stopActiveThreadGeneration('${thread.id}')" style="margin-left:auto; display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:600; background:rgba(239,68,68,0.12); color:#ef4444; border:1px solid rgba(239,68,68,0.35); cursor:pointer;">
@@ -3854,6 +4164,7 @@ Auto-save: enabled</pre>
                 ${stopPillHtml}
               </div>
               <div class="msg-thought-wrap">${thoughtHtml}</div>
+              ${renderAgentStepsHtml(m, thread.id, idx, isMsgStreaming)}
               <div class="msg-bot-body">${bodyHtml}</div>
               <div class="msg-media-deck">${!isMsgStreaming ? renderInlineMediaDeck(m.text || "", m.botId) : ""}</div>
               ${actionBarHtml}
@@ -3863,8 +4174,26 @@ Auto-save: enabled</pre>
         }
       });
 
-      const scrollBox = document.getElementById("messagesContainer");
-      scrollBox.scrollTop = scrollBox.scrollHeight;
+      if (liveMediaCards.size > 0) {
+        msgInner.querySelectorAll(".inline-media-card").forEach(card => {
+          const kept = liveMediaCards.get(mediaCardKey(card));
+          if (kept && kept !== card) card.replaceWith(kept);
+        });
+      }
+
+      if (scrollBox) {
+        scrollBox.scrollTop = wasNearBottom ? scrollBox.scrollHeight : prevScrollTop;
+      }
+    }
+
+    var lastRenderedThreadId = null;
+
+    // A media card is the same card across renders when it belongs to the same message and shows the same file.
+    function mediaCardKey(card) {
+      const row = card.closest("[data-msg-id]");
+      const label = card.querySelector(".mono")?.textContent || "";
+      const media = card.querySelector("audio, video, img, iframe");
+      return `${row ? row.getAttribute("data-msg-id") : ""}|${label}|${media ? media.getAttribute("src") || "" : ""}`;
     }
 
     function reactToMessage(idx, emoji) {
@@ -3891,8 +4220,10 @@ Auto-save: enabled</pre>
       const msg = thread?.messages[idx];
       if (!msg) return;
       const snippet = msg.text.replace(/\s+/g, " ").slice(0, 180);
-      if (!state.sharedFacts.includes(snippet)) {
-        state.sharedFacts.unshift(snippet);
+      if (!projectKeyOf(thread)) return showToast("Choose a project for this room first");
+      const facts = projectFactsFor(thread);
+      if (!facts.includes(snippet)) {
+        facts.unshift(snippet);
         saveState();
         showToast("Pinned to Shared Workspace Memory");
       } else {
@@ -4025,6 +4356,7 @@ Auto-save: enabled</pre>
     async function executeBackgroundCommand(command, botOverride = null) {
       const thread = getActiveThread();
       if (!thread || !command) return;
+      if (!(await ensureRoomProject(thread))) return;
       const threadId = thread.id;
       const actingBot = botOverride || getActiveLeadBot();
       const cwd = thread.mountPath || serverDefaultMountPath;
@@ -4070,15 +4402,63 @@ Auto-save: enabled</pre>
     // =========================================================================
     // 7. SEND MESSAGE, PER-AGENT MEMORY/TOOLS/WORKTREE & SELF-TRIGGERED LOOP
     // =========================================================================
+    // Memory is per project (the room's project folder): a room sees only its project's shared rules, and an
+    // agent sees only its private memory for that project. A new project therefore starts clean.
+    function projectKeyOf(thread) {
+      return String(thread?.mountPath || "");
+    }
+    function projectFactsFor(thread) {
+      const key = projectKeyOf(thread);
+      if (!key) return [];
+      if (!state.projectFacts || typeof state.projectFacts !== "object") state.projectFacts = {};
+      if (!Array.isArray(state.projectFacts[key])) state.projectFacts[key] = [];
+      return state.projectFacts[key];
+    }
+    function agentMemoriesFor(bot, thread) {
+      const key = projectKeyOf(thread);
+      if (!bot || !key) return [];
+      if (!bot.projectMemories || typeof bot.projectMemories !== "object") bot.projectMemories = {};
+      if (!Array.isArray(bot.projectMemories[key])) bot.projectMemories[key] = [];
+      return bot.projectMemories[key];
+    }
+    function rememberForAgent(bot, thread, fact) {
+      const key = projectKeyOf(thread);
+      const list = agentMemoriesFor(bot, thread);
+      if (!fact || !key || list.includes(fact)) return false;
+      list.unshift(fact);
+      syncAgentMemoryOnServer(bot, "add", { item: fact, project: key });
+      return true;
+    }
+    // Before memory was per project, the shared rules and each agent's memory applied everywhere. Copy them into
+    // every project already in use (so existing rooms behave as before); projects created later start empty.
+    function migrateMemoryToProjects() {
+      if (state.memoryVersion >= 2) return;
+      const threads = state.threads || [];
+      if (!state.projectFacts || typeof state.projectFacts !== "object") state.projectFacts = {};
+      for (const root of new Set(threads.map(t => t.mountPath).filter(Boolean))) {
+        if (!Array.isArray(state.projectFacts[root])) state.projectFacts[root] = [...(state.sharedFacts || [])];
+      }
+      for (const b of state.bots || []) {
+        if (!b.projectMemories || typeof b.projectMemories !== "object") b.projectMemories = {};
+        const roots = new Set(threads.filter(t => t.botId === b.id || (t.botIds || []).includes(b.id)).map(t => t.mountPath).filter(Boolean));
+        for (const root of roots) {
+          if (!Array.isArray(b.projectMemories[root])) b.projectMemories[root] = [...(b.memories || [])];
+        }
+      }
+      state.memoryVersion = 2;
+    }
+
     function buildGroundedSystemPrompt(bot, thread, folderSummary) {
       const skillBlock = (bot.skillMarkdown && String(bot.skillMarkdown).trim())
         ? `\n\nAGENT SKILL.md PLAYBOOK (${bot.name}):\n${String(bot.skillMarkdown).trim().slice(0, 4500)}`
         : "";
-      const privateMemories = Array.isArray(bot.memories) && bot.memories.length > 0
-        ? `\n\nPRIVATE MEMORY (${bot.name}):\n` + bot.memories.map((m, i) => `${i + 1}. ${m}`).join("\n")
+      const botMemories = agentMemoriesFor(bot, thread);
+      const privateMemories = botMemories.length > 0
+        ? `\n\nPRIVATE MEMORY (${bot.name}, this project):\n` + botMemories.map((m, i) => `${i + 1}. ${m}`).join("\n")
         : "";
-      const factsBlock = (state.sharedFacts && state.sharedFacts.length > 0)
-        ? `\n\nWORKSPACE RULES:\n` + state.sharedFacts.map((f, i) => `${i + 1}. ${f}`).join("\n")
+      const projectFacts = projectFactsFor(thread);
+      const factsBlock = projectFacts.length > 0
+        ? `\n\nWORKSPACE RULES (this project):\n` + projectFacts.map((f, i) => `${i + 1}. ${f}`).join("\n")
         : "";
       const wtBranch = bot.worktreeBranch || `vanara/${bot.name.toLowerCase()}`;
       const wtPath = agentWorktrees[bot.id]?.worktreeDir || `.worktrees/${bot.id}`;
@@ -4086,7 +4466,7 @@ Auto-save: enabled</pre>
         ? `\n\nMOUNTED WORKSPACE & LIVE SOURCE FILES:\n${String(folderSummary).slice(0, 36000)}`
         : "";
       const worktreeBlock = `\n\nISOLATED GIT WORKTREE:\n- Branch: ${wtBranch} (${wtPath})${folderContextBlock}`;
-      const enabledTools = (bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "mcp_call", "handoff"]).join(", ");
+      const enabledTools = [...new Set([...(bot.tools || ["fs_read", "fs_write", "shell_exec", "git_status", "git_diff", "git_commit", "mcp_call", "handoff"]), "code_search"])].join(", ");
       const mcpLine = bot.mcpCommand
         ? `\n- Connected MCP Server: ${bot.mcpCommand} (Invoke MCP tools via [TOOL: mcp_call | <toolName> | <jsonArgs>])`
         : "";
@@ -4142,7 +4522,7 @@ CRITICAL: You do NOT have asynchronous background processes running for you! NEV
 <replacement lines>
 >>>>>>> REPLACE
 ===END_PATCH===
-4. Only when you explicitly need to run a shell command, search the codebase, or read an extra file in your worktree, include an exact tag such as [TOOL: fs_read | <path>], [TOOL: grep_search | <pattern>], [TOOL: find_files | <query>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
+4. Only when you explicitly need to run a shell command, search the codebase, or read an extra file in your worktree, include an exact tag such as [TOOL: code_search | <what you are looking for>] (ranked passages by meaning and keyword — try this first when locating code), [TOOL: fs_read | <path>], [TOOL: grep_search | <pattern>], [TOOL: find_files | <query>], [TOOL: git_status], [TOOL: git_diff], or [TOOL: shell | <command>]. Never invent pseudo-variables like $f = fs_read.
 ${handoffRule}
 6. Keep any internal thinking (<think>) brief (under 120 words — high-level bullet plan only). NEVER write full source code files inside <think> or internal reasoning; close </think> immediately and output all code and explanations in your visible answer.
 7. To persist an important architectural decision or project convention into your private disk memory across sessions, include \`[REMEMBER: <concise fact>]\`.`;
@@ -4332,9 +4712,7 @@ ${handoffRule}
       let rmMatch;
       while ((rmMatch = rememberRx.exec(scanSource)) !== null) {
         const fact = rmMatch[1].trim();
-        if (fact && !bot.memories.includes(fact)) {
-          bot.memories.unshift(fact);
-          await syncAgentMemoryOnServer(bot, "add", { item: fact });
+        if (rememberForAgent(bot, thread, fact)) {
           showToast(`${bot.name} remembered: ${fact.slice(0, 42)}…`);
         }
       }
@@ -4626,6 +5004,15 @@ ${handoffRule}
         clearTimeout(activeAutonomousTimers[thread.id]);
         delete activeAutonomousTimers[thread.id];
       }
+      // Stop the panel run this room started, by id: a new question starts a new run right after this, and a
+      // room-wide stop could land after it and kill the new run instead.
+      if (thread.panel && thread.panel.activeRunId) {
+        fetch("/api/panels/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId: thread.panel.activeRunId })
+        }).catch(() => {});
+      }
       const prevTurn = activeTurnState[thread.id];
       if (prevTurn) {
         prevTurn.aborted = true;
@@ -4637,6 +5024,16 @@ ${handoffRule}
           if (ctx) {
             ctx.aborted = true;
             try { ctx.controller.abort(); } catch {}
+            // A server-run turn keeps working after the page lets go of it: stop exactly that turn, and ignore
+            // any progress it reports before the stop lands.
+            if (String(ctx.turnId || "").startsWith("turn_srv_")) {
+              completedServerTurns.add(ctx.turnId);
+              fetch("/api/sessions/stop", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ threadId: thread.id, botId: ctx.botId, turnId: ctx.turnId })
+              }).catch(() => {});
+            }
           }
         });
         delete allActiveTurnContexts[thread.id];
@@ -4748,6 +5145,11 @@ ${handoffRule}
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: targetThread.id, botIds: [...runningBotIds] })
       }).catch(() => {});
+      fetch("/api/sessions/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: targetThread.id })
+      }).catch(() => {});
       saveState();
       renderThreadList();
       if (activeThreadId === targetThread.id) {
@@ -4846,6 +5248,12 @@ ${handoffRule}
         }
       }
 
+      // A message in a panel room is the panel's next question, not a squad turn.
+      if (thread.panel) {
+        await runPanelInThread(thread, firstTask);
+        return;
+      }
+
       // Parallel Multi-Agent Dispatch (R5)
       const explicitMentions = resolveExplicitMentionedBotsForPrompt(thread, firstTask);
       if (explicitMentions.length > 1 && thread.type === "group") {
@@ -4893,9 +5301,357 @@ ${handoffRule}
       await runBotTurnInThread(thread.id, leadBot, `${goal.trim()}\n\n(Autonomous Mode: execute any helpful [TOOL: ...] in your worktree and include ${handoffTags} when ready for the next specialist.)`, 0);
     }
 
+    async function runServerBotTurnInThread(threadId, targetBot, triggerText, options = {}) {
+      const targetThread = state.threads.find(t => t.id === threadId);
+      if (!targetThread || !targetBot) return;
+
+      const isConcurrent = Boolean(options.allowConcurrent);
+      if (!isConcurrent) {
+        cancelActiveTurnForThread(targetThread, false);
+      }
+
+      const turnController = new AbortController();
+      const turnCtx = {
+        turnId: "turn_srv_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        controller: turnController,
+        abortController: turnController,
+        botId: targetBot.id,
+        botName: targetBot.name,
+        isConcurrent,
+        status: "thinking",
+        aborted: false
+      };
+      activeTurnState[threadId] = turnCtx;
+      activeTurnState[`${threadId}_${targetBot.id}`] = turnCtx;
+      if (!Array.isArray(allActiveTurnContexts[threadId])) {
+        allActiveTurnContexts[threadId] = [];
+      }
+      allActiveTurnContexts[threadId].push(turnCtx);
+
+      activeWorkingThreads[threadId] = `${targetBot.name} executing server-side autonomous turn...`;
+      renderThreadList();
+      updateComposerStopButton();
+      updateMultiAgentStatusStrip(threadId);
+
+      const liveMsg = {
+        id: `msg_bot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        senderType: "bot",
+        botId: targetBot.id,
+        text: "⏳ Initializing server-side autonomous turn...",
+        reasoning: "",
+        thoughtOpen: true,
+        isStreaming: true,
+        hooksTrace: ["ServerRunner"],
+        serverTurnId: turnCtx.turnId,
+        collabRound: targetBot.worktreeBranch,
+        hasDeliverables: false
+      };
+      targetThread.messages.push(liveMsg);
+      if (activeThreadId === threadId) renderActiveThread();
+
+      try {
+        // The server turn gets the same grounded prompt (role, skills, memories, rules, squad relay) the
+        // browser loop used, and a step budget sized for diagnose-fix-verify work. maxReactSteps is the
+        // browser loop's small per-reply cap; it only raises this budget, never lowers it.
+        const folderSummary = await ensureFolderSnapshot(targetThread.mountPath, targetBot);
+        const res = await fetch("/api/sessions/turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threadId,
+            botId: targetBot.id,
+            botName: targetBot.name,
+            prompt: triggerText,
+            turnId: turnCtx.turnId,
+            projectPath: targetThread.mountPath || "",
+            systemPrompt: targetBot.systemPrompt || buildGroundedSystemPrompt(targetBot, targetThread, folderSummary),
+            maxSteps: Math.min(SERVER_TURN_STEP_CEILING, Math.max(SERVER_TURN_MAX_STEPS, Number(targetBot.maxReactSteps) || 0))
+          })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          serverTurnChains[turnCtx.turnId] = { chainDepth: Number(options.chainDepth) || 0 };
+        } else {
+          liveMsg.isStreaming = false;
+          liveMsg.text = `Server runner error: ${data.error || "Failed to start"}`;
+          delete activeWorkingThreads[threadId];
+          delete activeTurnState[threadId];
+          renderThreadList();
+          if (activeThreadId === threadId) renderActiveThread();
+          updateComposerStopButton();
+        }
+      } catch (err) {
+        liveMsg.isStreaming = false;
+        liveMsg.text = `Failed to contact server runner: ${err.message}`;
+        delete activeWorkingThreads[threadId];
+        delete activeTurnState[threadId];
+        renderThreadList();
+        if (activeThreadId === threadId) renderActiveThread();
+        updateComposerStopButton();
+      }
+    }
+
+    // A server-run turn returns before the agent finishes, so the squad relay that runBotTurnInThread applies
+    // after a browser-run turn never happened for it: the next teammate was never triggered. Apply the same
+    // hand-off rules here once the server reports the turn complete.
+    // Server turns are reported two ways: live SSE events, and the 6s status poll that catches a window up
+    // after it missed events (the macOS app's web view is suspended while hidden). Both go through these.
+    const completedServerTurns = new Set();
+
+    function applyServerTurnProgress(data) {
+      if (!data || !data.threadId) return;
+      if (data.turnId && completedServerTurns.has(data.turnId)) return;
+      activeWorkingThreads[data.threadId] = data.message || `Step ${data.step}/${data.maxSteps}...`;
+      const targetThread = state.threads.find(t => t.id === data.threadId);
+      if (targetThread && Array.isArray(targetThread.messages)) {
+        let liveMsg = findServerTurnMessage(targetThread, data);
+        // The server is the source of truth for a running turn. If this page has no message for it (reloaded,
+        // state replaced, turn started from the CLI or another window), show one instead of nothing.
+        // Progress only arrives for running turns; a turn this window cancelled is already in completedServerTurns.
+        if (!liveMsg && data.turnId) {
+          const bot = getBot(data.botId);
+          liveMsg = {
+            id: `msg_bot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            senderType: "bot",
+            botId: data.botId,
+            botName: data.botName || bot?.name,
+            text: data.message || "Working…",
+            reasoning: "",
+            isStreaming: true,
+            serverTurnId: data.turnId,
+            hooksTrace: ["ServerRunner"],
+            collabRound: bot?.worktreeBranch || ""
+          };
+          targetThread.messages.push(liveMsg);
+        }
+        if (liveMsg && data.message) {
+          liveMsg.text = data.message;
+        }
+        if (liveMsg) mergeServerTurnSteps(liveMsg, data);
+      }
+      renderThreadList();
+      if (activeThreadId === data.threadId) {
+        renderActiveThread();
+      }
+      updateComposerStopButton();
+    }
+
+    function applyServerTurnComplete(data) {
+      if (!data || !data.threadId) return;
+      if (data.turnId) {
+        if (completedServerTurns.has(data.turnId)) return;
+      }
+      const targetThread = state.threads.find(t => t.id === data.threadId);
+      // Several agents can stream in one group thread, and a superseded turn still reports in:
+      // finish only the message and turn state that belong to this turn.
+      let liveMsg = targetThread && Array.isArray(targetThread.messages) ? findServerTurnMessage(targetThread, data) : null;
+      if (!liveMsg && data.status === "stopped") return;
+      if (data.turnId) completedServerTurns.add(data.turnId);
+      releaseServerTurnState(data);
+      if (targetThread && Array.isArray(targetThread.messages)) {
+        if (!liveMsg) {
+          liveMsg = {
+            id: "msg_bot_" + Date.now(),
+            senderType: "bot",
+            botId: data.botId,
+            botName: data.botName
+          };
+          targetThread.messages.push(liveMsg);
+        }
+        liveMsg.isStreaming = false;
+        liveMsg.text = data.finalContent || "(Completed)";
+        if (data.reasoning) {
+          liveMsg.reasoning = data.reasoning;
+        }
+        mergeServerTurnSteps(liveMsg, data);
+        rememberServerTurnFacts(data);
+        saveState();
+        continueSquadAfterServerTurn(targetThread, data);
+      }
+      renderThreadList();
+      if (activeThreadId === data.threadId) {
+        renderActiveThread();
+      }
+      updateComposerStopButton();
+    }
+
+    // Steps arrive one at a time (tool_result events) or as the whole list (status poll, turn_complete).
+    // The whole list is authoritative; a single step is added once, keyed by its sequence number.
+    function mergeServerTurnSteps(msg, data) {
+      if (Array.isArray(data.toolCalls)) {
+        msg.toolCalls = data.toolCalls;
+      } else if (data.toolResult) {
+        if (!Array.isArray(msg.toolCalls)) msg.toolCalls = [];
+        if (!msg.toolCalls.some(c => c && c.seq === data.toolResult.seq)) msg.toolCalls.push(data.toolResult);
+      }
+    }
+
+    function onStepsDetailsToggle(threadId, msgIdx, isOpen) {
+      const t = state.threads.find(x => x.id === threadId);
+      const m = t?.messages?.[msgIdx];
+      if (m) m.stepsOpen = Boolean(isOpen);
+    }
+
+    function renderAgentStepsHtml(m, threadId, idx, isStreaming) {
+      const steps = Array.isArray(m.toolCalls) ? m.toolCalls.filter(Boolean) : [];
+      if (steps.length === 0) return "";
+      const open = typeof m.stepsOpen === "boolean" ? m.stepsOpen : isStreaming;
+      const items = steps.map(c => {
+        const target = String(c.target ?? c.args?.command ?? c.args?.filePath ?? "");
+        const out = String(c.output ?? "");
+        return `<div style="margin-top:8px;">
+            <div><span style="color:var(--text-muted);">#${escapeHtml(String(c.step ?? ""))}</span> <strong>${escapeHtml(String(c.name || "tool"))}</strong>${target ? ` <code style="color:var(--accent-blue); white-space:pre-wrap; word-break:break-all;">${escapeHtml(target)}</code>` : ""}</div>
+            ${out.trim() ? `<pre style="margin:4px 0 0; white-space:pre-wrap; word-break:break-word; max-height:160px; overflow-y:auto; color:var(--text-secondary);">${escapeHtml(out.trim())}</pre>` : ""}
+          </div>`;
+      }).join("");
+      return `<details ${open ? "open" : ""} ontoggle="onStepsDetailsToggle('${threadId}', ${idx}, this.open)" style="margin-bottom:10px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:9px; padding:6px 10px; font-size:11px; color:var(--text-secondary);" class="mono">
+          <summary style="cursor:pointer; user-select:none;">Steps (${steps.length})${isStreaming ? " · live" : ""}</summary>
+          <div style="max-height:360px; overflow-y:auto;">${items}</div>
+        </details>`;
+    }
+
+    function findServerTurnMessage(thread, data) {
+      const streaming = thread.messages.filter(m => m && m.isStreaming);
+      if (data.turnId) {
+        const own = streaming.find(m => m.serverTurnId === data.turnId);
+        if (own) return own;
+        // A turn this window did not start (CLI, another window): fall back to that bot's open message.
+        return streaming.find(m => !m.serverTurnId && m.botId === data.botId) || null;
+      }
+      return streaming.find(m => m.botId === data.botId) || null;
+    }
+
+    function releaseServerTurnState(data) {
+      const threadId = data.threadId;
+      const ctxs = Array.isArray(allActiveTurnContexts[threadId]) ? allActiveTurnContexts[threadId] : [];
+      const ctx = ctxs.find(c => c && c.turnId === data.turnId) || null;
+      if (ctx) {
+        allActiveTurnContexts[threadId] = ctxs.filter(c => c !== ctx);
+        if (activeTurnState[`${threadId}_${data.botId}`] === ctx) delete activeTurnState[`${threadId}_${data.botId}`];
+        if (activeTurnState[threadId] === ctx) delete activeTurnState[threadId];
+      } else if (!data.turnId) {
+        delete activeTurnState[threadId];
+      }
+      if (!allActiveTurnContexts[threadId] || allActiveTurnContexts[threadId].length === 0) {
+        delete allActiveTurnContexts[threadId];
+        delete activeTurnState[threadId];
+        delete activeWorkingThreads[threadId];
+      }
+    }
+
+    function rememberServerTurnFacts(data) {
+      const bot = getBot(data.botId);
+      const thread = state.threads.find(t => t.id === data.threadId);
+      if (!bot || !thread || !Array.isArray(data.remembered)) return;
+      for (const fact of data.remembered) {
+        if (rememberForAgent(bot, thread, fact)) showToast(`${bot.name} remembered: ${fact.slice(0, 42)}…`);
+      }
+    }
+
+    function continueSquadAfterServerTurn(thread, data) {
+      const chain = serverTurnChains[data.turnId];
+      delete serverTurnChains[data.turnId];
+      if (!chain || data.status === "stopped" || data.status === "error") return;
+      if (thread.type !== "group" || state.autoTriggerEnabled === false) return;
+      const finishedBot = getBot(data.botId);
+      if (!finishedBot || !(finishedBot.tools || []).includes("handoff")) return;
+
+      const relayBots = buildDynamicSquadRelay(thread);
+      const maxRelayDepth = Math.max(16, relayBots.length * 4);
+      if (chain.chainDepth >= maxRelayDepth) return;
+
+      const finalText = String(data.finalContent || "");
+      let nextBot = findExplicitHandoffBots(finalText, data.botId, data.reasoning || "", relayBots, chain.chainDepth === 0)[0] || null;
+      let nextPrompt = "";
+      if (Array.isArray(pendingMentionQueue[thread.id]) && pendingMentionQueue[thread.id].length > 0) {
+        if (nextBot) {
+          pendingMentionQueue[thread.id] = pendingMentionQueue[thread.id].filter(item => item.botId !== nextBot.id);
+        } else {
+          const item = pendingMentionQueue[thread.id].shift();
+          nextBot = item ? getBot(item.botId) : null;
+          nextPrompt = item ? item.prompt : "";
+        }
+        if (pendingMentionQueue[thread.id].length === 0) delete pendingMentionQueue[thread.id];
+      }
+      if (!nextBot) return;
+      if (!nextPrompt) {
+        nextPrompt = `@${nextBot.name} (${nextBot.role}), @${data.botName} just finished their turn and handed off to you:\n"${stripAllToolDirectives(finalText).slice(0, 600)}"\n\nContinue as ${nextBot.role}: take the next concrete step in your worktree (${nextBot.worktreeBranch}), verify it, and hand off to the next specialist when done.`;
+      }
+
+      activeWorkingThreads[thread.id] = `Auto-triggering @${nextBot.name}...`;
+      renderThreadList();
+      updateComposerStopButton();
+      activeAutonomousTimers[thread.id] = setTimeout(() => {
+        delete activeAutonomousTimers[thread.id];
+        if (state.autoTriggerEnabled !== false) {
+          runBotTurnInThread(thread.id, nextBot, nextPrompt, chain.chainDepth + 1);
+        } else {
+          delete activeWorkingThreads[thread.id];
+          renderThreadList();
+          updateComposerStopButton();
+        }
+      }, 1100);
+    }
+
+    // Agents only run in a room whose project is a git repository with a commit. Asks the user to choose a folder,
+    // to initialise git (never silently), or to confirm a room that mounts Vanaras's own code.
+    async function ensureRoomProject(thread, { interactive = true } = {}) {
+      if (!thread) return false;
+      const folder = String(thread.mountPath || "").trim();
+      if (!folder) {
+        if (interactive) {
+          showToast("Choose a project folder for this room first");
+          if (thread.id === activeThreadId) openMountModal();
+        }
+        return false;
+      }
+      let info;
+      try {
+        info = await (await fetch("/api/projects/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: folder }) })).json();
+      } catch (err) {
+        if (interactive) showToast(`Could not check the project folder: ${err.message}`);
+        return false;
+      }
+      if (info.ok) {
+        if (info.root && info.root !== thread.mountPath) {
+          thread.mountPath = info.root;
+          saveState();
+        }
+        return true;
+      }
+      if ((info.code === "NOT_GIT" || info.code === "NO_COMMITS") && interactive) {
+        const what = info.code === "NOT_GIT" ? "isn't a git repository yet" : "is a git repository with no commits yet";
+        const yes = confirm(`${folder} ${what}.\n\nInitialise it so each agent works on its own branch? Vanaras will ${info.code === "NOT_GIT" ? "run \"git init\" and " : ""}commit the folder's current files as the first commit.`);
+        if (!yes) return false;
+        try {
+          const r = await (await fetch("/api/projects/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: folder, confirmed: true }) })).json();
+          if (!r.ok) throw new Error(r.error || "initialisation failed");
+          thread.mountPath = r.root;
+          saveState();
+          showToast(`Initialised ${r.root.split(/[\\/]/).filter(Boolean).pop()} as a git repository`);
+          return true;
+        } catch (err) {
+          showToast(`Could not initialise: ${err.message}`);
+          return false;
+        }
+      }
+      if (interactive) {
+        showToast(info.error || "This room's project folder is not usable");
+        if (thread.id === activeThreadId) openMountModal();
+      }
+      return false;
+    }
+
     async function runBotTurnInThread(threadId, targetBot, triggerText, chainDepth = 0, options = {}) {
       const targetThread = state.threads.find(t => t.id === threadId);
       if (!targetThread || !targetBot) return;
+      if (!(await ensureRoomProject(targetThread, { interactive: chainDepth === 0 }))) return;
+
+      // Every agent runs on the server runner (native tools, evidence rules, verify-and-retry, survives
+      // reloads). The browser loop below remains only for an explicit useServerRunner === false setting.
+      if (state.useServerRunner !== false) {
+        return runServerBotTurnInThread(threadId, targetBot, triggerText, { ...options, chainDepth });
+      }
 
       const isConcurrent = Boolean(options.allowConcurrent);
       if (!isConcurrent) {
@@ -5643,6 +6399,566 @@ ${handoffRule}
     // =========================================================================
     // 8. MULTI-AGENT COLLABORATION
     // =========================================================================
+    // =========================================================================
+    // NEW PROJECT: one step for folder + git repo + room + agents with clean, project-scoped memory
+    // =========================================================================
+    let newProjectSuggestTimer = null;
+
+    // Projects are the distinct folders rooms work on; switching shows that project's rooms and agents.
+    function listProjects() {
+      const byKey = new Map();
+      for (const t of state.threads) {
+        const key = projectKeyOf(t);
+        if (!byKey.has(key)) byKey.set(key, { key, rooms: 0, agents: 0 });
+        const entry = byKey.get(key);
+        if (t.type === "dm") entry.agents++;
+        else entry.rooms++;
+      }
+      return [...byKey.values()].sort((a, b) => (a.key ? 0 : 1) - (b.key ? 0 : 1) || a.key.localeCompare(b.key));
+    }
+
+    function switchToProject(key) {
+      const remembered = state.lastThreadByProject?.[key];
+      const inProject = state.threads.filter(t => projectKeyOf(t) === key);
+      const next = inProject.find(t => t.id === remembered) || inProject.find(t => t.type === "group") || inProject[0];
+      closeProjectSwitcher();
+      if (!next) return;
+      activeThreadId = next.id;
+      renderThreadList();
+      renderActiveThread();
+      updateHeaderPills();
+    }
+
+    function closeProjectSwitcher() {
+      document.getElementById("projectSwitcherMenu")?.remove();
+      document.removeEventListener("mousedown", projectSwitcherOutsideClick, true);
+    }
+
+    function projectSwitcherOutsideClick(ev) {
+      if (!ev.target.closest("#projectSwitcherMenu") && !ev.target.closest(".sidebar-repo-btn")) closeProjectSwitcher();
+    }
+
+    function openProjectSwitcher(ev) {
+      if (document.getElementById("projectSwitcherMenu")) return closeProjectSwitcher();
+      const current = projectKeyOf(getActiveThread());
+      const anchor = ev.currentTarget.getBoundingClientRect();
+      const menu = document.createElement("div");
+      menu.id = "projectSwitcherMenu";
+      menu.className = "popover-menu";
+      menu.style.cssText = `position:fixed; top:${Math.round(anchor.bottom + 6)}px; left:${Math.round(anchor.left)}px; width:${Math.max(260, Math.round(anchor.width))}px; z-index:1000; max-height:60vh; overflow-y:auto;`;
+      const rows = listProjects().map(p => {
+        const label = p.key ? p.key.split(/[\\/]/).filter(Boolean).pop() : "No project";
+        const detail = `${p.rooms} room${p.rooms === 1 ? "" : "s"} · ${p.agents} agent${p.agents === 1 ? "" : "s"}`;
+        return `<button class="popover-item" data-project="${escapeHtml(p.key)}" style="${p.key === current ? "background:var(--bg-surface-subtle);" : ""}">
+            <div style="min-width:0;">
+              <div class="popover-title">${p.key === current ? "✓ " : ""}${escapeHtml(label)}</div>
+              <div class="popover-sub" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(p.key)}">${escapeHtml(detail)}${p.key ? ` · ${escapeHtml(p.key.replace(/^\/Users\/[^/]+/, "~"))}` : ""}</div>
+            </div>
+          </button>`;
+      }).join("");
+      menu.innerHTML = `${rows}
+        <div class="popover-divider"></div>
+        <button class="popover-item" data-action="new"><div><div class="popover-title">+ New Project</div><div class="popover-sub">Folder, git repo, room and agents</div></div></button>
+        <button class="popover-item" data-action="mount"><div><div class="popover-title">Change this room's folder…</div><div class="popover-sub">Point the current room at another project</div></div></button>`;
+      menu.addEventListener("click", e => {
+        const item = e.target.closest(".popover-item");
+        if (!item) return;
+        if (item.dataset.action === "new") { closeProjectSwitcher(); openNewProjectModal(); return; }
+        if (item.dataset.action === "mount") { closeProjectSwitcher(); openMountModal(); return; }
+        switchToProject(item.dataset.project || "");
+      });
+      document.body.appendChild(menu);
+      setTimeout(() => document.addEventListener("mousedown", projectSwitcherOutsideClick, true), 0);
+    }
+
+    function openNewProjectModal() {
+      document.getElementById("newProjectNameInput").value = "";
+      const loc = document.getElementById("newProjectLocationInput");
+      loc.value = "";
+      delete loc.dataset.edited;
+      document.querySelector('input[name="newProjectAgentMode"][value="fresh"]').checked = true;
+      const defaultIds = new Set(["bot_r1", "bot_r2", "bot_r3", "bot_r4"]);
+      document.getElementById("newProjectAgentsChecklist").innerHTML = state.bots.map(b => `
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px; padding:6px 8px; border:1px solid var(--border-subtle); border-radius:8px; cursor:pointer;">
+          <input type="checkbox" class="new-project-bot-cb" value="${escapeHtml(b.id)}" ${defaultIds.has(b.id) ? "checked" : ""}>
+          ${renderCleanAgentCircle(b, 20)} <span>${escapeHtml(b.name)} <span style="color:var(--text-muted);">· ${escapeHtml(b.role || "")}</span></span>
+        </label>`).join("");
+      document.getElementById("newProjectModal").classList.remove("hidden");
+      document.getElementById("newProjectNameInput").focus();
+    }
+
+    function closeNewProjectModal() {
+      document.getElementById("newProjectModal").classList.add("hidden");
+    }
+
+    function suggestNewProjectLocation() {
+      const loc = document.getElementById("newProjectLocationInput");
+      if (loc.dataset.edited) return;
+      clearTimeout(newProjectSuggestTimer);
+      newProjectSuggestTimer = setTimeout(async () => {
+        try {
+          const name = document.getElementById("newProjectNameInput").value;
+          const r = await (await fetch("/api/projects/suggest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) })).json();
+          if (!loc.dataset.edited) loc.value = r.location || "";
+        } catch {}
+      }, 200);
+    }
+
+    // A fresh agent copies a template's role, model and tools; it gets a new id (so its own worktree branch,
+    // playbook and memory files) and a name unique within @mentions.
+    function makeFreshProjectAgent(tpl, slug, i) {
+      const short = slug.length <= 20 ? slug : slug.slice(0, 20).replace(/-[^-]*$/, "") || slug.slice(0, 20);
+      let name = `${tpl.name}-${short}`;
+      while (state.bots.some(b => b.name.toLowerCase() === name.toLowerCase())) name = `${name.slice(0, 25)}${i}`;
+      return {
+        id: `bot_${Date.now()}_${i}`,
+        name,
+        role: tpl.role,
+        avatarStyle: tpl.avatarStyle,
+        provider: tpl.provider,
+        baseUrl: tpl.baseUrl,
+        apiKey: tpl.apiKey,
+        model: tpl.model,
+        customModelConfigured: true,
+        instructions: tpl.instructions || "",
+        skillMarkdown: "",
+        memories: [],
+        projectMemories: {},
+        tools: Array.isArray(tpl.tools) ? [...tpl.tools] : undefined,
+        mcpCommand: "",
+        maxReactSteps: tpl.maxReactSteps,
+        autoVerifyCode: tpl.autoVerifyCode !== false,
+        worktreeBranch: `vanara/${name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`
+      };
+    }
+
+    async function createNewProjectFromModal() {
+      const name = document.getElementById("newProjectNameInput").value.trim();
+      const location = document.getElementById("newProjectLocationInput").value.trim();
+      const mode = document.querySelector('input[name="newProjectAgentMode"]:checked')?.value || "fresh";
+      const picked = Array.from(document.querySelectorAll(".new-project-bot-cb:checked")).map(cb => getBot(cb.value)).filter(Boolean);
+      if (!name) return showToast("Give the project a name");
+      if (picked.length === 0) return showToast("Pick at least one agent");
+      const btn = document.getElementById("newProjectCreateBtn");
+      btn.disabled = true;
+      btn.textContent = "Creating…";
+      try {
+        const res = await fetch("/api/projects/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, location }) });
+        const info = await res.json();
+        if (!info.ok) throw new Error(info.error || "Could not create the project");
+        const root = info.root;
+        const slug = root.split(/[\\/]/).filter(Boolean).pop() || "project";
+        const agents = mode === "fresh" ? picked.map((tpl, i) => makeFreshProjectAgent(tpl, slug, i)) : picked;
+        if (mode === "fresh") {
+          state.bots.push(...agents);
+          hydrateBotAgentFields();
+        }
+        {
+          const stamp = Date.now();
+          agents.forEach((b, i) => state.threads.push({
+            id: `thread_dm_${stamp}_${i}`,
+            type: "dm",
+            botId: b.id,
+            mountPath: root,
+            messages: [{ senderType: "bot", botId: b.id, text: `Hi, I'm **${b.name}** (${b.role}), working on **${name}**. I start with no memory in this project.` }]
+          }));
+        }
+        if (!state.projectFacts || typeof state.projectFacts !== "object") state.projectFacts = {};
+        state.projectFacts[root] = [];
+        const roomId = "thread_grp_" + Date.now();
+        state.threads.unshift({
+          id: roomId,
+          type: "group",
+          name,
+          mountPath: root,
+          botIds: agents.map(b => b.id),
+          humanIds: [],
+          messages: [{
+            senderType: "bot",
+            botId: agents[0].id,
+            text: `Project **${name}** is ready in \`${root}\` (branch \`${info.branch || "main"}\`). ${agents.length} agent${agents.length === 1 ? "" : "s"}: ${agents.map(b => "@" + b.name).join(", ")}. Shared Workspace Memory for this project is empty. Tell the squad what to build.`
+          }]
+        });
+        activeThreadId = roomId;
+        saveState();
+        closeNewProjectModal();
+        renderThreadList();
+        renderActiveThread();
+        showToast(`Created ${name}`);
+      } catch (err) {
+        showToast(`Could not create the project: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Create Project";
+      }
+    }
+
+    // =========================================================================
+    // PANELS: any number of persona agents debate, vote A/B, or review shared material (server-run)
+    // =========================================================================
+    let panelDraft = { panelists: [], options: [] };
+
+    function panelistPseudoBot(m) {
+      const p = m.panelist || {};
+      if (p.botId) {
+        const real = state.bots.find(b => b.id === p.botId);
+        if (real) return real;
+      }
+      return { id: `panel_${p.id || p.name}`, name: p.name || "Panelist", role: m.isPanelSummary ? "Moderator" : "Panelist" };
+    }
+
+    function syncPanelDraftFromInputs() {
+      document.querySelectorAll("#panelPanelistsList [data-panelist-idx]").forEach(row => {
+        const i = Number(row.getAttribute("data-panelist-idx"));
+        if (!panelDraft.panelists[i]) return;
+        panelDraft.panelists[i].name = row.querySelector(".panelist-name").value.trim();
+        panelDraft.panelists[i].persona = row.querySelector(".panelist-persona").value.trim();
+      });
+      document.querySelectorAll("#panelOptionsList [data-option-idx]").forEach(row => {
+        const i = Number(row.getAttribute("data-option-idx"));
+        if (!panelDraft.options[i]) return;
+        panelDraft.options[i].label = row.querySelector(".option-label").value.trim();
+        panelDraft.options[i].text = row.querySelector(".option-text").value;
+      });
+    }
+
+    function renderPanelistRows() {
+      const list = document.getElementById("panelPanelistsList");
+      list.innerHTML = panelDraft.panelists.map((p, i) => `
+        <div data-panelist-idx="${i}" style="display:flex; gap:8px; align-items:flex-start; padding:8px; border:1px solid var(--border-subtle); border-radius:9px; background:var(--bg-surface-subtle);">
+          ${renderCleanAgentCircle({ id: p.botId || `panel_${p.id}`, name: p.name || "?" }, 28)}
+          <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+            <input class="field-input panelist-name" value="${escapeHtml(p.name || "")}" placeholder="Name" ${p.botId ? "readonly" : ""} style="padding:5px 8px;">
+            <textarea class="field-input panelist-persona" rows="2" placeholder="Who they are and what they care about" ${p.botId ? "readonly" : ""} style="padding:5px 8px;">${escapeHtml(p.persona || "")}</textarea>
+          </div>
+          <button onclick="removePanelistRow(${i})" class="side-icon-btn" title="Remove">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>`).join("") || `<div style="font-size:12px; color:var(--text-muted); padding:8px;">No panelists yet. Generate them from a brief, seat existing agents, or add them by hand.</div>`;
+      document.getElementById("panelCountBadge").textContent = panelDraft.panelists.length ? `(${panelDraft.panelists.length})` : "";
+      updatePanelCostNote();
+      document.querySelectorAll(".panel-bot-cb").forEach(cb => {
+        cb.checked = panelDraft.panelists.some(p => p.botId === cb.value);
+      });
+    }
+
+    // Every panelist answers every round, plus one moderator call. On a paid provider that is real money, so
+    // say how many calls a run makes, and on which model, before it starts.
+    function updatePanelCostNote() {
+      const el = document.getElementById("panelCostNote");
+      if (!el) return;
+      const n = panelDraft.panelists.length;
+      const rounds = Number(document.getElementById("panelRoundsInput").value) || 1;
+      const bot = getBot(document.getElementById("panelModelInput").value);
+      const seatedOwn = panelDraft.panelists.filter(p => p.botId).length;
+      const where = bot ? `${bot.model || "model"} via ${bot.provider || "provider"}` : "the selected model";
+      el.textContent = n === 0 ? "" : `Each run makes ${n * rounds + 1} model calls (${n} panelist${n === 1 ? "" : "s"} × ${rounds} round${rounds === 1 ? "" : "s"} + 1 summary) on ${where}${seatedOwn ? `; seated agents use their own models` : ""}.`;
+    }
+
+    function shortError(message) {
+      const text = String(message || "unknown error");
+      const reason = /"message"\s*:\s*"([^"]+)"/.exec(text);
+      const core = reason ? `${text.split(":")[0]}: ${reason[1]}` : text;
+      return core.length > 180 ? `${core.slice(0, 180)}…` : core;
+    }
+
+    function renderPanelOptionRows() {
+      document.getElementById("panelOptionsList").innerHTML = panelDraft.options.map((o, i) => `
+        <div data-option-idx="${i}" style="display:flex; gap:8px; align-items:flex-start;">
+          <span class="mono" style="font-weight:700; padding-top:7px; width:16px;">${String.fromCharCode(65 + i)}</span>
+          <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+            <input class="field-input option-label" value="${escapeHtml(o.label || "")}" placeholder="Short label (optional)" style="padding:5px 8px;">
+            <textarea class="field-input option-text" rows="3" placeholder="The full text of this option" style="padding:5px 8px;">${escapeHtml(o.text || "")}</textarea>
+          </div>
+          ${panelDraft.options.length > 2 ? `<button onclick="removePanelOptionRow(${i})" class="side-icon-btn" title="Remove"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` : ""}
+        </div>`).join("");
+    }
+
+    function addPanelistRow() {
+      syncPanelDraftFromInputs();
+      if (panelDraft.panelists.length >= 100) return showToast("A panel can seat at most 100 panelists");
+      panelDraft.panelists.push({ id: `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, name: "", persona: "" });
+      renderPanelistRows();
+    }
+
+    function removePanelistRow(i) {
+      syncPanelDraftFromInputs();
+      panelDraft.panelists.splice(i, 1);
+      renderPanelistRows();
+    }
+
+    function clearPanelists() {
+      panelDraft.panelists = [];
+      renderPanelistRows();
+    }
+
+    function addPanelOptionRow() {
+      syncPanelDraftFromInputs();
+      if (panelDraft.options.length >= 10) return;
+      panelDraft.options.push({ label: "", text: "" });
+      renderPanelOptionRows();
+    }
+
+    function removePanelOptionRow(i) {
+      syncPanelDraftFromInputs();
+      panelDraft.options.splice(i, 1);
+      renderPanelOptionRows();
+    }
+
+    function onPanelModeChange() {
+      const mode = document.getElementById("panelModeInput").value;
+      document.getElementById("panelOptionsBlock").classList.toggle("hidden", mode !== "vote");
+      document.getElementById("panelTopicLabel").textContent = mode === "vote" ? "Question" : mode === "review" ? "What should they review, and for what?" : "Topic or question";
+      if (mode === "vote" && panelDraft.options.length < 2) {
+        syncPanelDraftFromInputs();
+        while (panelDraft.options.length < 2) panelDraft.options.push({ label: "", text: "" });
+        renderPanelOptionRows();
+      }
+    }
+
+    function togglePanelBotSeat(botId, seated) {
+      syncPanelDraftFromInputs();
+      const bot = getBot(botId);
+      if (seated && bot && !panelDraft.panelists.some(p => p.botId === botId)) {
+        panelDraft.panelists.push({ id: botId, botId, name: bot.name, persona: `${bot.role || "Agent"}. ${String(bot.instructions || "").slice(0, 400)}`.trim() });
+      } else if (!seated) {
+        panelDraft.panelists = panelDraft.panelists.filter(p => p.botId !== botId);
+      }
+      renderPanelistRows();
+    }
+
+    async function generatePanelistsFromBrief() {
+      syncPanelDraftFromInputs();
+      const brief = document.getElementById("panelBriefInput").value.trim();
+      const count = Math.max(1, Math.min(100, Number(document.getElementById("panelCountInput").value) || 8));
+      if (!brief) return showToast("Describe the audience first, e.g. \"indie music fans, 18-30\"");
+      const btn = document.getElementById("panelGenerateBtn");
+      btn.disabled = true;
+      btn.textContent = "Generating…";
+      try {
+        const res = await fetch("/api/panels/personas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brief, count, modelBotId: document.getElementById("panelModelInput").value })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Generation failed");
+        const room = 100 - panelDraft.panelists.length;
+        data.personas.slice(0, room).forEach((p, i) => {
+          panelDraft.panelists.push({ id: `p${Date.now().toString(36)}${i}`, name: p.name, persona: p.persona });
+        });
+        renderPanelistRows();
+        showToast(`Added ${Math.min(room, data.personas.length)} panelists`);
+      } catch (err) {
+        showToast(`Could not generate panelists: ${shortError(err.message)}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Generate";
+      }
+    }
+
+    function openPanelModal(threadId) {
+      const thread = threadId ? state.threads.find(t => t.id === threadId) : null;
+      const cfg = thread?.panel || {};
+      panelDraft = {
+        panelists: (cfg.panelists || []).map(p => ({ ...p })),
+        options: (cfg.options || []).map(o => ({ ...o }))
+      };
+      document.getElementById("panelEditId").value = thread ? thread.id : "";
+      document.getElementById("panelModalTitle").textContent = thread ? `Edit Panel — ${thread.name}` : "New Panel / Audience";
+      document.getElementById("panelNameInput").value = thread?.name || "";
+      document.getElementById("panelModeInput").value = cfg.mode || "debate";
+      document.getElementById("panelTopicInput").value = cfg.topic || "";
+      document.getElementById("panelMaterialsInput").value = (cfg.materialLines || []).join("\n");
+      document.getElementById("panelRoundsInput").value = String(cfg.rounds || 1);
+      document.getElementById("panelConcurrencyInput").value = String(cfg.concurrency || 3);
+      document.getElementById("panelBriefInput").value = cfg.brief || "";
+      const modelSel = document.getElementById("panelModelInput");
+      modelSel.innerHTML = state.bots.map(b => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name)} · ${escapeHtml(b.model || b.provider || "model")}</option>`).join("");
+      modelSel.value = cfg.modelBotId || state.bots[0]?.id || "";
+      document.getElementById("panelBotsChecklist").innerHTML = state.bots.map(b => `
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px; padding:6px 8px; border:1px solid var(--border-subtle); border-radius:8px; cursor:pointer;">
+          <input type="checkbox" class="panel-bot-cb" value="${escapeHtml(b.id)}" onchange="togglePanelBotSeat(this.value, this.checked)">
+          ${renderCleanAgentCircle(b, 20)} <span>${escapeHtml(b.name)} <span style="color:var(--text-muted);">· ${escapeHtml(b.role || "")}</span></span>
+        </label>`).join("");
+      document.getElementById("deletePanelBtn").classList.toggle("hidden", !thread);
+      onPanelModeChange();
+      renderPanelOptionRows();
+      renderPanelistRows();
+      document.getElementById("panelModal").classList.remove("hidden");
+    }
+
+    function closePanelModal() {
+      document.getElementById("panelModal").classList.add("hidden");
+    }
+
+    function deletePanelFromModal() {
+      const editId = document.getElementById("panelEditId").value;
+      if (!editId) return;
+      fetch("/api/panels/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threadId: editId }) }).catch(() => {});
+      state.threads = state.threads.filter(t => t.id !== editId);
+      activeThreadId = state.threads[0]?.id;
+      saveState();
+      closePanelModal();
+      renderThreadList();
+      renderActiveThread();
+    }
+
+    function savePanelFromModal(runNow) {
+      syncPanelDraftFromInputs();
+      const panelists = panelDraft.panelists.filter(p => p.name && (p.persona || p.botId));
+      const mode = document.getElementById("panelModeInput").value;
+      const topic = document.getElementById("panelTopicInput").value.trim();
+      const options = panelDraft.options.filter(o => String(o.text || "").trim());
+      if (panelists.length === 0) return showToast("Add at least one panelist (each needs a name and a persona)");
+      if (runNow && !topic) return showToast("Write the topic or question first");
+      if (mode === "vote" && options.length < 2) return showToast("A/B voting needs at least two options");
+      const cfg = {
+        mode,
+        topic,
+        options,
+        panelists,
+        materialLines: document.getElementById("panelMaterialsInput").value.split("\n").map(l => l.trim()).filter(Boolean),
+        rounds: Number(document.getElementById("panelRoundsInput").value) || 1,
+        concurrency: Number(document.getElementById("panelConcurrencyInput").value) || 3,
+        modelBotId: document.getElementById("panelModelInput").value,
+        brief: document.getElementById("panelBriefInput").value.trim()
+      };
+      const name = document.getElementById("panelNameInput").value.trim() || topic.slice(0, 40) || "Panel";
+      const editId = document.getElementById("panelEditId").value;
+      let thread = editId ? state.threads.find(t => t.id === editId) : null;
+      if (thread) {
+        Object.assign(thread, { name, panel: cfg, botIds: [cfg.modelBotId] });
+      } else {
+        thread = {
+          id: "thread_panel_" + Date.now(),
+          type: "group",
+          name,
+          mountPath: serverDefaultMountPath,
+          botIds: [cfg.modelBotId],
+          humanIds: [],
+          panel: cfg,
+          messages: [{
+            id: `msg_panel_intro_${Date.now()}`,
+            senderType: "bot",
+            panelist: { id: "moderator", name: "Moderator" },
+            text: `Panel **"${name}"** is ready with ${panelists.length} panelist${panelists.length === 1 ? "" : "s"} (${mode === "vote" ? "A/B vote" : mode}). Send a message to put a new question to the panel.`
+          }]
+        };
+        state.threads.unshift(thread);
+      }
+      activeThreadId = thread.id;
+      saveState();
+      closePanelModal();
+      renderThreadList();
+      renderActiveThread();
+      if (runNow) runPanelInThread(thread, topic);
+    }
+
+    function panelMaterialsFromLines(lines = []) {
+      return lines.map(l => (/^https?:\/\//i.test(l) ? { type: "url", url: l } : { type: "file", path: l }));
+    }
+
+    async function runPanelInThread(thread, question) {
+      const cfg = thread?.panel;
+      if (!cfg) return;
+      const topic = String(question || cfg.topic || "").trim();
+      if (!topic) return showToast("Ask the panel a question first");
+      const last = thread.messages[thread.messages.length - 1];
+      if (!last || last.senderType !== "user" || last.text !== topic) {
+        thread.messages.push({ id: "msg_u_" + Date.now(), senderType: "user", text: topic });
+      }
+      activeWorkingThreads[thread.id] = `Panel starting (${cfg.panelists.length} panelists)…`;
+      saveState();
+      renderThreadList();
+      if (activeThreadId === thread.id) renderActiveThread();
+      updateComposerStopButton();
+      try {
+        const res = await fetch("/api/panels/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threadId: thread.id,
+            projectPath: thread.mountPath || "",
+            topic,
+            mode: cfg.mode,
+            rounds: cfg.rounds,
+            concurrency: cfg.concurrency,
+            modelBotId: cfg.modelBotId,
+            panelists: cfg.panelists,
+            options: cfg.options,
+            materials: panelMaterialsFromLines(cfg.materialLines)
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Could not start the panel");
+        cfg.activeRunId = data.runId;
+        saveState();
+      } catch (err) {
+        delete activeWorkingThreads[thread.id];
+        thread.messages.push({ id: "msg_panel_err_" + Date.now(), senderType: "bot", panelist: { id: "moderator", name: "Moderator" }, text: `Panel could not start: ${err.message}` });
+        saveState();
+        renderThreadList();
+        if (activeThreadId === thread.id) renderActiveThread();
+        updateComposerStopButton();
+      }
+    }
+
+    function applyPanelMessage(data) {
+      const thread = state.threads.find(t => t.id === data?.threadId);
+      if (!thread || !data.message || thread.messages.some(m => m.id === data.message.id)) return false;
+      thread.messages.push(data.message);
+      return true;
+    }
+
+    function applyPanelStatus(data, { quiet = false } = {}) {
+      const thread = state.threads.find(t => t.id === data?.threadId);
+      if (!thread) return;
+      if (data.status === "running") {
+        activeWorkingThreads[thread.id] = `Panel round ${data.round}/${data.rounds} · ${data.answered}/${data.total} answered`;
+      } else if (data.status === "summarizing") {
+        activeWorkingThreads[thread.id] = "Moderator summarising…";
+      } else {
+        delete activeWorkingThreads[thread.id];
+        if (data.status === "error" && !quiet) showToast(`Panel failed: ${shortError(data.error)}`);
+      }
+      renderThreadList();
+      if (activeThreadId === thread.id) renderActiveThread();
+      updateComposerStopButton();
+    }
+
+    // Catch-up for a window that missed live events: merge each run's messages and status from the server.
+    async function syncPanelRuns() {
+      const panelThreads = state.threads.filter(t => t.panel);
+      if (panelThreads.length === 0) return;
+      try {
+        const res = await fetch("/api/panels/status");
+        if (!res.ok) return;
+        const runs = (await res.json()).runs || [];
+        const seen = new Set(runs.map(r => r.runId));
+        for (const t of panelThreads) {
+          const id = t.panel.activeRunId;
+          if (id && !seen.has(id) && !t.messages.some(m => m.panelRunId === id && m.isPanelSummary)) {
+            const r = await fetch(`/api/panels/status?runId=${encodeURIComponent(id)}`);
+            if (r.ok) runs.push(...((await r.json()).runs || []));
+          }
+        }
+        let changed = false;
+        for (const run of runs) {
+          for (const message of run.messages || []) changed = applyPanelMessage({ threadId: run.threadId, message }) || changed;
+          const live = run.status === "running" || run.status === "summarizing";
+          if (live || activeWorkingThreads[run.threadId]) {
+            applyPanelStatus({ threadId: run.threadId, status: run.status, round: run.round, rounds: run.rounds, answered: run.answeredThisRound, total: (run.panelists || []).length, error: run.error }, { quiet: true });
+          }
+        }
+        if (changed) {
+          saveState();
+          renderThreadList();
+          if (panelThreads.some(t => t.id === activeThreadId)) renderActiveThread();
+        }
+      } catch {}
+    }
+
     async function triggerGroupCollabRun() {
       const thread = getActiveThread();
       const input = document.getElementById("chatComposerInput");
@@ -5922,6 +7238,8 @@ ${handoffRule}
       if (!thread) return;
       if (thread.type === "dm") {
         openBotModal(thread.botId);
+      } else if (thread.panel) {
+        openPanelModal(thread.id);
       } else {
         openGroupModal(thread.id);
       }
@@ -6103,7 +7421,7 @@ ${handoffRule}
         if (skillInput) skillInput.value = bot.skillMarkdown || "";
 
         selectedAvatarStyleInModal = bot.avatarStyle || "vanara-crimson";
-        modalPrivateMemories = [...(bot.memories || [])];
+        modalPrivateMemories = [...agentMemoriesFor(bot, getActiveThread())];
         renderBotPrivateMemoryListInModal();
         renderBotToolsChecklistInModal(bot.tools || AVAILABLE_AGENT_TOOLS.map(t => t.id));
         deleteBtn.classList.toggle("hidden", state.bots.length <= 1);
@@ -6264,7 +7582,7 @@ ${handoffRule}
           instructions,
           skillMarkdown,
           avatarStyle: selectedAvatarStyleInModal,
-          memories: [...modalPrivateMemories],
+
           tools: selectedTools,
           mcpCommand,
           mcpCustomInstructions,
@@ -6288,7 +7606,7 @@ ${handoffRule}
           customModelConfigured: true,
           instructions,
           skillMarkdown,
-          memories: [...modalPrivateMemories],
+
           tools: selectedTools,
           mcpCommand,
           mcpCustomInstructions,
@@ -6319,7 +7637,13 @@ ${handoffRule}
       }
 
       if (targetBotRef) {
-        syncAgentMemoryOnServer(targetBotRef, "set", { memories: targetBotRef.memories });
+        // The editor shows and saves the agent's memory for the project of the room in view.
+        const memoryProject = projectKeyOf(getActiveThread());
+        if (memoryProject) {
+          if (!targetBotRef.projectMemories || typeof targetBotRef.projectMemories !== "object") targetBotRef.projectMemories = {};
+          targetBotRef.projectMemories[memoryProject] = [...modalPrivateMemories];
+          syncAgentMemoryOnServer(targetBotRef, "set", { memories: [...modalPrivateMemories], project: memoryProject });
+        }
         syncAgentSkillOnServer(targetBotRef, "set", { skillMarkdown: targetBotRef.skillMarkdown });
         ensureAgentWorktreeOnServer(targetBotRef);
       }
@@ -6438,7 +7762,7 @@ ${handoffRule}
           document.getElementById("groupModalTitle").innerText = `Manage ${thread.name}`;
           document.getElementById("groupEditId").value = thread.id;
           document.getElementById("groupNameInput").value = thread.name;
-          document.getElementById("groupMountPathInput").value = thread.mountPath || "/Users/lakshmipriyasridharan/AI/REA/vanaras";
+          document.getElementById("groupMountPathInput").value = thread.mountPath || "";
           selectedBots = thread.botIds || [];
           selectedHumans = thread.humanIds || [];
           deleteBtn.classList.remove("hidden");
@@ -6447,7 +7771,7 @@ ${handoffRule}
         document.getElementById("groupModalTitle").innerText = "New Engineering Squad";
         document.getElementById("groupEditId").value = "";
         document.getElementById("groupNameInput").value = "";
-        document.getElementById("groupMountPathInput").value = "/Users/lakshmipriyasridharan/AI/REA/vanaras";
+        document.getElementById("groupMountPathInput").value = "";
         deleteBtn.classList.add("hidden");
       }
 
@@ -6512,7 +7836,7 @@ ${handoffRule}
       const editId = document.getElementById("groupEditId").value;
       const botIds = Array.from(document.querySelectorAll(".group-bot-cb:checked")).map(cb => cb.value);
       const humanIds = Array.from(document.querySelectorAll(".group-human-cb:checked")).map(cb => cb.value);
-      const mountPath = document.getElementById("groupMountPathInput").value.trim() || "/Users/lakshmipriyasridharan/AI/REA/vanaras";
+      const mountPath = document.getElementById("groupMountPathInput").value.trim();
       if (botIds.length === 0) botIds.push(state.bots[0].id);
 
       const defaultName = botIds.map(id => getBot(id)?.name).filter(Boolean).join(", ");
@@ -6563,26 +7887,27 @@ ${handoffRule}
     }
     function renderSharedFactsList() {
       const box = document.getElementById("sharedFactsList");
-      box.innerHTML = (state.sharedFacts || []).map((f, i) => `
+      box.innerHTML = projectFactsFor(getActiveThread()).map((f, i) => `
         <div style="padding:10px 12px; border-radius:12px; background:var(--bg-surface-subtle); border:1px solid var(--border-card); display:flex; align-items:center; justify-content:space-between; gap:10px;">
           <span style="font-size:12.5px; color:var(--text-primary);">${escapeHtml(f)}</span>
           <button onclick="removeSharedFact(${i})" class="side-icon-btn" title="Remove">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-      `).join("") || `<div style="color:var(--text-muted); font-size:12px;">No shared facts yet.</div>`;
+      `).join("") || `<div style="color:var(--text-muted); font-size:12px;">${projectKeyOf(getActiveThread()) ? "No shared facts for this project yet." : "This room has no project yet."}</div>`;
     }
     function addSharedFactFromInput() {
       const input = document.getElementById("newSharedFactInput");
       const val = input.value.trim();
       if (!val) return;
-      state.sharedFacts.unshift(val);
+      if (!projectKeyOf(getActiveThread())) return showToast("Choose a project for this room first");
+      projectFactsFor(getActiveThread()).unshift(val);
       input.value = "";
       saveState();
       renderSharedFactsList();
     }
     function removeSharedFact(idx) {
-      state.sharedFacts.splice(idx, 1);
+      projectFactsFor(getActiveThread()).splice(idx, 1);
       saveState();
       renderSharedFactsList();
     }
@@ -6596,11 +7921,6 @@ ${handoffRule}
     }
     function closeMountModal() {
       document.getElementById("mountModal").classList.add("hidden");
-    }
-    function setQuickMount(p) {
-      const resolved = p === "DEFAULT" ? serverDefaultMountPath : (p === "PARENT" ? serverRepoRoot : p);
-      document.getElementById("mountPathInput").value = resolved;
-      saveAndInspectMountPath();
     }
     async function previewMountedFolder(folderPath) {
       const box = document.getElementById("mountedFolderPreview");
@@ -6629,9 +7949,12 @@ ${handoffRule}
       if (thread) {
         thread.mountPath = p;
         saveState();
+        // Check now (and offer to initialise git), so problems show when the folder is chosen, not mid-task.
+        if (!(await ensureRoomProject(thread))) return;
       }
-      await previewMountedFolder(p);
-      showToast(`Mounted: ${p.split(/[\\/]/).filter(Boolean).pop()}`);
+      await previewMountedFolder(thread?.mountPath || p);
+      updateHeaderPills();
+      showToast(`Project: ${(thread?.mountPath || p).split(/[\\/]/).filter(Boolean).pop()}`);
     }
 
     function openConnectAppsModal() {
@@ -8016,7 +9339,7 @@ ${handoffRule}
         const baseName = cleanRel.split("/").pop().toLowerCase();
         if (!cleanRel || baseName.startsWith(".") || isTestOrScratchMediaPath(cleanRel) || seenKeys.has(`audio:${baseName}`)) continue;
         seenKeys.add(`audio:${baseName}`);
-        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}`;
         const dlUrl = `${mediaUrl}&download=1`;
         cards.push(`
           <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
@@ -8041,7 +9364,7 @@ ${handoffRule}
         const baseName = cleanRel.split("/").pop().toLowerCase();
         if (!cleanRel || baseName.startsWith(".") || isTestOrScratchMediaPath(cleanRel) || seenKeys.has(`video:${baseName}`)) continue;
         seenKeys.add(`video:${baseName}`);
-        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}`;
         const dlUrl = `${mediaUrl}&download=1`;
         cards.push(`
           <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
@@ -8064,7 +9387,7 @@ ${handoffRule}
         const baseName = cleanRel.split("/").pop().toLowerCase();
         if (!cleanRel || baseName.startsWith(".") || cleanRel.startsWith("ui/") || isTestOrScratchMediaPath(cleanRel) || seenKeys.has(`img:${baseName}`)) continue;
         seenKeys.add(`img:${baseName}`);
-        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}`;
         const dlUrl = `${mediaUrl}&download=1`;
         cards.push(`
           <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
@@ -8122,11 +9445,11 @@ ${handoffRule}
               </div>
               <div style="display:flex; align-items:center; gap:6px;">
                 <button onclick="toggleInlineWebPreview(this)" style="font-size:11px; font-weight:600; color:var(--text-secondary); padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface); cursor:pointer;">Hide Preview</button>
-                <a href="/api/workspace/web-preview?url=${encodeURIComponent(fullUrl)}&botId=${encodeURIComponent(botId || "")}" target="_blank" style="font-size:11px; font-weight:600; color:var(--text-secondary); text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface);">Open</a>
+                <a href="/api/workspace/web-preview?url=${encodeURIComponent(fullUrl)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}" target="_blank" style="font-size:11px; font-weight:600; color:var(--text-secondary); text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid var(--border-subtle); background:var(--bg-surface);">Open</a>
               </div>
             </div>
             <div class="inline-webpage-body">
-              <iframe src="/api/workspace/web-preview?url=${encodeURIComponent(fullUrl)}&botId=${encodeURIComponent(botId || "")}" allow="autoplay; clipboard-write" style="width:100%; height:420px; border:1px solid var(--border-subtle); border-radius:8px; background:#ffffff; display:block;"></iframe>
+              <iframe src="/api/workspace/web-preview?url=${encodeURIComponent(fullUrl)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}" allow="autoplay; clipboard-write" style="width:100%; height:420px; border:1px solid var(--border-subtle); border-radius:8px; background:#ffffff; display:block;"></iframe>
             </div>
           </div>
         `);
@@ -8138,7 +9461,7 @@ ${handoffRule}
         const baseName = cleanRel.split("/").pop().toLowerCase();
         if (!cleanRel || cleanRel === "ui/index.html" || cleanRel === "ui/canvas.html" || baseName === "index.html" || baseName === "canvas.html" || seenKeys.has(`html:${baseName}`)) continue;
         seenKeys.add(`html:${baseName}`);
-        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}`;
+        const mediaUrl = `/api/workspace/media?path=${encodeURIComponent(cleanRel)}&botId=${encodeURIComponent(botId || "")}&project=${encodeURIComponent(getActiveThread()?.mountPath || "")}`;
         cards.push(`
           <div class="inline-media-card" style="margin-top:10px; padding:10px 12px; border-radius:11px; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle);">
             <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
@@ -8202,9 +9525,29 @@ ${handoffRule}
       updateHeaderPills();
     }
 
+    // EventSource retries a dropped connection by itself, but a stream the browser has CLOSED (for example
+    // after the hidden macOS web view was suspended) never comes back. Reopen it in that case.
+    let multiplayerStream = null;
+    function ensureMultiplayerStream() {
+      if (!multiplayerStream || multiplayerStream.readyState === EventSource.CLOSED) {
+        initMultiplayerStream();
+      }
+    }
+
     function initMultiplayerStream() {
       try {
+        if (multiplayerStream) {
+          try { multiplayerStream.close(); } catch {}
+        }
         const es = new EventSource("/api/events");
+        multiplayerStream = es;
+        es.addEventListener("error", () => {
+          if (es.readyState === EventSource.CLOSED && multiplayerStream === es) {
+            setTimeout(ensureMultiplayerStream, 3000);
+          }
+        });
+        // After any (re)connect, pull state for events missed while disconnected.
+        es.addEventListener("open", () => { checkActiveServerTurnsOnBoot(); });
         es.addEventListener("room_message", ev => {
           const payload = JSON.parse(ev.data);
           if (payload.clientId && payload.clientId === CLIENT_SESSION_ID) return;
@@ -8314,29 +9657,32 @@ ${handoffRule}
           }
         });
 
-        es.addEventListener("turn_progress", ev => {
+        es.addEventListener("panel_message", ev => {
           try {
             const data = JSON.parse(ev.data);
-            if (data.threadId) {
-              activeWorkingThreads[data.threadId] = data.message || `Step ${data.step}/${data.maxSteps}...`;
+            if (applyPanelMessage(data)) {
+              saveState();
               renderThreadList();
-              if (activeThreadId === data.threadId) {
-                renderActiveThread();
-              }
+              if (activeThreadId === data.threadId) renderActiveThread();
             }
+          } catch {}
+        });
+
+        es.addEventListener("panel_status", ev => {
+          try {
+            applyPanelStatus(JSON.parse(ev.data));
+          } catch {}
+        });
+
+        es.addEventListener("turn_progress", ev => {
+          try {
+            applyServerTurnProgress(JSON.parse(ev.data));
           } catch {}
         });
 
         es.addEventListener("turn_complete", ev => {
           try {
-            const data = JSON.parse(ev.data);
-            if (data.threadId) {
-              delete activeWorkingThreads[data.threadId];
-              renderThreadList();
-              if (activeThreadId === data.threadId) {
-                renderActiveThread();
-              }
-            }
+            applyServerTurnComplete(JSON.parse(ev.data));
           } catch {}
         });
 
@@ -8373,8 +9719,9 @@ ${handoffRule}
         es.addEventListener("session_compacted", ev => {
           try {
             const data = JSON.parse(ev.data);
+            // The runner compacts only the prompt it sends the model; the thread itself is unchanged. Reloading
+            // the workspace here replaced the page's state with the disk copy and dropped the agent's live message.
             showToast(`Context compacted (${data.compactedTurnsCount} turns)`);
-            loadDiskWorkspaceOnBoot().then(() => renderActiveThread());
           } catch {}
         });
 

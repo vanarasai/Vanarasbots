@@ -62,8 +62,8 @@ export function checkCommandPermission(cmdStr, { permissionPolicy = "auto" } = {
 // tool added later is denied to restricted subagents by default instead of silently allowed.
 // ---------------------------------------------------------------------------------------------------
 const SUBAGENT_ALLOWED_TOOLS = {
-  explore: ["fs_read", "grep_search", "find_files", "git_status", "git_diff"],
-  plan: ["fs_read", "grep_search", "find_files"]
+  explore: ["fs_read", "grep_search", "code_search", "find_files", "git_status", "git_diff"],
+  plan: ["fs_read", "grep_search", "code_search", "find_files"]
 };
 
 export function subagentKind(botId) {

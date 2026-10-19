@@ -1,6 +1,7 @@
 // Paths, port, and runtime-state locations. Environment overrides (VANARAS_PORT, VANARAS_STATE_DIR,
 // VANARAS_WORKTREES_DIR) are additive; defaults are unchanged.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,7 +14,8 @@ export const STATE_DIR = process.env.VANARAS_STATE_DIR ? path.resolve(process.en
 export const WORKSPACE_FILE = path.join(STATE_DIR, ".vanaras-workspace.json");
 export const KEYS_VAULT_FILE = path.join(STATE_DIR, ".vanaras-keys.json");
 export const AGENTS_STATE_DIR = path.join(STATE_DIR, ".vanaras-agents");
-export const WORKTREES_DIR = process.env.VANARAS_WORKTREES_DIR ? path.resolve(process.env.VANARAS_WORKTREES_DIR) : path.join(ROOT_DIR, ".worktrees");
+// Agents' checkouts live outside Vanaras's source, so an agent working in its worktree is never inside it.
+export const WORKTREES_DIR = process.env.VANARAS_WORKTREES_DIR ? path.resolve(process.env.VANARAS_WORKTREES_DIR) : path.join(os.homedir(), ".vanaras", "worktrees");
 export const PORT = Number(process.env.VANARAS_PORT) || 3000;
 
 // Ensure child processes (git, python3, node, cargo, ffmpeg) have full developer PATH when launched via Finder / Vanaras.app

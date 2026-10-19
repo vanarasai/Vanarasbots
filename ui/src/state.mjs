@@ -27,3 +27,8 @@ export const activeApprovals = new Map();
 export const sessionCheckpoints = new Map();
 
 export const managedAgentPortProcesses = new Map();
+
+// Server-run turns are keyed per thread *and* agent, so teammates can work in one group thread at once.
+export function serverTurnKey(threadId, botId) {
+  return `${threadId}::${botId}`;
+}

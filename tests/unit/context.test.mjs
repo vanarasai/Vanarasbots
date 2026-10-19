@@ -1,7 +1,7 @@
 import "./_env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compactMessagesList, splitReasoningAndVisibleOutput } from "../../ui/src/context.mjs";
+import { compactMessagesList, detectUnfulfilledAction, splitReasoningAndVisibleOutput, threadMessagesToChat } from "../../ui/src/context.mjs";
 
 const msgs = (n) => [
   { role: "system", content: "SYSTEM PROMPT" },
@@ -84,4 +84,36 @@ test("reasoning split: a reply swallowed by reasoning is recovered at the respon
   const r = splitReasoningAndVisibleOutput(raw);
   assert.match(r.cleanedOutput, /===FILE: a\.py===/);
   assert.doesNotMatch(r.reasoning, /===FILE:/);
+});
+
+test("thread history: UI-shaped messages reach the model with their text and the right roles", () => {
+  const chat = threadMessagesToChat([
+    { senderType: "user", text: "run diagnostics" },
+    { senderType: "bot", botId: "bot_r1", text: "Checking the WAV files." },
+    { senderType: "terminal", command: "ls output", exitCode: 0, text: "episode.wav" },
+    { senderType: "bot", botId: "bot_r2", text: "The TTS model is missing." },
+    { role: "assistant", botId: "bot_r1", content: "Server-written reply" },
+    { senderType: "user", text: "   " }
+  ], "bot_r1", { bot_r2: "R2" });
+  assert.deepEqual(chat, [
+    { role: "user", content: "run diagnostics" },
+    { role: "assistant", content: "Checking the WAV files." },
+    { role: "user", content: "[Terminal: `ls output` exited 0]\nepisode.wav" },
+    { role: "user", content: "[@R2 said]\nThe TTS model is missing." },
+    { role: "assistant", content: "Server-written reply" }
+  ]);
+});
+
+test("unfulfilled action: announced-but-not-run work and unparsed tool tags are detected; answers are not", () => {
+  assert.match(detectUnfulfilledAction("Running full audio diagnostics now:"), /did not call any tool/);
+  assert.match(detectUnfulfilledAction("Found the bug.\nLet me fix it"), /did not call any tool/);
+  assert.match(detectUnfulfilledAction("[TOOL: shell | echo \"[\" broken"), /could not be parsed/);
+  assert.equal(detectUnfulfilledAction("All 12 tests pass; the WAV is 24 kHz speech."), null);
+  assert.equal(detectUnfulfilledAction("Should I regenerate the episode?"), null);
+  assert.match(detectUnfulfilledAction("Most likely causes: missing model, wrong sample rate.\nShould I proceed?"), /need no permission/);
+  assert.match(detectUnfulfilledAction("Want me to run the full diagnostics?"), /need no permission/);
+  assert.equal(detectUnfulfilledAction("Should I delete the old output folder?"), null);
+  assert.equal(detectUnfulfilledAction("Should I push this branch?"), null);
+  assert.equal(detectUnfulfilledAction("Can I check with Kokoro or switch to Piper?"), null);
+  assert.equal(detectUnfulfilledAction(""), null);
 });

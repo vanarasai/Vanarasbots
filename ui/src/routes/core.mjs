@@ -1,5 +1,5 @@
 // HTTP routes: /api/health, /api/events, /api/workspace, /api/settings/keys
-import { PORT, REPO_ROOT, ROOT_DIR } from "../config.mjs";
+import { PORT, ROOT_DIR } from "../config.mjs";
 import { broadcastEvent } from "../events.mjs";
 import { readJsonBody, sendJson } from "../http-utils.mjs";
 import { sseClients } from "../state.mjs";
@@ -27,7 +27,9 @@ export async function handleCoreRoutes(req, res) {
   // 2. Shared Disk-Backed Workspace State (GET & POST /api/workspace)
   if (req.method === "GET" && req.url === "/api/workspace") {
     const saved = loadWorkspaceDiskState();
-    return sendJson(res, 200, { state: saved, defaultMountPath: ROOT_DIR, repoRoot: REPO_ROOT });
+    // No default project: every room chooses its own. vanarasRoot lets the UI recognise (and confirm) a room
+    // that deliberately mounts Vanaras itself.
+    return sendJson(res, 200, { state: saved, defaultMountPath: "", vanarasRoot: ROOT_DIR });
   }
 
   if (req.method === "POST" && req.url === "/api/workspace") {
